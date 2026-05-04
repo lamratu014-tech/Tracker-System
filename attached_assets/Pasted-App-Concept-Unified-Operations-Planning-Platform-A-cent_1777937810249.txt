@@ -1,0 +1,64 @@
+App Concept: Unified Operations & Planning Platform
+
+A centralised digital platform designed to help organisations plan events, manage resources, and track progress on major projects in one connected system. The app combines a robust calendar engine with a dedicated project management workspace, allowing teams to coordinate schedules and execution without switching tools.
+
+⸻
+
+Core Idea
+The app acts as a single operational hub where scheduling and project delivery coexist. Events, people, resources, and long-term projects are all interconnected, giving teams full visibility of both what is planned and what is being accomplished.
+
+⸻
+
+Calendar System (Planning Engine)
+A fully featured scheduling environment similar in capability to Planning Center Calendar, designed to organise all time-based activities across the organisation.
+
+Includes the ability to manage events, recurring schedules, and shared calendars
+Supports multiple calendar views with filtering, colour coding, and search
+Tracks rooms, spaces, and equipment with conflict prevention
+Links people and teams to events with assigned roles
+Provides approval workflows for event requests and changes
+Sends automated notifications, reminders, and updates
+Offers public calendar sharing and external integrations
+Ensures real-time updates, mobile access, and scalability
+
+⸻
+
+Project Management Tab (Execution Layer)
+A dedicated workspace focused on tracking and delivering major projects, giving leadership and teams visibility into progress, responsibilities, and updates.
+
+Organises projects into clear structures with phases, tasks, and milestones
+Allows teams to post updates, progress notes, and key developments
+Provides status tracking (e.g. not started, in progress, at risk, completed)
+Displays timelines that can align directly with the calendar system
+Assigns ownership of tasks and responsibilities to individuals or teams
+Supports file sharing, documentation, and discussion within each project
+Highlights blockers, risks, and dependencies between tasks
+Offers dashboard views for leadership to quickly assess overall progress
+
+⸻
+
+Integration Between Calendar and Projects
+The calendar and project management features are not separate tools but tightly connected parts of the same system.
+
+Project milestones can automatically appear as calendar events
+Events can be linked to specific projects or tasks
+Team availability from the calendar informs project planning decisions
+Resource bookings (rooms, equipment) connect directly to project activities
+Updates in one area reflect across the system to maintain consistency
+
+⸻
+
+Permissions & Collaboration
+Role-based access ensures the right people see and control the right information. Teams can collaborate across both scheduling and project execution while maintaining structure and accountability.
+
+⸻
+
+Outcome / Value
+This app eliminates the disconnect between planning and execution. Instead of using separate tools for calendars and project tracking, organisations gain a unified view of time, resources, and progress. It improves coordination, reduces conflicts, and ensures that strategic projects move forward with full visibility.
+
+⸻
+
+If you want to sharpen this further, the next step would be defining:
+what the homepage/dashboard looks like
+what the minimum viable version includes first
+or how this would differentiate from tools like Asana or Monday.com combined with Planning Center Calendar
