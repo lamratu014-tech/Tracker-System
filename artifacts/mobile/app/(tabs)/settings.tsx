@@ -75,7 +75,14 @@ export default function SettingsScreen() {
   const { currentUser, users, isProgrammeLead, logout } = useAuth();
   const { activityLogs, teams, streams, programme } = useData();
   const [showAddUser, setShowAddUser] = useState(false);
+  const [addUserMode, setAddUserMode] = useState<"direct" | "invite">("direct");
   const pendingHighlightRef = useRef<{ email: string; type: "direct" | "invite" } | null>(null);
+
+  function openAddUser(mode: "direct" | "invite") {
+    setAddUserMode(mode);
+    setShowAddUser(true);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+  }
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const tabBarH = Platform.OS === "web" ? 84 : Platform.OS === "ios" ? 49 : 56;
@@ -86,17 +93,20 @@ export default function SettingsScreen() {
   const myTeam = teams.find((t) => t.id === currentUser.teamId);
   const myStream = streams.find((s) => s.id === myTeam?.streamId);
 
+  async function performLogout() {
+    await logout();
+    router.replace("/login");
+  }
+
   function handleLogout() {
+    if (Platform.OS === "web") {
+      const ok = typeof window !== "undefined" && window.confirm("Sign out of Ops & Planning?");
+      if (ok) void performLogout();
+      return;
+    }
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
       { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          await logout();
-          router.replace("/login");
-        },
-      },
+      { text: "Sign Out", style: "destructive", onPress: () => { void performLogout(); } },
     ]);
   }
 
@@ -150,26 +160,32 @@ export default function SettingsScreen() {
           <>
             <SectionHeader title="Programme Management" />
 
-            {/* Prominent Add User CTA */}
-            <TouchableOpacity
-              style={[styles.addUserCta, { backgroundColor: "#7C3AED" }]}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowAddUser(true);
-              }}
-              activeOpacity={0.85}
-            >
-              <View style={styles.addUserCtaIcon}>
-                <Feather name="user-plus" size={20} color="#fff" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.addUserCtaTitle}>Add User</Text>
-                <Text style={styles.addUserCtaSub}>
-                  Create directly with a password, or send an invite link
-                </Text>
-              </View>
-              <Feather name="chevron-right" size={20} color="rgba(255,255,255,0.85)" />
-            </TouchableOpacity>
+            {/* Two distinct Add-User CTAs */}
+            <View style={styles.ctaRow}>
+              <TouchableOpacity
+                style={[styles.ctaCard, { backgroundColor: "#7C3AED" }]}
+                onPress={() => openAddUser("direct")}
+                activeOpacity={0.85}
+              >
+                <View style={styles.ctaIcon}>
+                  <Feather name="user-plus" size={18} color="#fff" />
+                </View>
+                <Text style={styles.ctaTitle}>Add User</Text>
+                <Text style={styles.ctaSub}>Set their password now</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.ctaCard, { backgroundColor: "#2563EB" }]}
+                onPress={() => openAddUser("invite")}
+                activeOpacity={0.85}
+              >
+                <View style={styles.ctaIcon}>
+                  <Feather name="send" size={18} color="#fff" />
+                </View>
+                <Text style={styles.ctaTitle}>Invite User</Text>
+                <Text style={styles.ctaSub}>Send an invite link</Text>
+              </TouchableOpacity>
+            </View>
 
             <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <SettingRow
@@ -230,6 +246,7 @@ export default function SettingsScreen() {
       {isProgrammeLead && (
         <AddUserModal
           visible={showAddUser}
+          defaultMode={addUserMode}
           onClose={() => {
             const pending = pendingHighlightRef.current;
             pendingHighlightRef.current = null;
@@ -274,37 +291,41 @@ const styles = StyleSheet.create({
   rowLabel: { flex: 1, fontSize: 14, fontFamily: "Inter_400Regular" },
   rowRight: { flexDirection: "row", alignItems: "center", gap: 4 },
   rowValue: { fontSize: 13, fontFamily: "Inter_400Regular" },
-  addUserCta: {
+  ctaRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
+    gap: 10,
     marginHorizontal: 16,
     marginBottom: 8,
+  },
+  ctaCard: {
+    flex: 1,
     borderRadius: 14,
     padding: 14,
-    shadowColor: "#7C3AED",
-    shadowOpacity: 0.3,
-    shadowRadius: 10,
+    gap: 6,
+    minHeight: 110,
+    justifyContent: "space-between",
+    shadowColor: "#000",
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
     shadowOffset: { width: 0, height: 3 },
-    elevation: 5,
+    elevation: 4,
   },
-  addUserCtaIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+  ctaIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 10,
     backgroundColor: "rgba(255,255,255,0.18)",
     alignItems: "center",
     justifyContent: "center",
   },
-  addUserCtaTitle: {
+  ctaTitle: {
     color: "#fff",
     fontSize: 15,
     fontFamily: "Inter_700Bold",
   },
-  addUserCtaSub: {
+  ctaSub: {
     color: "rgba(255,255,255,0.85)",
     fontSize: 12,
     fontFamily: "Inter_400Regular",
-    marginTop: 2,
   },
 });

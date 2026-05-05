@@ -124,19 +124,25 @@ export function AddUserModal({
   onSuccess,
   defaultRole = "team_lead",
   defaultTeamId = null,
+  defaultMode = "direct",
 }: {
   visible: boolean;
   onClose: () => void;
   onSuccess?: (info: AddUserSuccessInfo) => void;
   defaultRole?: UserRole;
   defaultTeamId?: string | null;
+  defaultMode?: "direct" | "invite";
 }) {
   const colors = useColors();
   const { createUser, inviteUser } = useAuth();
   const { teams } = useData();
 
   type Mode = "direct" | "invite";
-  const [mode, setMode] = useState<Mode>("direct");
+  const [mode, setMode] = useState<Mode>(defaultMode);
+
+  React.useEffect(() => {
+    if (visible) setMode(defaultMode);
+  }, [visible, defaultMode]);
 
   // Shared fields
   const [name, setName] = useState("");
@@ -158,7 +164,7 @@ export function AddUserModal({
     setRole(defaultRole); setTeamId(defaultTeamId);
     setPassword(""); setShowPassword(false);
     setError(""); setDone(null);
-    setMode("direct");
+    setMode(defaultMode);
   }
 
   function closeAll() {
