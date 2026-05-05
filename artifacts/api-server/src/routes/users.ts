@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, usersTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, or, inArray } from "drizzle-orm";
 import {
   CreateUserBody,
   UpdateUserRoleBody,
@@ -10,8 +10,9 @@ import {
   DeleteUserParams,
 } from "@workspace/api-zod";
 import { z } from "zod";
-import { requireAdmin } from "../middlewares/requireAuth";
+import { requireAuth, requireAdmin } from "../middlewares/requireAuth";
 import { hashPassword } from "../lib/auth";
+import { visibleTeamIdsFor } from "../lib/permissions";
 
 const router = Router();
 
@@ -20,6 +21,28 @@ const GetUserParams = z.object({ id: z.string() });
 function safeUser(u: typeof usersTable.$inferSelect) {
   const { passwordHash: _, ...rest } = u;
   return rest;
+}
+
+/**
+ * Strip directory-style fields (email, department, invitedByName, active,
+ * timestamps) for non-admin viewers so a leader/overseer who needs to render
+ * names doesn't get the full HR-style profile.
+ */
+function publicUser(u: typeof usersTable.$inferSelect) {
+  return {
+    id: u.id,
+    name: u.name,
+    initials: u.initials,
+    role: u.role,
+    streamId: u.streamId,
+    teamId: u.teamId,
+    email: "",
+    department: "",
+    invitedByName: "",
+    active: u.active,
+    createdAt: u.createdAt,
+    updatedAt: u.updatedAt,
+  };
 }
 
 router.post("/users", requireAdmin, async (req, res): Promise<void> => {
@@ -63,20 +86,60 @@ router.post("/users", requireAdmin, async (req, res): Promise<void> => {
   res.status(201).json(safeUser(user!));
 });
 
-router.get("/users", requireAdmin, async (_req, res): Promise<void> => {
-  const users = await db
+// GET /users — admins see the full directory; non-admins see only the users
+// scoped to teams they manage, with sensitive fields stripped.
+router.get("/users", requireAuth, async (req, res): Promise<void> => {
+  const me = req.authUser!;
+  if (me.role === "admin") {
+    const users = await db.select().from(usersTable).orderBy(usersTable.createdAt);
+    res.json(users.map(safeUser));
+    return;
+  }
+
+  const visible = await visibleTeamIdsFor(me);
+  const teamIds = visible === "all" ? [] : visible;
+
+  // Always include the requester themselves so the client can resolve "me".
+  const conditions = [eq(usersTable.id, me.id)];
+  if (teamIds.length > 0) conditions.push(inArray(usersTable.teamId, teamIds));
+  if (me.role === "stream_overseer" && me.streamId) {
+    conditions.push(eq(usersTable.streamId, me.streamId));
+  }
+
+  const rows = await db
     .select()
     .from(usersTable)
+    .where(or(...conditions))
     .orderBy(usersTable.createdAt);
-  res.json(users.map(safeUser));
+
+  res.json(rows.map((u) => (u.id === me.id ? safeUser(u) : publicUser(u))));
 });
 
-router.get("/users/:id", requireAdmin, async (req, res): Promise<void> => {
+router.get("/users/:id", requireAuth, async (req, res): Promise<void> => {
   const params = GetUserParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const me = req.authUser!;
+
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, params.data.id)).limit(1);
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
-  res.json(safeUser(user));
+
+  if (me.role === "admin" || user.id === me.id) {
+    res.json(safeUser(user));
+    return;
+  }
+
+  // Non-admin: only allow lookup of users in a team or stream the requester
+  // can see. Treat out-of-scope users as 404 to avoid existence-leak.
+  const visible = await visibleTeamIdsFor(me);
+  const teamMatch = visible !== "all" && user.teamId && visible.includes(user.teamId);
+  const streamMatch =
+    me.role === "stream_overseer" && me.streamId && user.streamId === me.streamId;
+  if (!teamMatch && !streamMatch) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  res.json(publicUser(user));
 });
 
 router.patch("/users/:id/role", requireAdmin, async (req, res): Promise<void> => {

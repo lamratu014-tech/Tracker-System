@@ -20,7 +20,7 @@ import {
   countUsers,
 } from "../lib/auth";
 import { sendInviteEmail, sendPasswordResetEmail } from "../lib/email";
-import { requireAuth, requireManager } from "../middlewares/requireAuth";
+import { requireAuth, requireAdmin } from "../middlewares/requireAuth";
 
 const router = Router();
 
@@ -118,7 +118,7 @@ router.post("/auth/logout", requireAuth, async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
-router.post("/auth/invite", requireManager, async (req, res): Promise<void> => {
+router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
   const parsed = CreateInviteBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -127,12 +127,6 @@ router.post("/auth/invite", requireManager, async (req, res): Promise<void> => {
 
   const { email, name, role, department, streamId, teamId } = parsed.data;
   const inviter = req.authUser!;
-
-  // Leaders can never invite anyone.
-  if (inviter.role === "leader") {
-    res.status(403).json({ error: "Team leaders cannot invite users" });
-    return;
-  }
 
   // Validate scope coherence and that referenced rows exist. We only
   // load the team when we actually need its streamId for cross-checks.
@@ -183,22 +177,8 @@ router.post("/auth/invite", requireManager, async (req, res): Promise<void> => {
     resolvedStreamId = team.streamId ?? streamId ?? null;
   }
 
-  // Inviter-role authorization. Admins may invite anyone; stream
-  // overseers may only invite within their own stream.
-  if (inviter.role === "stream_overseer") {
-    if (role === "admin") {
-      res.status(403).json({ error: "Stream overseers cannot invite admins" });
-      return;
-    }
-    if (!inviter.streamId) {
-      res.status(403).json({ error: "Your account is not assigned to a stream" });
-      return;
-    }
-    if (resolvedStreamId !== inviter.streamId) {
-      res.status(403).json({ error: "You can only invite users within your own stream" });
-      return;
-    }
-  }
+  // Admin-only route (enforced by `requireAdmin`), so no further
+  // inviter-role authorization is needed beyond scope-coherence above.
 
   const lowerEmail = email.toLowerCase();
   const [existing] = await db
@@ -212,34 +192,6 @@ router.post("/auth/invite", requireManager, async (req, res): Promise<void> => {
   if (existing && (existing.active || existing.passwordHash)) {
     res.status(409).json({ error: "A user with this email already exists" });
     return;
-  }
-
-  // Re-invite of a pre-existing inactive user is privileged: the
-  // inviter must also have authority over the *existing* row's scope,
-  // not just the new requested scope. Otherwise an overseer could
-  // overwrite a pending admin invite (or a pending user in a different
-  // stream) by re-inviting the same email into their own stream.
-  if (existing) {
-    if (existing.role === "admin" && inviter.role !== "admin") {
-      res.status(403).json({ error: "Only admins can re-invite an admin account" });
-      return;
-    }
-    if (
-      inviter.role === "stream_overseer" &&
-      existing.streamId &&
-      existing.streamId !== inviter.streamId
-    ) {
-      res.status(403).json({ error: "This pending account is in a different stream" });
-      return;
-    }
-    if (
-      inviter.role === "stream_overseer" &&
-      existing.role === "stream_overseer" &&
-      existing.streamId !== inviter.streamId
-    ) {
-      res.status(403).json({ error: "Stream overseers can only re-invite within their own stream" });
-      return;
-    }
   }
 
   const token = await generateUniqueInviteCode();

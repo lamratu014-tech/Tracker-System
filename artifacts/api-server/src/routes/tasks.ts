@@ -4,6 +4,7 @@ import { db, tasksTable, projectsTable, personnelTable, usersTable } from "@work
 import { eq } from "drizzle-orm";
 import { requireAuth, requireManager } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
+import { userCanAccessTeam } from "../lib/permissions";
 
 const router = Router();
 
@@ -14,7 +15,7 @@ router.get("/projects/:projectId/tasks", requireAuth, async (req, res): Promise<
 
   const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, projectId)).limit(1);
   if (!project) { res.status(404).json({ error: "Project not found" }); return; }
-  if (user.role !== "admin" && user.teamId !== project.teamId) { res.status(403).json({ error: "Access denied" }); return; }
+  if (!(await userCanAccessTeam(user, project.teamId))) { res.status(403).json({ error: "Access denied" }); return; }
 
   const tasks = await db
     .select({
@@ -76,7 +77,7 @@ router.post("/tasks", requireManager, async (req, res): Promise<void> => {
 
   const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, parsed.data.projectId)).limit(1);
   if (!project) { res.status(404).json({ error: "Project not found" }); return; }
-  if (user.role !== "admin" && user.teamId !== project.teamId) { res.status(403).json({ error: "Access denied" }); return; }
+  if (!(await userCanAccessTeam(user, project.teamId))) { res.status(403).json({ error: "Access denied" }); return; }
 
   const [task] = await db.insert(tasksTable).values({
     ...parsed.data,
@@ -96,7 +97,7 @@ router.patch("/tasks/:id", requireManager, async (req, res): Promise<void> => {
   if (!existing) { res.status(404).json({ error: "Task not found" }); return; }
 
   const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, existing.projectId)).limit(1);
-  if (user.role !== "admin" && user.teamId !== project?.teamId) { res.status(403).json({ error: "Access denied" }); return; }
+  if (!(await userCanAccessTeam(user, project?.teamId ?? null))) { res.status(403).json({ error: "Access denied" }); return; }
 
   const parsed = TaskBody.partial().omit({ projectId: true }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
@@ -121,7 +122,7 @@ router.delete("/tasks/:id", requireManager, async (req, res): Promise<void> => {
   if (!existing) { res.status(404).json({ error: "Task not found" }); return; }
 
   const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, existing.projectId)).limit(1);
-  if (user.role !== "admin" && user.teamId !== project?.teamId) { res.status(403).json({ error: "Access denied" }); return; }
+  if (!(await userCanAccessTeam(user, project?.teamId ?? null))) { res.status(403).json({ error: "Access denied" }); return; }
 
   await db.delete(tasksTable).where(eq(tasksTable.id, id));
   await logActivity({ user, actionType: "delete", entityType: "task", entityId: id, entityTitle: existing.title, teamId: project?.teamId });

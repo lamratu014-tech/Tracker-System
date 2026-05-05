@@ -9,9 +9,9 @@ import {
   UpdateMemberBody,
 } from "@workspace/api-zod";
 import { z } from "zod";
-import { requireAuth, requireAdmin, requireManager } from "../middlewares/requireAuth";
+import { requireAuth, requireManager } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
-import { userCanAccessTeam } from "../lib/permissions";
+import { userCanAccessTeam, userCanAccessStream, userCanAssignAsLeader } from "../lib/permissions";
 
 const router = Router();
 
@@ -59,27 +59,79 @@ router.get("/teams/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(team);
 });
 
-// POST /teams — admin only
-router.post("/teams", requireAdmin, async (req, res): Promise<void> => {
+// POST /teams — admin or overseer of the target stream
+router.post("/teams", requireManager, async (req, res): Promise<void> => {
   const parsed = CreateTeamBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const { name, streamId, leaderId, functionLabel } = parsed.data;
+  const user = req.authUser!;
+
+  // Non-admins must scope the new team to a stream they oversee.
+  if (user.role !== "admin") {
+    if (!streamId || !userCanAccessStream(user, streamId)) {
+      res.status(403).json({ error: "You can only create teams within your own stream" });
+      return;
+    }
+  }
+
+  // If a leader is being installed at create time, validate the target
+  // user is in scope (target's stream matches; not an admin) for non-admins.
+  if (leaderId) {
+    const check = await userCanAssignAsLeader(user, leaderId, streamId ?? null);
+    if (!check.ok) { res.status(check.status).json({ error: check.error }); return; }
+  }
 
   const [team] = await db
     .insert(teamsTable)
     .values({ name, streamId: streamId ?? null, leaderId: leaderId ?? null, functionLabel })
     .returning();
-  await logActivity({ user: req.authUser!, actionType: "create", entityType: "team", entityId: team.id, entityTitle: team.name });
+  await logActivity({ user, actionType: "create", entityType: "team", entityId: team.id, entityTitle: team.name });
   res.status(201).json(team);
 });
 
-// PATCH /teams/:id — admin only
-router.patch("/teams/:id", requireAdmin, async (req, res): Promise<void> => {
+// PATCH /teams/:id — admin or manager of this team
+router.patch("/teams/:id", requireManager, async (req, res): Promise<void> => {
   const params = IdParam.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const user = req.authUser!;
+
+  if (!(await userCanAccessTeam(user, params.data.id))) {
+    res.status(403).json({ error: "Access denied" });
+    return;
+  }
 
   const parsed = UpdateTeamBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
+
+  // Non-admins cannot reparent a team into a different stream.
+  if (user.role !== "admin" && "streamId" in parsed.data) {
+    if (!userCanAccessStream(user, parsed.data.streamId ?? null)) {
+      res.status(403).json({ error: "You cannot move teams outside your stream" });
+      return;
+    }
+  }
+
+  // Leaders cannot reassign leadership of their own team via PATCH;
+  // assignment must go through the dedicated /assign-leader route which
+  // enforces the same admin/overseer-only rule.
+  if (user.role === "leader" && "leaderId" in parsed.data) {
+    res.status(403).json({ error: "Team leaders cannot reassign team leaders" });
+    return;
+  }
+
+  // For non-admins, validate any new leaderId against the resolved stream
+  // of the team (post-patch streamId if changing, otherwise existing one).
+  if ("leaderId" in parsed.data && parsed.data.leaderId) {
+    const [existingTeam] = await db
+      .select({ streamId: teamsTable.streamId })
+      .from(teamsTable)
+      .where(eq(teamsTable.id, params.data.id))
+      .limit(1);
+    const targetStreamId =
+      "streamId" in parsed.data ? parsed.data.streamId ?? null : existingTeam?.streamId ?? null;
+    const check = await userCanAssignAsLeader(user, parsed.data.leaderId, targetStreamId);
+    if (!check.ok) { res.status(check.status).json({ error: check.error }); return; }
+  }
 
   // Preserve the difference between "key omitted" (don't touch) and "key=null" (clear).
   const patch: Partial<typeof teamsTable.$inferInsert> = {};
@@ -91,30 +143,65 @@ router.patch("/teams/:id", requireAdmin, async (req, res): Promise<void> => {
   const [team] = await db.update(teamsTable).set(patch).where(eq(teamsTable.id, params.data.id)).returning();
   if (!team) { res.status(404).json({ error: "Team not found" }); return; }
 
-  await logActivity({ user: req.authUser!, actionType: "update", entityType: "team", entityId: team.id, entityTitle: team.name });
+  await logActivity({ user, actionType: "update", entityType: "team", entityId: team.id, entityTitle: team.name });
   res.json(team);
 });
 
-// DELETE /teams/:id — admin only
-router.delete("/teams/:id", requireAdmin, async (req, res): Promise<void> => {
+// DELETE /teams/:id — admin or overseer of the team's stream
+router.delete("/teams/:id", requireManager, async (req, res): Promise<void> => {
   const params = IdParam.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const user = req.authUser!;
+
+  // Leaders cannot delete their own team — only an overseer/admin can.
+  if (user.role === "leader") {
+    res.status(403).json({ error: "Team leaders cannot delete their team" });
+    return;
+  }
+  if (!(await userCanAccessTeam(user, params.data.id))) {
+    res.status(403).json({ error: "Access denied" });
+    return;
+  }
+
   const [team] = await db.delete(teamsTable).where(eq(teamsTable.id, params.data.id)).returning();
   if (!team) { res.status(404).json({ error: "Team not found" }); return; }
 
-  await logActivity({ user: req.authUser!, actionType: "delete", entityType: "team", entityId: params.data.id, entityTitle: team.name });
+  await logActivity({ user, actionType: "delete", entityType: "team", entityId: params.data.id, entityTitle: team.name });
   res.sendStatus(204);
 });
 
-// POST /teams/:id/assign-leader — admin assigns/clears the team leader
-router.post("/teams/:id/assign-leader", requireAdmin, async (req, res): Promise<void> => {
+// POST /teams/:id/assign-leader — admin or overseer of the team's stream
+router.post("/teams/:id/assign-leader", requireManager, async (req, res): Promise<void> => {
   const params = IdParam.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const teamId = params.data.id;
+  const user = req.authUser!;
+
+  // Leaders can't reassign their own team's leader; that's an admin/overseer action.
+  if (user.role === "leader") {
+    res.status(403).json({ error: "Team leaders cannot reassign team leaders" });
+    return;
+  }
+  if (!(await userCanAccessTeam(user, teamId))) {
+    res.status(403).json({ error: "Access denied" });
+    return;
+  }
 
   const parsed = AssignTeamLeaderBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
   const leaderId = parsed.data.leaderId ?? null;
+
+  // Validate the target user is in scope (admin always passes; overseer
+  // requires the target to be a non-admin in the same stream).
+  if (leaderId) {
+    const [existingTeam] = await db
+      .select({ streamId: teamsTable.streamId })
+      .from(teamsTable)
+      .where(eq(teamsTable.id, teamId))
+      .limit(1);
+    const check = await userCanAssignAsLeader(user, leaderId, existingTeam?.streamId ?? null);
+    if (!check.ok) { res.status(check.status).json({ error: check.error }); return; }
+  }
 
   const [team] = await db
     .update(teamsTable)
