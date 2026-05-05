@@ -1,10 +1,13 @@
 import { Feather } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
-import React from "react";
+import { Link, useRouter } from "expo-router";
+import React, { useState } from "react";
 import {
+  KeyboardAvoidingView,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -13,117 +16,117 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useStore } from "@/store/useStore";
 
-const ROLE_LABEL: Record<string, string> = {
-  admin: "Admin",
-  leader: "Team Leader",
-  member: "Team Member",
-};
-
-const ROLE_COLOR: Record<string, string> = {
-  admin: "#7C3AED",
-  leader: "#2563EB",
-  member: "#059669",
-};
-
 export default function LoginScreen() {
   const colors = useColors();
   const router = useRouter();
-  const users = useStore((s) => s.users);
-  const streams = useStore((s) => s.streams);
-  const login = useStore((s) => s.login);
+  const loginByEmail = useStore((s) => s.loginByEmail);
+  const userCount = useStore((s) => s.users.length);
 
-  function teamLabel(teamId: string | null): string {
-    if (!teamId) return "—";
-    for (const st of streams) {
-      const t = st.teams.find((x) => x.id === teamId);
-      if (t) return `${st.name} · ${t.name}`;
+  const [email, setEmail] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  function submit() {
+    setError(null);
+    const result = loginByEmail(email);
+    if (!result.ok) {
+      setError(result.error ?? "Login failed");
+      return;
     }
-    return "—";
-  }
-
-  function pick(userId: string) {
-    login(userId);
     router.replace("/(tabs)");
   }
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        <View style={[styles.brand, { backgroundColor: colors.primary }]}>
-          <Feather name="briefcase" size={28} color="#fff" />
-        </View>
-        <Text style={[styles.title, { color: colors.foreground }]}>Ops & Planning</Text>
-        <Text style={[styles.sub, { color: colors.mutedForeground }]}>Choose a profile to continue</Text>
-
-        <View style={{ height: 24 }} />
-
-        {users.length === 0 ? (
-          <View style={[styles.empty, { backgroundColor: colors.muted }]}>
-            <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              No users yet. Reset to seed data from Settings → Reset.
-            </Text>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <View style={[styles.brand, { backgroundColor: colors.primary }]}>
+            <Feather name="briefcase" size={28} color="#fff" />
           </View>
-        ) : (
-          users.map((u) => (
-            <TouchableOpacity
-              key={u.id}
-              style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => pick(u.id)}
-              activeOpacity={0.85}
-            >
-              <View style={[styles.avatar, { backgroundColor: ROLE_COLOR[u.role] + "22" }]}>
-                <Text style={[styles.avatarText, { color: ROLE_COLOR[u.role] }]}>
-                  {u.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
-                </Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.name, { color: colors.foreground }]}>{u.name}</Text>
-                <Text style={[styles.meta, { color: colors.mutedForeground }]}>
-                  {ROLE_LABEL[u.role]} · {teamLabel(u.teamId)}
-                </Text>
-              </View>
-              <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          ))
-        )}
+          <Text style={[styles.title, { color: colors.foreground }]}>Ops & Planning</Text>
+          <Text style={[styles.sub, { color: colors.mutedForeground }]}>Sign in to your account</Text>
 
-        <Text style={[styles.footnote, { color: colors.mutedForeground }]}>
-          Profiles are stored on this device. Anyone using the device can pick a profile.
-        </Text>
-      </ScrollView>
+          <View style={{ height: 24 }} />
+
+          <Text style={[styles.label, { color: colors.mutedForeground }]}>Work email</Text>
+          <TextInput
+            style={[
+              styles.input,
+              {
+                backgroundColor: colors.muted,
+                color: colors.foreground,
+                borderColor: error ? "#DC2626" : colors.border,
+              },
+            ]}
+            value={email}
+            onChangeText={(v) => { setEmail(v); setError(null); }}
+            placeholder="you@company.com"
+            placeholderTextColor={colors.mutedForeground}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="email-address"
+            returnKeyType="go"
+            onSubmitEditing={submit}
+            autoFocus
+          />
+          {error ? <Text style={styles.error}>{error}</Text> : null}
+
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: email.trim() ? colors.primary : colors.border }]}
+            onPress={submit}
+            disabled={!email.trim()}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.btnText}>Sign in</Text>
+          </TouchableOpacity>
+
+          <View style={styles.divider}>
+            <View style={[styles.line, { backgroundColor: colors.border }]} />
+            <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>or</Text>
+            <View style={[styles.line, { backgroundColor: colors.border }]} />
+          </View>
+
+          <Link href="/accept-invite" asChild>
+            <TouchableOpacity style={[styles.btnGhost, { borderColor: colors.border }]} activeOpacity={0.7}>
+              <Feather name="mail" size={14} color={colors.primary} />
+              <Text style={[styles.btnGhostText, { color: colors.primary }]}>I have an invite code</Text>
+            </TouchableOpacity>
+          </Link>
+
+          <Text style={[styles.footnote, { color: colors.mutedForeground }]}>
+            {userCount} account{userCount !== 1 ? "s" : ""} on this device.
+            {"\n"}Demo logins: admin@ops.test · pat@ops.test · jess@ops.test · morgan@ops.test
+          </Text>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  scroll: { padding: 20, paddingBottom: 40 },
+  scroll: { padding: 20, paddingBottom: 60 },
   brand: {
-    width: 64,
-    height: 64,
-    borderRadius: 16,
-    alignItems: "center",
-    justifyContent: "center",
-    alignSelf: "center",
-    marginTop: 24,
-    marginBottom: 16,
+    width: 64, height: 64, borderRadius: 16,
+    alignItems: "center", justifyContent: "center", alignSelf: "center",
+    marginTop: 24, marginBottom: 16,
   },
-  title: { fontSize: 24, fontFamily: "Inter_700Bold", textAlign: "center" },
+  title: { fontSize: 26, fontFamily: "Inter_700Bold", textAlign: "center" },
   sub: { fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center", marginTop: 4 },
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderRadius: 12,
-    marginBottom: 10,
+  label: { fontSize: 12, fontFamily: "Inter_500Medium", marginBottom: 6 },
+  input: { padding: 14, borderRadius: 10, borderWidth: 1, fontSize: 15, fontFamily: "Inter_400Regular" },
+  error: { color: "#DC2626", fontSize: 12, fontFamily: "Inter_500Medium", marginTop: 6 },
+  btn: { padding: 14, borderRadius: 10, alignItems: "center", marginTop: 16 },
+  btnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  divider: { flexDirection: "row", alignItems: "center", gap: 8, marginVertical: 20 },
+  line: { flex: 1, height: 1 },
+  dividerText: { fontSize: 11, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 },
+  btnGhost: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center",
+    gap: 8, padding: 14, borderRadius: 10, borderWidth: 1,
   },
-  avatar: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center" },
-  avatarText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  name: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  meta: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
-  empty: { padding: 16, borderRadius: 12 },
-  emptyText: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center" },
-  footnote: { marginTop: 24, fontSize: 11, textAlign: "center", fontFamily: "Inter_400Regular" },
+  btnGhostText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  footnote: { marginTop: 24, fontSize: 11, textAlign: "center", fontFamily: "Inter_400Regular", lineHeight: 16 },
 });

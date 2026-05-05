@@ -23,7 +23,7 @@ interface Action {
 const ALL: Action[] = [
   { key: "stream", label: "New Stream", icon: "layers", href: "/new-stream" },
   { key: "team", label: "New Team", icon: "users", href: "/new-team" },
-  { key: "user", label: "New User", icon: "user-plus", href: "/new-user" },
+  { key: "user", label: "Invite User", icon: "user-plus", href: "/new-user" },
   { key: "project", label: "New Project", icon: "folder-plus", href: "/new-project" },
   { key: "milestone", label: "New Milestone", icon: "flag", href: "/new-milestone" },
   { key: "event", label: "New Event", icon: "calendar", href: "/new-event" },
@@ -31,8 +31,8 @@ const ALL: Action[] = [
 
 const ROLE_ACTIONS: Record<Role, string[]> = {
   admin: ["stream", "team", "user", "project", "milestone", "event"],
+  stream_overseer: ["team", "project", "milestone", "event"],
   leader: ["project", "milestone", "event"],
-  member: [],
 };
 
 interface Props {
@@ -44,7 +44,7 @@ interface Props {
 export function CreateActionSheet({ visible, role, onClose }: Props) {
   const colors = useColors();
   const router = useRouter();
-  const allowedKeys = ROLE_ACTIONS[role];
+  const allowedKeys = ROLE_ACTIONS[role] ?? [];
   const actions = ALL.filter((a) => allowedKeys.includes(a.key));
 
   function pick(href: string) {
@@ -70,7 +70,7 @@ export function CreateActionSheet({ visible, role, onClose }: Props) {
           {actions.length === 0 ? (
             <View style={[styles.empty, { backgroundColor: colors.muted }]}>
               <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-                Members can't create system entities. Ask your team leader or admin.
+                Nothing to create with your current role.
               </Text>
             </View>
           ) : (
@@ -102,24 +102,19 @@ export function CreateActionSheet({ visible, role, onClose }: Props) {
 const styles = StyleSheet.create({
   backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   sheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingHorizontal: 16,
-    paddingBottom: 32,
-    paddingTop: 8,
-    borderWidth: 1,
-    borderBottomWidth: 0,
-    maxHeight: "80%",
+    borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingHorizontal: 16, paddingBottom: 32, paddingTop: 8,
+    borderWidth: 1, borderBottomWidth: 0, maxHeight: "80%",
   },
-  handle: { width: 36, height: 4, borderRadius: 2, backgroundColor: "rgba(0,0,0,0.15)", alignSelf: "center", marginBottom: 12 },
+  handle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: "rgba(0,0,0,0.15)", alignSelf: "center", marginBottom: 12,
+  },
   title: { fontSize: 18, fontFamily: "Inter_700Bold" },
   sub: { fontSize: 13, fontFamily: "Inter_400Regular", marginTop: 2 },
   row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    paddingVertical: 14,
-    paddingHorizontal: 12,
+    flexDirection: "row", alignItems: "center", gap: 12,
+    paddingVertical: 14, paddingHorizontal: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   iconWrap: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },

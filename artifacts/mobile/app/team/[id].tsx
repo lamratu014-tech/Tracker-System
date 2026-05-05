@@ -14,12 +14,7 @@ import {
 
 import { useColors } from "@/hooks/useColors";
 import { isOverdue } from "@/models/types";
-import {
-  canManageTeam,
-  findTeam,
-  useCurrentUser,
-  useStore,
-} from "@/store/useStore";
+import { findTeam, useCanManageTeam, useCurrentUser, useStore } from "@/store/useStore";
 
 export default function TeamDetailScreen() {
   const colors = useColors();
@@ -28,13 +23,19 @@ export default function TeamDetailScreen() {
   const me = useCurrentUser();
   const streams = useStore((s) => s.streams);
   const users = useStore((s) => s.users);
+  const members = useStore((s) => s.members);
   const updateTeam = useStore((s) => s.updateTeam);
   const deleteTeam = useStore((s) => s.deleteTeam);
   const assignLeader = useStore((s) => s.assignTeamLeader);
+  const addMember = useStore((s) => s.addMember);
+  const deleteMember = useStore((s) => s.deleteMember);
 
   const found = id ? findTeam(streams, id) : null;
+  const canEdit = useCanManageTeam(found?.team.id ?? null);
+
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(found?.team.name ?? "");
+  const [newMember, setNewMember] = useState("");
 
   if (!found) {
     return (
@@ -45,19 +46,18 @@ export default function TeamDetailScreen() {
   }
 
   const { stream, team } = found;
-  const canEdit = canManageTeam(me, team.id);
   const isAdmin = me?.role === "admin";
   const leader = team.leaderId ? users.find((u) => u.id === team.leaderId) : null;
-  const teamMembers = users.filter((u) => u.teamId === team.id);
+  const teamMembers = members.filter((m) => m.teamId === team.id);
 
   function saveName() {
     if (!draftName.trim()) return;
-    updateTeam(team!.id, { name: draftName.trim() });
+    updateTeam(team.id, { name: draftName.trim() });
     setEditing(false);
   }
 
   function confirmDelete() {
-    const msg = `Delete team "${team.name}" and all its projects?`;
+    const msg = `Delete team "${team.name}" and all its projects/members?`;
     if (Platform.OS === "web") {
       if (window.confirm(msg)) {
         deleteTeam(team.id);
@@ -66,7 +66,11 @@ export default function TeamDetailScreen() {
     } else {
       Alert.alert("Delete team", msg, [
         { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: () => { deleteTeam(team.id); router.back(); } },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => { deleteTeam(team.id); router.back(); },
+        },
       ]);
     }
   }
@@ -75,12 +79,14 @@ export default function TeamDetailScreen() {
     if (!isAdmin) return;
     const candidates = users.filter((u) => u.role === "leader" || u.role === "admin");
     if (candidates.length === 0) {
-      Alert.alert("No candidates", "Create a leader user first.");
+      Alert.alert("No candidates", "Invite a leader user first.");
       return;
     }
     if (Platform.OS === "web") {
-      const names = candidates.map((u, i) => `${i + 1}. ${u.name}`).join("\n");
-      const choice = window.prompt(`Choose new leader (1-${candidates.length}):\n${names}\n\nLeave blank to clear.`);
+      const list = candidates.map((u, i) => `${i + 1}. ${u.name}`).join("\n");
+      const choice = window.prompt(
+        `Choose new leader (1-${candidates.length}):\n${list}\n\nLeave blank to clear.`,
+      );
       if (choice === null) return;
       if (choice.trim() === "") {
         assignLeader(team.id, null);
@@ -89,7 +95,10 @@ export default function TeamDetailScreen() {
         if (idx >= 0 && idx < candidates.length) assignLeader(team.id, candidates[idx].id);
       }
     } else {
-      const buttons = candidates.map((u) => ({ text: u.name, onPress: () => assignLeader(team.id, u.id) }));
+      const buttons = candidates.map((u) => ({
+        text: u.name,
+        onPress: () => assignLeader(team.id, u.id),
+      }));
       Alert.alert("Assign leader", "", [
         ...buttons,
         { text: "Clear", style: "destructive", onPress: () => assignLeader(team.id, null) },
@@ -98,11 +107,27 @@ export default function TeamDetailScreen() {
     }
   }
 
+  function addNewMember() {
+    if (!newMember.trim()) return;
+    addMember({ name: newMember.trim(), teamId: team.id });
+    setNewMember("");
+  }
+
+  function confirmDeleteMember(memberId: string, name: string) {
+    const msg = `Remove "${name}" from this team?`;
+    if (Platform.OS === "web") {
+      if (window.confirm(msg)) deleteMember(memberId);
+    } else {
+      Alert.alert("Remove member", msg, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Remove", style: "destructive", onPress: () => deleteMember(memberId) },
+      ]);
+    }
+  }
+
   return (
     <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}>
-      <Text style={[styles.crumb, { color: colors.mutedForeground }]}>
-        {stream.name} · Team
-      </Text>
+      <Text style={[styles.crumb, { color: colors.mutedForeground }]}>{stream.name} · Team</Text>
       {editing ? (
         <TextInput
           value={draftName}
@@ -122,7 +147,8 @@ export default function TeamDetailScreen() {
       >
         <Feather name="award" size={14} color={colors.primary} />
         <Text style={[styles.leaderText, { color: colors.foreground }]}>
-          Leader: <Text style={{ fontFamily: "Inter_600SemiBold" }}>{leader?.name ?? "Unassigned"}</Text>
+          Leader:{" "}
+          <Text style={{ fontFamily: "Inter_600SemiBold" }}>{leader?.name ?? "Unassigned"}</Text>
         </Text>
         {isAdmin ? <Feather name="chevron-right" size={14} color={colors.mutedForeground} /> : null}
       </TouchableOpacity>
@@ -134,7 +160,9 @@ export default function TeamDetailScreen() {
             onPress={() => { setDraftName(team.name); setEditing((v) => !v); }}
           >
             <Feather name={editing ? "check" : "edit-2"} size={14} color={colors.primary} />
-            <Text style={[styles.actionText, { color: colors.primary }]}>{editing ? "Save" : "Rename"}</Text>
+            <Text style={[styles.actionText, { color: colors.primary }]}>
+              {editing ? "Save" : "Rename"}
+            </Text>
           </TouchableOpacity>
           {isAdmin ? (
             <TouchableOpacity
@@ -182,7 +210,8 @@ export default function TeamDetailScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={[styles.rowTitle, { color: colors.foreground }]}>{p.title}</Text>
                 <Text style={[styles.rowMeta, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {done}/{p.milestones.length} milestones done{overdue > 0 ? ` · ${overdue} overdue` : ""}
+                  {done}/{p.milestones.length} milestones done
+                  {overdue > 0 ? ` · ${overdue} overdue` : ""}
                 </Text>
               </View>
               <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
@@ -192,51 +221,133 @@ export default function TeamDetailScreen() {
       )}
 
       <View style={styles.sectionRow}>
-        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Members ({teamMembers.length})</Text>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+          Members ({teamMembers.length})
+        </Text>
       </View>
+
       {teamMembers.length === 0 ? (
         <View style={[styles.empty, { backgroundColor: colors.muted }]}>
-          <Text style={{ color: colors.mutedForeground }}>No members assigned to this team.</Text>
+          <Text style={{ color: colors.mutedForeground }}>No members yet.</Text>
         </View>
       ) : (
-        teamMembers.map((u) => (
-          <View key={u.id} style={[styles.memberRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        teamMembers.map((mb) => (
+          <View
+            key={mb.id}
+            style={[styles.memberRow, { backgroundColor: colors.card, borderColor: colors.border }]}
+          >
             <View style={[styles.avatar, { backgroundColor: colors.primary + "22" }]}>
               <Text style={[styles.avatarText, { color: colors.primary }]}>
-                {u.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                {mb.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
               </Text>
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={[styles.rowTitle, { color: colors.foreground }]}>{u.name}</Text>
-              <Text style={[styles.rowMeta, { color: colors.mutedForeground }]}>{u.role}</Text>
+              <Text style={[styles.rowTitle, { color: colors.foreground }]}>{mb.name}</Text>
+              <Text style={[styles.rowMeta, { color: colors.mutedForeground }]}>Member</Text>
             </View>
+            {canEdit ? (
+              <TouchableOpacity
+                onPress={() => confirmDeleteMember(mb.id, mb.name)}
+                hitSlop={8}
+                style={{ padding: 4 }}
+              >
+                <Feather name="trash-2" size={14} color="#DC2626" />
+              </TouchableOpacity>
+            ) : null}
           </View>
         ))
       )}
+
+      {canEdit ? (
+        <View
+          style={[styles.addMemberRow, { borderColor: colors.border, backgroundColor: colors.card }]}
+        >
+          <TextInput
+            value={newMember}
+            onChangeText={setNewMember}
+            placeholder="Add a team member by name"
+            placeholderTextColor={colors.mutedForeground}
+            style={[styles.addMemberInput, { color: colors.foreground }]}
+            returnKeyType="done"
+            onSubmitEditing={addNewMember}
+          />
+          <TouchableOpacity
+            onPress={addNewMember}
+            disabled={!newMember.trim()}
+            style={[styles.addMemberBtn, { backgroundColor: newMember.trim() ? colors.primary : colors.border }]}
+          >
+            <Feather name="plus" size={16} color="#fff" />
+          </TouchableOpacity>
+        </View>
+      ) : null}
+
+      <Text style={[styles.note, { color: colors.mutedForeground }]}>
+        Members are roster entries inside the team — they do not log in. Use "Invite User" from the dashboard "+" hub to give someone a login account.
+      </Text>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { padding: 20, gap: 10 },
-  crumb: { fontSize: 12, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 },
+  crumb: {
+    fontSize: 12, fontFamily: "Inter_500Medium",
+    textTransform: "uppercase", letterSpacing: 0.5,
+  },
   title: { fontSize: 24, fontFamily: "Inter_700Bold" },
-  titleInput: { fontSize: 24, fontFamily: "Inter_700Bold", borderBottomWidth: 1, paddingVertical: 4 },
-  leaderBox: { flexDirection: "row", alignItems: "center", gap: 8, padding: 12, borderRadius: 10, borderWidth: 1 },
+  titleInput: {
+    fontSize: 24, fontFamily: "Inter_700Bold",
+    borderBottomWidth: 1, paddingVertical: 4,
+  },
+  leaderBox: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    padding: 12, borderRadius: 10, borderWidth: 1,
+  },
   leaderText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular" },
   actions: { flexDirection: "row", gap: 8 },
-  actionBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  actionBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
+  },
   actionText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 12 },
+  sectionRow: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    marginTop: 12,
+  },
   sectionTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
-  smallBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  smallBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6,
+  },
   smallBtnText: { color: "#fff", fontSize: 12, fontFamily: "Inter_600SemiBold" },
   empty: { padding: 16, borderRadius: 10, alignItems: "center" },
-  row: { flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderWidth: 1, borderRadius: 10 },
+  row: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    padding: 12, borderWidth: 1, borderRadius: 10,
+  },
   iconBox: { width: 36, height: 36, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   rowTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   rowMeta: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
-  memberRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 10, borderWidth: 1, borderRadius: 10 },
+  memberRow: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    padding: 10, borderWidth: 1, borderRadius: 10,
+  },
   avatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   avatarText: { fontSize: 11, fontFamily: "Inter_700Bold" },
+  addMemberRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    padding: 8, borderWidth: 1, borderRadius: 10, borderStyle: "dashed",
+  },
+  addMemberInput: {
+    flex: 1, paddingHorizontal: 8, paddingVertical: 8,
+    fontSize: 14, fontFamily: "Inter_400Regular",
+  },
+  addMemberBtn: {
+    width: 36, height: 36, borderRadius: 8,
+    alignItems: "center", justifyContent: "center",
+  },
+  note: {
+    fontSize: 11, fontFamily: "Inter_400Regular", textAlign: "center",
+    paddingTop: 12, paddingHorizontal: 8, lineHeight: 16,
+  },
 });

@@ -12,7 +12,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { isOverdue } from "@/models/types";
-import { canManageEverything, useCurrentUser, useStore } from "@/store/useStore";
+import { canManageEverything, canManageStream, useCurrentUser, useStore } from "@/store/useStore";
 
 export default function ProgrammeScreen() {
   const colors = useColors();
@@ -22,14 +22,15 @@ export default function ProgrammeScreen() {
   const streams = useStore((s) => s.streams);
 
   const [expandedStreamId, setExpandedStreamId] = useState<string | null>(null);
-  const didInitRef = useRef(false);
+  const didInit = useRef(false);
 
   useEffect(() => {
-    if (!didInitRef.current && streams.length > 0) {
-      didInitRef.current = true;
-      setExpandedStreamId(streams[0].id);
+    if (!didInit.current && streams.length > 0) {
+      didInit.current = true;
+      const own = me?.streamId ? streams.find((s) => s.id === me.streamId) : null;
+      setExpandedStreamId(own ? own.id : streams[0].id);
     }
-  }, [streams]);
+  }, [streams, me]);
 
   function toggle(id: string) {
     setExpandedStreamId((cur) => (cur === id ? null : id));
@@ -46,7 +47,8 @@ export default function ProgrammeScreen() {
         <View>
           <Text style={[styles.title, { color: colors.foreground }]}>Programme</Text>
           <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-            {streams.length} stream{streams.length !== 1 ? "s" : ""} · {streams.reduce((n, s) => n + s.teams.length, 0)} teams
+            {streams.length} stream{streams.length !== 1 ? "s" : ""} ·{" "}
+            {streams.reduce((n, s) => n + s.teams.length, 0)} teams
           </Text>
         </View>
         {isAdmin ? (
@@ -70,13 +72,21 @@ export default function ProgrammeScreen() {
       ) : (
         streams.map((stream) => {
           const expanded = expandedStreamId === stream.id;
-          const allMilestones = stream.teams.flatMap((t) => t.projects.flatMap((p) => p.milestones));
-          const completed = allMilestones.filter((m) => m.status === "completed").length;
-          const overdue = allMilestones.filter((m) => isOverdue(m)).length;
+          const allMs = stream.teams.flatMap((t) => t.projects.flatMap((p) => p.milestones));
+          const completed = allMs.filter((m) => m.status === "completed").length;
+          const overdue = allMs.filter((m) => isOverdue(m)).length;
+          const canAddTeamHere = canManageStream(me, stream.id);
 
           return (
-            <View key={stream.id} style={[styles.streamCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <TouchableOpacity style={styles.streamHeader} onPress={() => toggle(stream.id)} activeOpacity={0.85}>
+            <View
+              key={stream.id}
+              style={[styles.streamCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <TouchableOpacity
+                style={styles.streamHeader}
+                onPress={() => toggle(stream.id)}
+                activeOpacity={0.85}
+              >
                 <Feather
                   name={expanded ? "chevron-down" : "chevron-right"}
                   size={18}
@@ -86,8 +96,8 @@ export default function ProgrammeScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.streamName, { color: colors.foreground }]}>{stream.name}</Text>
                   <Text style={[styles.streamMeta, { color: colors.mutedForeground }]}>
-                    {stream.teams.length} team{stream.teams.length !== 1 ? "s" : ""} · {completed}/{allMilestones.length} done
-                    {overdue > 0 ? ` · ${overdue} overdue` : ""}
+                    {stream.teams.length} team{stream.teams.length !== 1 ? "s" : ""} ·{" "}
+                    {completed}/{allMs.length} done{overdue > 0 ? ` · ${overdue} overdue` : ""}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -123,7 +133,8 @@ export default function ProgrammeScreen() {
                           <View style={{ flex: 1 }}>
                             <Text style={[styles.teamName, { color: colors.foreground }]}>{team.name}</Text>
                             <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
-                              {team.projects.length} project{team.projects.length !== 1 ? "s" : ""} · {tDone}/{teamMs.length} done
+                              {team.projects.length} project{team.projects.length !== 1 ? "s" : ""} ·{" "}
+                              {tDone}/{teamMs.length} done
                               {tOverdue > 0 ? ` · ${tOverdue} overdue` : ""}
                             </Text>
                           </View>
@@ -132,7 +143,7 @@ export default function ProgrammeScreen() {
                       );
                     })
                   )}
-                  {isAdmin ? (
+                  {canAddTeamHere ? (
                     <TouchableOpacity
                       style={[styles.addInline, { borderColor: colors.border }]}
                       onPress={() => router.push({ pathname: "/new-team", params: { streamId: stream.id } })}
@@ -156,7 +167,10 @@ const styles = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "flex-end", justifyContent: "space-between", marginBottom: 16 },
   title: { fontSize: 24, fontFamily: "Inter_700Bold" },
   sub: { fontSize: 13, fontFamily: "Inter_400Regular", marginTop: 2 },
-  headerBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8 },
+  headerBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8,
+  },
   headerBtnText: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
   empty: { padding: 32, alignItems: "center", borderRadius: 12, gap: 8 },
   emptyText: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center" },
@@ -168,10 +182,16 @@ const styles = StyleSheet.create({
   openBtn: { padding: 6 },
   streamBody: { paddingHorizontal: 12, paddingBottom: 12, gap: 8 },
   muted: { fontSize: 13, fontFamily: "Inter_400Regular", padding: 8, textAlign: "center" },
-  teamRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 10, borderRadius: 8, borderWidth: 1 },
+  teamRow: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    padding: 10, borderRadius: 8, borderWidth: 1,
+  },
   teamIcon: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   teamName: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   teamMeta: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
-  addInline: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderStyle: "dashed" },
+  addInline: {
+    flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+    paddingVertical: 10, borderRadius: 8, borderWidth: 1, borderStyle: "dashed",
+  },
   addInlineText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
 });

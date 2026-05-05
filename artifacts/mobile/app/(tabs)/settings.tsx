@@ -15,6 +15,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useCurrentUser, useStore } from "@/store/useStore";
 
+const ROLE_LABEL: Record<string, string> = {
+  admin: "Admin",
+  stream_overseer: "Stream Overseer",
+  leader: "Team Leader",
+};
+
 export default function SettingsScreen() {
   const colors = useColors();
   const router = useRouter();
@@ -27,7 +33,14 @@ export default function SettingsScreen() {
   if (!me) return null;
 
   const team = streams.flatMap((s) => s.teams).find((t) => t.id === me.teamId);
-  const stream = streams.find((s) => s.teams.some((t) => t.id === me.teamId));
+  const stream = me.streamId
+    ? streams.find((s) => s.id === me.streamId)
+    : streams.find((s) => s.teams.some((t) => t.id === me.teamId));
+
+  let context = "Programme-wide";
+  if (team && stream) context = `${stream.name} · ${team.name}`;
+  else if (stream) context = `${stream.name} (whole stream)`;
+  else if (me.role === "leader") context = "No team yet";
 
   function confirm(message: string, onYes: () => void) {
     if (Platform.OS === "web") {
@@ -68,12 +81,13 @@ export default function SettingsScreen() {
           </Text>
         </View>
         <Text style={[styles.name, { color: colors.foreground }]}>{me.name}</Text>
+        <Text style={[styles.email, { color: colors.mutedForeground }]}>{me.email}</Text>
         <View style={[styles.roleChip, { backgroundColor: colors.primary }]}>
-          <Text style={styles.roleChipText}>{me.role.toUpperCase()}</Text>
+          <Text style={styles.roleChipText}>
+            {(ROLE_LABEL[me.role] ?? me.role).toUpperCase()}
+          </Text>
         </View>
-        <Text style={[styles.profileMeta, { color: colors.mutedForeground }]}>
-          {stream ? `${stream.name} · ${team?.name ?? "—"}` : team ? team.name : "No team"}
-        </Text>
+        <Text style={[styles.profileMeta, { color: colors.mutedForeground }]}>{context}</Text>
       </View>
 
       {me.role === "admin" ? (
@@ -117,27 +131,19 @@ const styles = StyleSheet.create({
   scroll: { padding: 20 },
   title: { fontSize: 24, fontFamily: "Inter_700Bold", marginBottom: 16 },
   profileCard: {
-    alignItems: "center",
-    padding: 20,
-    borderRadius: 12,
-    borderWidth: 1,
-    gap: 8,
-    marginBottom: 16,
+    alignItems: "center", padding: 20, borderRadius: 12, borderWidth: 1,
+    gap: 6, marginBottom: 16,
   },
   avatar: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
   avatarText: { fontSize: 22, fontFamily: "Inter_700Bold" },
-  name: { fontSize: 18, fontFamily: "Inter_700Bold" },
-  roleChip: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 },
+  name: { fontSize: 18, fontFamily: "Inter_700Bold", marginTop: 4 },
+  email: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  roleChip: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10, marginTop: 4 },
   roleChipText: { color: "#fff", fontSize: 10, fontFamily: "Inter_700Bold", letterSpacing: 0.5 },
   profileMeta: { fontSize: 12, fontFamily: "Inter_400Regular" },
   btn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-    padding: 14,
-    borderWidth: 1,
-    borderRadius: 10,
-    marginBottom: 8,
+    flexDirection: "row", alignItems: "center", gap: 12, padding: 14,
+    borderWidth: 1, borderRadius: 10, marginBottom: 8,
   },
   btnText: { flex: 1, fontSize: 15, fontFamily: "Inter_500Medium" },
   footnote: { marginTop: 24, fontSize: 11, textAlign: "center", fontFamily: "Inter_400Regular" },

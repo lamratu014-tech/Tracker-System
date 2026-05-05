@@ -19,6 +19,8 @@ import { useStore } from "@/store/useStore";
 
 SplashScreen.preventAutoHideAsync();
 
+const PUBLIC_ROUTES = new Set(["login", "accept-invite"]);
+
 function AuthGate({ children }: { children: React.ReactNode }) {
   const colors = useColors();
   const hydrated = useStore((s) => s.hydrated);
@@ -33,15 +35,11 @@ function AuthGate({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const inLogin = segments[0] === "login" || segments[0] === undefined;
+  const first = segments[0];
+  const inPublic = first === undefined || PUBLIC_ROUTES.has(first as string);
 
-  if (!currentUserId && !inLogin) {
-    return <Redirect href="/login" />;
-  }
-  if (currentUserId && inLogin) {
-    return <Redirect href="/(tabs)" />;
-  }
-
+  if (!currentUserId && !inPublic) return <Redirect href="/login" />;
+  if (currentUserId && first === "login") return <Redirect href="/(tabs)" />;
   return <>{children}</>;
 }
 
@@ -50,48 +48,19 @@ function RootLayoutNav() {
     <AuthGate>
       <Stack>
         <Stack.Screen name="login" options={{ headerShown: false }} />
+        <Stack.Screen name="accept-invite" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="admin" options={{ headerShown: false }} />
-        <Stack.Screen
-          name="stream/[id]"
-          options={{ title: "Stream", headerBackTitle: "Back" }}
-        />
-        <Stack.Screen
-          name="team/[id]"
-          options={{ title: "Team", headerBackTitle: "Back" }}
-        />
-        <Stack.Screen
-          name="event/[id]"
-          options={{ title: "Event", headerBackTitle: "Back" }}
-        />
-        <Stack.Screen
-          name="project/[id]"
-          options={{ title: "Project", headerBackTitle: "Back" }}
-        />
-        <Stack.Screen
-          name="new-stream"
-          options={{ title: "New Stream", presentation: "modal", headerBackTitle: "Cancel" }}
-        />
-        <Stack.Screen
-          name="new-team"
-          options={{ title: "New Team", presentation: "modal", headerBackTitle: "Cancel" }}
-        />
-        <Stack.Screen
-          name="new-user"
-          options={{ title: "New User", presentation: "modal", headerBackTitle: "Cancel" }}
-        />
-        <Stack.Screen
-          name="new-project"
-          options={{ title: "New Project", presentation: "modal", headerBackTitle: "Cancel" }}
-        />
-        <Stack.Screen
-          name="new-milestone"
-          options={{ title: "New Milestone", presentation: "modal", headerBackTitle: "Cancel" }}
-        />
-        <Stack.Screen
-          name="new-event"
-          options={{ title: "New Event", presentation: "modal", headerBackTitle: "Cancel" }}
-        />
+        <Stack.Screen name="stream/[id]" options={{ title: "Stream", headerBackTitle: "Back" }} />
+        <Stack.Screen name="team/[id]" options={{ title: "Team", headerBackTitle: "Back" }} />
+        <Stack.Screen name="event/[id]" options={{ title: "Event", headerBackTitle: "Back" }} />
+        <Stack.Screen name="project/[id]" options={{ title: "Project", headerBackTitle: "Back" }} />
+        <Stack.Screen name="new-stream" options={{ title: "New Stream", presentation: "modal", headerBackTitle: "Cancel" }} />
+        <Stack.Screen name="new-team" options={{ title: "New Team", presentation: "modal", headerBackTitle: "Cancel" }} />
+        <Stack.Screen name="new-user" options={{ title: "Invite User", presentation: "modal", headerBackTitle: "Cancel" }} />
+        <Stack.Screen name="new-project" options={{ title: "New Project", presentation: "modal", headerBackTitle: "Cancel" }} />
+        <Stack.Screen name="new-milestone" options={{ title: "New Milestone", presentation: "modal", headerBackTitle: "Cancel" }} />
+        <Stack.Screen name="new-event" options={{ title: "New Event", presentation: "modal", headerBackTitle: "Cancel" }} />
       </Stack>
     </AuthGate>
   );

@@ -11,7 +11,7 @@ import {
 } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
-import { canManageEverything, useCurrentUser, useStore } from "@/store/useStore";
+import { canManageStream, useCurrentUser, useStore } from "@/store/useStore";
 
 export default function NewTeamScreen() {
   const colors = useColors();
@@ -22,8 +22,18 @@ export default function NewTeamScreen() {
   const users = useStore((s) => s.users);
   const addTeam = useStore((s) => s.addTeam);
 
+  const allowedStreams = useMemo(
+    () => streams.filter((s) => canManageStream(me, s.id)),
+    [streams, me],
+  );
+
+  const initialStreamId =
+    params.streamId && allowedStreams.some((s) => s.id === params.streamId)
+      ? params.streamId
+      : allowedStreams[0]?.id ?? "";
+
   const [name, setName] = useState("");
-  const [streamId, setStreamId] = useState<string>(params.streamId || streams[0]?.id || "");
+  const [streamId, setStreamId] = useState<string>(initialStreamId);
   const [leaderId, setLeaderId] = useState<string | null>(null);
 
   const leaderOptions = useMemo(
@@ -31,17 +41,22 @@ export default function NewTeamScreen() {
     [users],
   );
 
-  if (!canManageEverything(me)) {
+  if (allowedStreams.length === 0) {
     return (
       <View style={[styles.gate, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.mutedForeground }}>Only admins can create teams.</Text>
+        <Text style={{ color: colors.mutedForeground }}>
+          You don't have permission to create teams.
+        </Text>
       </View>
     );
   }
 
   function save() {
     if (!name.trim()) return Alert.alert("Name required", "Please enter a team name.");
-    if (!streamId) return Alert.alert("Stream required", "Pick a stream to put this team in.");
+    if (!streamId) return Alert.alert("Stream required", "Pick a stream.");
+    if (!canManageStream(me, streamId)) {
+      return Alert.alert("Not allowed", "You can't add teams to that stream.");
+    }
     const created = addTeam(streamId, { name: name.trim(), leaderId });
     if (created) router.back();
     else Alert.alert("Error", "Could not create team.");
@@ -61,13 +76,15 @@ export default function NewTeamScreen() {
 
       <Text style={[styles.label, { color: colors.mutedForeground }]}>Stream *</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-        {streams.map((s) => (
+        {allowedStreams.map((s) => (
           <TouchableOpacity
             key={s.id}
             style={[styles.chip, { borderColor: colors.border, backgroundColor: streamId === s.id ? colors.primary : colors.muted }]}
             onPress={() => setStreamId(s.id)}
           >
-            <Text style={[styles.chipText, { color: streamId === s.id ? "#fff" : colors.foreground }]}>{s.name}</Text>
+            <Text style={[styles.chipText, { color: streamId === s.id ? "#fff" : colors.foreground }]}>
+              {s.name}
+            </Text>
           </TouchableOpacity>
         ))}
       </ScrollView>

@@ -16,12 +16,34 @@ import { isOverdue } from "@/models/types";
 import type { Milestone, Stream } from "@/models/types";
 import { useCurrentUser, useStore } from "@/store/useStore";
 
-function flattenMilestones(streams: Stream[]): Array<{ ms: Milestone; streamName: string; teamName: string; projectTitle: string; teamId: string }> {
-  const out: Array<{ ms: Milestone; streamName: string; teamName: string; projectTitle: string; teamId: string }> = [];
+interface MilestoneRowData {
+  ms: Milestone;
+  streamId: string;
+  streamName: string;
+  teamId: string;
+  teamName: string;
+  projectId: string;
+  projectTitle: string;
+}
+
+function flatten(streams: Stream[]): MilestoneRowData[] {
+  const out: MilestoneRowData[] = [];
   for (const s of streams) for (const t of s.teams) for (const p of t.projects) for (const m of p.milestones) {
-    out.push({ ms: m, streamName: s.name, teamName: t.name, projectTitle: p.title, teamId: t.id });
+    out.push({
+      ms: m,
+      streamId: s.id, streamName: s.name,
+      teamId: t.id, teamName: t.name,
+      projectId: p.id, projectTitle: p.title,
+    });
   }
   return out;
+}
+
+function greeting(): string {
+  const h = new Date().getHours();
+  if (h < 12) return "Good morning,";
+  if (h < 18) return "Good afternoon,";
+  return "Good evening,";
 }
 
 export default function DashboardScreen() {
@@ -33,57 +55,64 @@ export default function DashboardScreen() {
   const events = useStore((s) => s.events);
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  const allMilestones = useMemo(() => flattenMilestones(streams), [streams]);
+  const all = useMemo(() => flatten(streams), [streams]);
 
-  const visibleMilestones = useMemo(() => {
+  const visible = useMemo(() => {
     if (!me) return [];
-    if (me.role === "admin") return allMilestones;
-    if (me.role === "leader") return allMilestones; // leaders can view all
-    if (me.role === "member") return me.teamId ? allMilestones.filter((x) => x.teamId === me.teamId) : [];
+    if (me.role === "admin") return all;
+    if (me.role === "stream_overseer") return all.filter((x) => x.streamId === me.streamId);
+    if (me.role === "leader") return all.filter((x) => x.teamId === me.teamId);
     return [];
-  }, [allMilestones, me]);
+  }, [all, me]);
+
+  const visibleEvents = useMemo(() => {
+    if (!me) return [];
+    if (me.role === "admin") return events;
+    if (me.role === "stream_overseer") {
+      return events.filter((e) => !e.linkedStreamId || e.linkedStreamId === me.streamId);
+    }
+    if (me.role === "leader") {
+      return events.filter((e) => !e.linkedTeamId || e.linkedTeamId === me.teamId);
+    }
+    return events;
+  }, [events, me]);
 
   const stats = useMemo(() => {
-    const total = visibleMilestones.length;
-    const completed = visibleMilestones.filter((x) => x.ms.status === "completed").length;
-    const overdue = visibleMilestones.filter((x) => isOverdue(x.ms)).length;
-    const today = visibleMilestones.filter((x) => {
+    const total = visible.length;
+    const completed = visible.filter((x) => x.ms.status === "completed").length;
+    const overdue = visible.filter((x) => isOverdue(x.ms)).length;
+    const today = visible.filter((x) => {
       const d = new Date(x.ms.deadline);
-      const now = new Date();
-      return d.toDateString() === now.toDateString() && x.ms.status !== "completed";
+      return d.toDateString() === new Date().toDateString() && x.ms.status !== "completed";
     }).length;
     return { total, completed, overdue, today };
-  }, [visibleMilestones]);
+  }, [visible]);
 
   const upcomingEvents = useMemo(() => {
     const now = Date.now();
-    return [...events]
+    return [...visibleEvents]
       .filter((e) => new Date(e.fullDateTime).getTime() >= now)
       .sort((a, b) => +new Date(a.fullDateTime) - +new Date(b.fullDateTime))
       .slice(0, 3);
-  }, [events]);
+  }, [visibleEvents]);
 
-  const overdueItems = visibleMilestones.filter((x) => isOverdue(x.ms)).slice(0, 5);
-  const dueToday = visibleMilestones.filter((x) => {
+  const overdueItems = visible.filter((x) => isOverdue(x.ms)).slice(0, 5);
+  const dueToday = visible.filter((x) => {
     const d = new Date(x.ms.deadline);
     return d.toDateString() === new Date().toDateString() && x.ms.status !== "completed";
   });
 
   if (!me) return null;
-  const showFab = me.role !== "member";
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
       <ScrollView contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 12, paddingBottom: 100 }]}>
-        <Text style={[styles.greeting, { color: colors.mutedForeground }]}>
-          {greeting()}
-        </Text>
+        <Text style={[styles.greeting, { color: colors.mutedForeground }]}>{greeting()}</Text>
         <Text style={[styles.title, { color: colors.foreground }]}>{me.name}</Text>
         <Text style={[styles.role, { color: colors.primary }]}>
-          {me.role.toUpperCase()}
+          {me.role.replace("_", " ").toUpperCase()}
         </Text>
 
-        {/* stat tiles */}
         <View style={styles.tiles}>
           <Tile label="Total" value={stats.total} color={colors.primary} icon="flag" />
           <Tile label="Today" value={stats.today} color="#F59E0B" icon="clock" />
@@ -91,7 +120,6 @@ export default function DashboardScreen() {
           <Tile label="Done" value={stats.completed} color="#059669" icon="check-circle" />
         </View>
 
-        {/* overdue */}
         {overdueItems.length > 0 ? (
           <Section title="Overdue">
             {overdueItems.map((x) => (
@@ -101,13 +129,12 @@ export default function DashboardScreen() {
                 sub={`${x.streamName} · ${x.teamName} · ${x.projectTitle}`}
                 badge="Overdue"
                 badgeColor="#DC2626"
-                onPress={() => router.push({ pathname: "/project/[id]", params: { id: findProjectIdForMilestone(streams, x.ms.id) ?? "" } })}
+                onPress={() => router.push({ pathname: "/project/[id]", params: { id: x.projectId } })}
               />
             ))}
           </Section>
         ) : null}
 
-        {/* due today */}
         {dueToday.length > 0 ? (
           <Section title="Due Today">
             {dueToday.map((x) => (
@@ -117,13 +144,12 @@ export default function DashboardScreen() {
                 sub={`${x.streamName} · ${x.teamName} · ${x.projectTitle}`}
                 badge="Today"
                 badgeColor="#F59E0B"
-                onPress={() => router.push({ pathname: "/project/[id]", params: { id: findProjectIdForMilestone(streams, x.ms.id) ?? "" } })}
+                onPress={() => router.push({ pathname: "/project/[id]", params: { id: x.projectId } })}
               />
             ))}
           </Section>
         ) : null}
 
-        {/* upcoming events */}
         <Section title="Upcoming Events">
           {upcomingEvents.length === 0 ? (
             <Text style={[styles.empty, { color: colors.mutedForeground }]}>No upcoming events.</Text>
@@ -142,34 +168,18 @@ export default function DashboardScreen() {
         </Section>
       </ScrollView>
 
-      {showFab ? (
-        <TouchableOpacity
-          style={[styles.fab, { backgroundColor: colors.primary, bottom: insets.bottom + 90 }]}
-          onPress={() => setSheetOpen(true)}
-          activeOpacity={0.85}
-          accessibilityLabel="Create"
-        >
-          <Feather name="plus" size={24} color="#fff" />
-        </TouchableOpacity>
-      ) : null}
+      <TouchableOpacity
+        style={[styles.fab, { backgroundColor: colors.primary, bottom: insets.bottom + 90 }]}
+        onPress={() => setSheetOpen(true)}
+        activeOpacity={0.85}
+        accessibilityLabel="Create"
+      >
+        <Feather name="plus" size={24} color="#fff" />
+      </TouchableOpacity>
 
       <CreateActionSheet visible={sheetOpen} role={me.role} onClose={() => setSheetOpen(false)} />
     </View>
   );
-}
-
-function findProjectIdForMilestone(streams: Stream[], msId: string): string | null {
-  for (const s of streams) for (const t of s.teams) for (const p of t.projects) {
-    if (p.milestones.some((m) => m.id === msId)) return p.id;
-  }
-  return null;
-}
-
-function greeting(): string {
-  const h = new Date().getHours();
-  if (h < 12) return "Good morning,";
-  if (h < 18) return "Good afternoon,";
-  return "Good evening,";
 }
 
 function Tile({ label, value, color, icon }: { label: string; value: number; color: string; icon: string }) {
@@ -196,18 +206,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 function Row({
-  title,
-  sub,
-  badge,
-  badgeColor,
-  onPress,
-}: {
-  title: string;
-  sub: string;
-  badge?: string;
-  badgeColor?: string;
-  onPress?: () => void;
-}) {
+  title, sub, badge, badgeColor, onPress,
+}: { title: string; sub: string; badge?: string; badgeColor?: string; onPress?: () => void }) {
   const colors = useColors();
   return (
     <TouchableOpacity
@@ -238,15 +238,13 @@ const styles = StyleSheet.create({
   tileIcon: { width: 24, height: 24, borderRadius: 6, alignItems: "center", justifyContent: "center" },
   tileVal: { fontSize: 22, fontFamily: "Inter_700Bold" },
   tileLabel: { fontSize: 11, fontFamily: "Inter_500Medium" },
-  sectionTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5, opacity: 0.85 },
+  sectionTitle: {
+    fontSize: 14, fontFamily: "Inter_600SemiBold", marginBottom: 8,
+    textTransform: "uppercase", letterSpacing: 0.5, opacity: 0.85,
+  },
   row: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    padding: 12,
-    borderWidth: 1,
-    borderRadius: 10,
-    marginBottom: 6,
+    flexDirection: "row", alignItems: "center", gap: 10,
+    padding: 12, borderWidth: 1, borderRadius: 10, marginBottom: 6,
   },
   rowTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   rowSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
@@ -254,17 +252,9 @@ const styles = StyleSheet.create({
   badgeText: { fontSize: 10, fontFamily: "Inter_700Bold", letterSpacing: 0.4 },
   empty: { fontSize: 13, fontFamily: "Inter_400Regular", paddingVertical: 8, textAlign: "center" },
   fab: {
-    position: "absolute",
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 6,
+    position: "absolute", right: 20, width: 56, height: 56, borderRadius: 28,
+    alignItems: "center", justifyContent: "center",
+    shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 6,
+    shadowOffset: { width: 0, height: 4 }, elevation: 6,
   },
 });

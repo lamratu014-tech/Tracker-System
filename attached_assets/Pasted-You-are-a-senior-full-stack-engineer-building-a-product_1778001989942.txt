@@ -1,0 +1,338 @@
+You are a senior full-stack engineer building a production-grade Unified Operations & Planning Platform using React Native (Expo).
+
+This is NOT a prototype. It must function as a real internal enterprise operations system.
+
+Do not patch existing logic. Rebuild clean architecture with full working functionality.
+
+-----------------------------
+CORE PRINCIPLE
+-----------------------------
+Build a scalable operations system with:
+- Single source of truth (Zustand)
+- Fully functional CRUD across all modules
+- Strict role-based access control
+- Persistent storage (AsyncStorage)
+- Multi-user system with invitations
+- Real calendar system with full date selection
+- Clean modular architecture
+- No fake or non-functional UI
+
+Every button must perform a real action.
+
+-----------------------------
+TECH STACK
+-----------------------------
+- React Native (Expo)
+- Zustand (global state management)
+- AsyncStorage (persistence)
+- React Navigation
+
+-----------------------------
+SYSTEM STRUCTURE
+-----------------------------
+
+Streams → Teams → Projects → Milestones
++
+Users (login accounts)
++
+Members (non-login entities inside teams)
++
+Events (calendar system)
+
+-----------------------------
+DATA MODELS
+-----------------------------
+
+users = [
+  {
+    id,
+    name,
+    email,
+    role: "admin" | "stream_overseer" | "leader",
+    active: boolean,
+    streamId (optional),
+    teamId (only for leaders)
+  }
+]
+
+members = [
+  {
+    id,
+    name,
+    teamId,
+    streamId
+  }
+]
+
+streams = [
+  {
+    id,
+    name,
+    teams: [
+      {
+        id,
+        name,
+        leaderId,
+        members: [],
+        projects: [
+          {
+            id,
+            title,
+            description,
+            milestones: [
+              {
+                id,
+                title,
+                status: "pending" | "in_progress" | "blocked" | "completed",
+                deadline: ISODate,
+                createdAt,
+                completedAt,
+                assignedTo
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
+
+events = [
+  {
+    id,
+    title,
+    description,
+    date,
+    time,
+    timestamp,
+    linkedStreamId,
+    linkedTeamId,
+    createdBy
+  }
+]
+
+-----------------------------
+AUTH SYSTEM (REAL MULTI-USER)
+-----------------------------
+- No profile selection login
+- Real user-based login system
+- Store loggedInUser in Zustand
+- Persist session in AsyncStorage
+- Only active + invited users can access system
+- Block access if inactive or not authorised
+
+-----------------------------
+INVITATION SYSTEM (ADMIN ONLY)
+-----------------------------
+Admin can:
+- Create users
+- Assign role (admin / stream_overseer / leader)
+- Assign stream + team
+- Mark user as invited
+
+System must:
+- Generate invite code or invite link
+- Activate user upon acceptance
+- Only invited users can log in
+
+-----------------------------
+ROLE SYSTEM (STREAM-GOVERNED MODEL)
+-----------------------------
+
+ADMIN:
+- Full system access
+- Manage everything across all streams
+- Create users, streams, teams, events
+
+STREAM OVERSEER:
+- Full access to ALL teams within assigned stream only
+- Can manage teams, projects, milestones, events inside stream
+- Cannot access other streams
+
+LEADER:
+- Access only assigned team
+- Can manage projects + milestones in that team only
+- Can view team members
+
+MEMBERS:
+- NOT users
+- Only data entries inside teams
+- Cannot log in
+
+IMPORTANT:
+Enforce permissions in BOTH:
+- UI visibility
+- Logic-level enforcement (mandatory security layer)
+
+-----------------------------
+GLOBAL "+" SYSTEM HUB
+-----------------------------
+The "+" button is a SYSTEM CREATION HUB.
+
+ADMIN sees:
+- Add Stream
+- Add Team
+- Add User (invite system)
+- Add Project
+- Add Milestone
+- Add Event
+
+STREAM OVERSEER sees:
+- Add Team
+- Add Project
+- Add Milestone
+- Add Event (within stream only)
+
+LEADER sees:
+- Add Project
+- Add Milestone
+- Add Event (team only)
+
+MEMBER:
+- No access
+
+All actions open modal forms and write directly to Zustand + persist.
+
+-----------------------------
+MILESTONE SYSTEM (WITH DEADLINES)
+-----------------------------
+Each milestone includes:
+- title
+- status
+- deadline (required)
+- assignedTo
+- createdAt
+- completedAt
+
+Rules:
+- deadline is mandatory
+- system calculates overdue state automatically
+
+Overdue logic:
+- currentDate > deadline AND status != completed
+
+Views:
+- All
+- Due today
+- Upcoming
+- Overdue
+- Completed
+
+UI must highlight overdue milestones clearly.
+
+-----------------------------
+EVENT + CALENDAR SYSTEM
+-----------------------------
+- Full date picker (any date allowed)
+- Time picker required
+- Events linked optionally to stream/team
+
+Calendar must include:
+- Monthly grid view
+- Events displayed on correct dates
+- Tap day → view events
+- Tap event → details
+
+Events appear in:
+- calendar view
+- stream context
+- team context
+
+-----------------------------
+STREAM SYSTEM
+-----------------------------
+- Streams are collapsible
+- Only one open at a time
+- Fully state-driven logic (no UI hacks)
+
+-----------------------------
+PERSISTENCE
+-----------------------------
+Use AsyncStorage for:
+- users
+- streams
+- events
+- session state
+
+Restore full app state on launch.
+
+-----------------------------
+STATE MANAGEMENT (ZUSTAND ONLY)
+-----------------------------
+Store:
+- users
+- members
+- loggedInUser
+- streams
+- events
+- selectedStream
+- selectedTeam
+- selectedProject
+
+Actions:
+- login/logout
+- add/edit/delete user
+- add/edit/delete stream
+- add/edit/delete team
+- add/edit/delete project
+- add/edit/delete milestone
+- add/edit/delete event
+
+No local state for core data.
+
+-----------------------------
+ADMIN DASHBOARD
+-----------------------------
+- Full system overview
+- Manage users and invitations
+- Manage streams, teams, events
+- Reassign leaders
+- View full hierarchy
+
+-----------------------------
+NAVIGATION
+-----------------------------
+- React Navigation must update instantly with state changes
+- No stale UI screens
+- Fully reactive system
+
+-----------------------------
+ERROR HANDLING
+-----------------------------
+- Wrap all actions in try/catch
+- Prevent crashes
+- Log meaningful errors
+
+-----------------------------
+CODE STRUCTURE
+-----------------------------
+/store
+/components
+/screens
+/utils
+/models
+
+No duplicated logic allowed.
+
+-----------------------------
+UI REQUIREMENTS
+-----------------------------
+- Clean modern layout
+- All buttons must function
+- Add loading states
+- Hide actions based on permissions
+
+-----------------------------
+SUCCESS CRITERIA
+-----------------------------
+The system must:
+- Support real multi-user access with invitations
+- Enforce stream-based role hierarchy
+- Fully support CRUD across all modules
+- Persist all data correctly
+- Have working collapsible streams
+- Have system-wide "+" creation hub
+- Have full calendar with real date/time selection
+- Support milestone deadlines + overdue tracking
+- Clearly separate users vs members
+- Behave like a real enterprise operations platform

@@ -11,7 +11,12 @@ import {
 } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
-import { canCreateForTeam, useCurrentUser, useStore } from "@/store/useStore";
+import {
+  canCreateForTeam,
+  canManageTeam,
+  useCurrentUser,
+  useStore,
+} from "@/store/useStore";
 
 export default function NewProjectScreen() {
   const colors = useColors();
@@ -24,14 +29,13 @@ export default function NewProjectScreen() {
   const allowedTeams = useMemo(() => {
     if (!me) return [];
     const flat = streams.flatMap((s) => s.teams.map((t) => ({ team: t, streamName: s.name })));
-    if (me.role === "admin") return flat;
-    if (me.role === "leader" && me.teamId) return flat.filter((x) => x.team.id === me.teamId);
-    return [];
+    return flat.filter((x) => canManageTeam(me, x.team.id, streams));
   }, [streams, me]);
 
-  const initialTeamId = params.teamId && allowedTeams.some((x) => x.team.id === params.teamId)
-    ? params.teamId
-    : (allowedTeams[0]?.team.id ?? "");
+  const initialTeamId =
+    params.teamId && allowedTeams.some((x) => x.team.id === params.teamId)
+      ? params.teamId
+      : allowedTeams[0]?.team.id ?? "";
 
   const [teamId, setTeamId] = useState<string>(initialTeamId);
   const [title, setTitle] = useState("");
@@ -48,7 +52,9 @@ export default function NewProjectScreen() {
   function save() {
     if (!title.trim()) return Alert.alert("Title required", "Please enter a project title.");
     if (!teamId) return Alert.alert("Team required", "Pick a team.");
-    if (!canCreateForTeam(me, teamId)) return Alert.alert("Not allowed", "You don't have permission to add a project to this team.");
+    if (!canCreateForTeam(me, teamId, streams)) {
+      return Alert.alert("Not allowed", "You don't have permission to add a project to this team.");
+    }
     const created = addProject(teamId, { title: title.trim(), description: desc.trim() });
     if (created) router.back();
     else Alert.alert("Error", "Could not create project.");
