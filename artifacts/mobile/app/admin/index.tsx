@@ -545,11 +545,11 @@ function CreateTeamModal({ visible, streams, onSave, onClose, colors, defaultStr
 export default function AdminPanelScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { users, currentUser, updateUserRole, inviteUser, deactivateUser, reactivateUser, deleteUser } = useAuth();
+  const { users, currentUser, createUser, updateUserRole, inviteUser, deactivateUser, reactivateUser, deleteUser } = useAuth();
   const { programme, streams, teams, activityLogs, createTeam, deleteTeam, createStream, deleteStream, updateProgramme, refreshActivity } = useData();
 
   const [tab, setTab] = useState<AdminTab>("users");
-  const [showInvite, setShowInvite] = useState(false);
+  const [showAddUser, setShowAddUser] = useState(false);
   const [roleModalUser, setRoleModalUser] = useState<AppUser | null>(null);
   const [showCreateStream, setShowCreateStream] = useState(false);
   const [showCreateTeam, setShowCreateTeam] = useState(false);
@@ -623,9 +623,9 @@ export default function AdminPanelScreen() {
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
               Users ({users.filter((u) => u.active).length} active / {users.length} total)
             </Text>
-            <TouchableOpacity style={[styles.addBtn, { backgroundColor: colors.primary }]} onPress={() => setShowInvite(true)}>
+            <TouchableOpacity style={[styles.addBtn, { backgroundColor: colors.primary }]} onPress={() => setShowAddUser(true)}>
               <Feather name="user-plus" size={14} color="#fff" />
-              <Text style={styles.addBtnText}>Invite</Text>
+              <Text style={styles.addBtnText}>Add User</Text>
             </TouchableOpacity>
           </View>
 
@@ -919,11 +919,12 @@ export default function AdminPanelScreen() {
       )}
 
       {/* ── Modals ────────────────────────────────────── */}
-      {showInvite && (
-        <InviteModal
+      {showAddUser && (
+        <AddUserModal
           teams={teams}
+          onCreateUser={createUser}
           onInvite={inviteUser}
-          onClose={() => setShowInvite(false)}
+          onClose={() => setShowAddUser(false)}
           colors={colors}
         />
       )}
@@ -1035,4 +1036,12 @@ const styles = StyleSheet.create({
   hintText: { fontSize: 12, fontFamily: "Inter_400Regular" },
   urlBox: { borderRadius: 8, borderWidth: 1, padding: 12, width: "100%" },
   urlText: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 18 },
+  // Mode toggle (AddUserModal)
+  modeToggleRow: { flexDirection: "row", borderBottomWidth: StyleSheet.hairlineWidth },
+  modeTab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: "transparent" },
+  modeTabText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  modeHintBox: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderRadius: 10, borderWidth: 1, padding: 12 },
+  modeHintText: { fontSize: 12, fontFamily: "Inter_400Regular", flex: 1, lineHeight: 18 },
+  passwordRow: { flexDirection: "row", gap: 8, alignItems: "center" },
+  eyeBtn: { width: 48, height: 48, borderRadius: 10, borderWidth: 1, alignItems: "center", justifyContent: "center" },
 });
