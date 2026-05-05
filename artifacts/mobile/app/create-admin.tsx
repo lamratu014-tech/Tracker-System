@@ -16,22 +16,35 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useColors } from "@/hooks/useColors";
 import { useStore } from "@/store/useStore";
 
-export default function LoginScreen() {
+export default function CreateAdminScreen() {
   const colors = useColors();
   const router = useRouter();
-  const loginByEmail = useStore((s) => s.loginByEmail);
-  const userCount = useStore((s) => s.users.length);
+  const inviteUser = useStore((s) => s.inviteUser);
+  const updateUser = useStore((s) => s.updateUser);
+  const loginById = useStore((s) => s.loginById);
 
+  const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   function submit() {
     setError(null);
-    const result = loginByEmail(email);
-    if (!result.ok) {
-      setError(result.error ?? "Login failed");
+    if (!name.trim()) return setError("Name is required");
+    if (!email.trim() || !email.includes("@")) return setError("Enter a valid email");
+
+    const user = inviteUser({
+      name: name.trim(),
+      email: email.trim(),
+      role: "admin",
+      streamId: null,
+      teamId: null,
+    });
+    if (!user) {
+      setError("Could not create account. The email may already be in use.");
       return;
     }
+    updateUser(user.id, { active: true });
+    loginById(user.id);
     router.replace("/(tabs)");
   }
 
@@ -42,13 +55,31 @@ export default function LoginScreen() {
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
+          <TouchableOpacity onPress={() => router.back()} style={styles.back} hitSlop={8}>
+            <Feather name="arrow-left" size={20} color={colors.foreground} />
+          </TouchableOpacity>
+
           <View style={[styles.brand, { backgroundColor: colors.primary }]}>
-            <Feather name="briefcase" size={28} color="#fff" />
+            <Feather name="shield" size={28} color="#fff" />
           </View>
-          <Text style={[styles.title, { color: colors.foreground }]}>Ops & Planning</Text>
-          <Text style={[styles.sub, { color: colors.mutedForeground }]}>Sign in to your account</Text>
+          <Text style={[styles.title, { color: colors.foreground }]}>Create admin account</Text>
+          <Text style={[styles.sub, { color: colors.mutedForeground }]}>
+            Sets up a full-access admin and signs you in immediately.
+          </Text>
 
           <View style={{ height: 24 }} />
+
+          <Text style={[styles.label, { color: colors.mutedForeground }]}>Full name</Text>
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+            value={name}
+            onChangeText={(v) => { setName(v); setError(null); }}
+            placeholder="e.g. Alex Morgan"
+            placeholderTextColor={colors.mutedForeground}
+            autoFocus
+          />
+
+          <View style={{ height: 12 }} />
 
           <Text style={[styles.label, { color: colors.mutedForeground }]}>Work email</Text>
           <TextInput
@@ -69,46 +100,20 @@ export default function LoginScreen() {
             keyboardType="email-address"
             returnKeyType="go"
             onSubmitEditing={submit}
-            autoFocus
           />
           {error ? <Text style={styles.error}>{error}</Text> : null}
 
           <TouchableOpacity
-            style={[styles.btn, { backgroundColor: email.trim() ? colors.primary : colors.border }]}
+            style={[styles.btn, { backgroundColor: name.trim() && email.trim() ? colors.primary : colors.border }]}
             onPress={submit}
-            disabled={!email.trim()}
+            disabled={!name.trim() || !email.trim()}
             activeOpacity={0.85}
           >
-            <Text style={styles.btnText}>Sign in</Text>
-          </TouchableOpacity>
-
-          <View style={styles.divider}>
-            <View style={[styles.line, { backgroundColor: colors.border }]} />
-            <Text style={[styles.dividerText, { color: colors.mutedForeground }]}>or</Text>
-            <View style={[styles.line, { backgroundColor: colors.border }]} />
-          </View>
-
-          <TouchableOpacity
-            style={[styles.btnGhost, { borderColor: colors.border }]}
-            activeOpacity={0.7}
-            onPress={() => router.push("/accept-invite")}
-          >
-            <Feather name="mail" size={14} color={colors.primary} />
-            <Text style={[styles.btnGhostText, { color: colors.primary }]}>I have an invite code</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.btnGhost, { borderColor: colors.border, marginTop: 8 }]}
-            activeOpacity={0.7}
-            onPress={() => router.push("/create-admin")}
-          >
-            <Feather name="shield" size={14} color={colors.primary} />
-            <Text style={[styles.btnGhostText, { color: colors.primary }]}>Create admin account</Text>
+            <Text style={styles.btnText}>Create & sign in</Text>
           </TouchableOpacity>
 
           <Text style={[styles.footnote, { color: colors.mutedForeground }]}>
-            {userCount} account{userCount !== 1 ? "s" : ""} on this device.
-            {"\n"}Demo logins: admin@ops.test · pat@ops.test · jess@ops.test · morgan@ops.test
+            Admins can invite stream overseers and team leaders from the Admin tab.
           </Text>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -119,25 +124,18 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1 },
   scroll: { padding: 20, paddingBottom: 60 },
+  back: { padding: 4, alignSelf: "flex-start", marginBottom: 8 },
   brand: {
     width: 64, height: 64, borderRadius: 16,
     alignItems: "center", justifyContent: "center", alignSelf: "center",
-    marginTop: 24, marginBottom: 16,
+    marginTop: 16, marginBottom: 16,
   },
-  title: { fontSize: 26, fontFamily: "Inter_700Bold", textAlign: "center" },
-  sub: { fontSize: 14, fontFamily: "Inter_400Regular", textAlign: "center", marginTop: 4 },
+  title: { fontSize: 24, fontFamily: "Inter_700Bold", textAlign: "center" },
+  sub: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center", marginTop: 6, lineHeight: 18 },
   label: { fontSize: 12, fontFamily: "Inter_500Medium", marginBottom: 6 },
   input: { padding: 14, borderRadius: 10, borderWidth: 1, fontSize: 15, fontFamily: "Inter_400Regular" },
   error: { color: "#DC2626", fontSize: 12, fontFamily: "Inter_500Medium", marginTop: 6 },
   btn: { padding: 14, borderRadius: 10, alignItems: "center", marginTop: 16 },
   btnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  divider: { flexDirection: "row", alignItems: "center", gap: 8, marginVertical: 20 },
-  line: { flex: 1, height: 1 },
-  dividerText: { fontSize: 11, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 },
-  btnGhost: {
-    flexDirection: "row", alignItems: "center", justifyContent: "center",
-    gap: 8, padding: 14, borderRadius: 10, borderWidth: 1,
-  },
-  btnGhostText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  footnote: { marginTop: 24, fontSize: 11, textAlign: "center", fontFamily: "Inter_400Regular", lineHeight: 16 },
+  footnote: { marginTop: 16, fontSize: 11, textAlign: "center", fontFamily: "Inter_400Regular", lineHeight: 16 },
 });
