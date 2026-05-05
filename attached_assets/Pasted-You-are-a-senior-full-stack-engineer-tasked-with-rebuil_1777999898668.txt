@@ -1,0 +1,251 @@
+You are a senior full-stack engineer tasked with rebuilding a Unified Operations & Planning Platform.
+
+This is NOT a patch job. Discard fragile logic and rebuild the system cleanly with a production-grade architecture.
+
+Your goal is a fully working internal operations platform for managing streams, teams, projects, milestones, users, and permissions.
+
+-----------------------------
+CORE PRINCIPLE
+-----------------------------
+Build a single, reliable system with:
+- One source of truth for all data
+- Strict role-based access control
+- Fully functional CRUD operations
+- Persistent storage
+- Clean scalable architecture
+
+Do not leave placeholder logic or non-functional UI elements.
+
+If something is unclear, implement a sensible production standard solution.
+
+-----------------------------
+TECH STACK
+-----------------------------
+- React Native (Expo)
+- Zustand for state management
+- AsyncStorage for persistence
+- React Navigation for routing
+
+-----------------------------
+DATA MODEL (MANDATORY STRUCTURE)
+-----------------------------
+streams = [
+  {
+    id,
+    name,
+    teams: [
+      {
+        id,
+        name,
+        leaderId,
+        members: [
+          { id, name }
+        ],
+        projects: [
+          {
+            id,
+            title,
+            description,
+            milestones: [
+              {
+                id,
+                title,
+                completed
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
+
+users = [
+  {
+    id,
+    name,
+    role: "admin" | "leader" | "member",
+    postcode,
+    password,
+    teamId
+  }
+]
+
+-----------------------------
+AUTH SYSTEM
+-----------------------------
+Login must use:
+- postcode
+- password
+
+Rules:
+- Validate against local user dataset
+- Store session in Zustand + AsyncStorage
+- Persist login across app restarts
+- Block access if not authenticated
+
+-----------------------------
+ROLE SYSTEM (STRICT ENFORCEMENT)
+-----------------------------
+ADMIN:
+- Full access to all streams, teams, projects, milestones
+- Can edit all data
+- Can reassign leaders
+
+LEADER:
+- Can view all streams
+- Can ONLY edit their own team
+- Can create/edit projects and milestones within their team only
+
+MEMBER:
+- Can only view assigned team data
+- No editing permissions
+- No access to system controls
+
+IMPORTANT:
+Enforce permissions in BOTH:
+- UI (hide actions)
+- Logic (block unauthorized actions even if UI is bypassed)
+
+-----------------------------
+STATE MANAGEMENT (ZUSTAND ONLY)
+-----------------------------
+Create a central store containing:
+- users
+- currentUser
+- streams
+- selectedStream
+- selectedTeam
+- selectedProject
+
+All updates must go through store actions:
+- addStream
+- addTeam
+- addProject
+- addMilestone
+- updateItem
+- deleteItem
+- login/logout
+
+Do NOT use local component state for core data.
+
+-----------------------------
+GLOBAL "+" ACTION MENU (CRITICAL)
+-----------------------------
+The "+" button on the dashboard MUST function as a SYSTEM CREATION HUB.
+
+It must open a contextual action menu with:
+
+ADMIN:
+- Add New Stream
+- Add New Team
+- Add New User
+- Add Project
+- Add Milestone
+
+LEADER:
+- Add Project
+- Add Milestone
+- (Only within assigned team / stream context)
+
+MEMBER:
+- No access OR button hidden/disabled
+
+-----------------------------
+BEHAVIOUR RULES
+-----------------------------
+- "+" button opens a modal or action sheet (not navigation)
+- Each option opens its own form
+- All forms write directly to Zustand store
+- All changes persist via AsyncStorage
+
+IMPORTANT:
+Do NOT treat "+" as an event or calendar button. It is a SYSTEM CREATION HUB for the entire platform.
+
+-----------------------------
+FEATURE REQUIREMENTS
+-----------------------------
+
+1. STREAMS
+- Must be collapsible
+- Only one stream open at a time
+- Toggle must be reliable and bug-free
+
+2. TEAMS
+- Nested inside streams
+- Leaders assigned per team
+- Proper linking between user and team
+
+3. PROJECTS
+- Fully CRUD
+- Must update instantly in UI
+- Must persist
+
+4. MILESTONES
+- Nested under projects
+- Toggle completion status
+- Fully reactive updates
+
+5. ADMIN DASHBOARD
+- Rename streams
+- Reassign leaders
+- View full system structure
+- Manage all entities
+
+6. NAVIGATION
+- React Navigation must reflect state changes instantly
+- No stale screens or cached data issues
+
+7. PERSISTENCE
+- Use AsyncStorage for:
+  - user session
+  - full system state
+- Restore state on app launch
+
+8. ERROR HANDLING
+- Wrap all actions in try/catch
+- Prevent app crashes
+- Log meaningful errors
+
+-----------------------------
+CODE STRUCTURE (MANDATORY)
+-----------------------------
+Organise code into:
+
+/store
+/components
+/screens
+/utils
+/models
+
+No duplicated logic across files.
+
+-----------------------------
+UI REQUIREMENTS
+-----------------------------
+- Keep existing UI layout style
+- Improve responsiveness and clarity
+- Add loading states where needed
+- Ensure buttons only appear when permitted
+
+-----------------------------
+FINAL OUTPUT REQUIREMENT
+-----------------------------
+After completing the rebuild, provide:
+
+1. What was broken in the original architecture
+2. What you changed
+3. How data now flows through the system
+4. How permissions are enforced
+
+-----------------------------
+SUCCESS CRITERIA
+-----------------------------
+The final app must:
+- Fully allow creation of streams, teams, projects, milestones
+- Persist all data after refresh
+- Enforce roles correctly
+- Have working collapsible streams
+- Have a functioning "+" system creation hub
+- Have no non-functional buttons or UI elements
+- Behave like a real internal operations platform
