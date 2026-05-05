@@ -20,12 +20,18 @@ API contract: `lib/api-spec/openapi.yaml` covers the Stream→Team→Project→M
 - **leader** — Manage their own team only
 - **(member)** — NOT a login role. Members are roster-only entries on a team (top-level `members[]`)
 
-### Permission helpers (`store/useStore.ts`)
-- `canManageEverything(user)` — admin only
-- `canManageStream(user, streamId)` — admin OR stream_overseer of that stream
-- `canManageTeam(user, teamId, streams)` — admin OR overseer of containing stream OR leader of that team
-- `canCreateForTeam(user, teamId, streams)` — same as above; programme-wide creation requires admin
-- React hooks: `useCurrentUser()`, `useCanManageStream(streamId)`, `useCanManageTeam(teamId)`
+### Permission helpers
+- New API-backed helpers live in `lib/permissions/index.ts` and read identity from `useGetMe()` (the React Query hook). They're the way forward for migrated screens.
+  - `useMe()`, `useCanManageEverything()`, `useCanManageStream(streamId)`, `useCanManageTeam(team)`, `useCanCreateForTeam(team)` (team is `{ id, streamId? }`).
+  - Pure helpers `canManageEverything/Stream/Team/CreateForTeam` accept a `Principal = Pick<User, "id" | "role" | "streamId" | "teamId">`.
+- Legacy store-based helpers in `store/useStore.ts` (`canManageStream`, `canManageTeam`, `canCreateForTeam`, `useCurrentUser`, `useCanManageStream`, `useCanManageTeam`) remain in place during the per-screen migration and will be removed once every screen reads from the API.
+
+### Shared loading/error UI
+- `components/LoadingRow.tsx` and `components/ErrorBanner.tsx` — small reusable building blocks for the React Query loading/error states screens will need as they migrate.
+
+### Data layer migration status
+- React Query is wired (`QueryClientProvider` in `app/_layout.tsx`, defaults `retry: 1`, `refetchOnWindowFocus: false`).
+- Domain data (streams/teams/projects/milestones/events/members/team notes) is **still served from the Zustand store**; per-screen migration to generated React Query hooks is tracked as a separate task. Once that completes, the server collections and `seed/resetSeed` will be stripped from the store.
 
 ### Hierarchy
 ```
