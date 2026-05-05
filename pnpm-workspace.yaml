@@ -75,6 +75,22 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
+  # Security vulnerability fixes (force patched versions for transitive deps)
+  # picomatch <2.3.2 and >=4.0.0 <4.0.4: GHSA-c2c7-rcm5-vvqj, GHSA-3v7f-55p6-f55p
+  picomatch: "^4.0.4"
+  # path-to-regexp >=8.0.0 <8.4.0: GHSA-j3q9-mxjg-w52f, GHSA-27v5-c462-wpq7
+  path-to-regexp: "^8.4.2"
+  # lodash <=4.17.23: GHSA-r5fr-rjxr-66jc, GHSA-f23m-r3pf-42rh
+  lodash: "^4.18.1"
+  # yaml >=2.0.0 <2.8.3: GHSA-48c2-rrv3-qjmp
+  yaml: "^2.8.4"
+  # brace-expansion >=2.0.0 <2.0.3: GHSA-f886-m6hf-6m8v
+  brace-expansion: "^2.0.3"
+  # postcss <8.5.10: GHSA-qx2v-qp2m-jg93
+  postcss: "^8.5.10"
+  # uuid <14.0.0: GHSA-w5hq-g745-h8pq
+  uuid: "^14.0.0"
+
   # replit uses linux-x64 only, we can exclude all other platforms
   "esbuild>@esbuild/darwin-arm64": "-"
   "esbuild>@esbuild/darwin-x64": "-"
