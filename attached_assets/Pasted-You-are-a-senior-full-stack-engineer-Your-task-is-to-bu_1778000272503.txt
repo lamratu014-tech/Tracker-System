@@ -1,0 +1,286 @@
+You are a senior full-stack engineer.
+
+Your task is to build a fully functional Unified Operations & Planning Platform using React Native (Expo).
+
+This is NOT a prototype. It must behave like a real internal enterprise operations system.
+
+Do not patch existing code. Rebuild logic properly with clean architecture.
+
+-----------------------------
+CORE PRINCIPLE
+-----------------------------
+Build a production-style system with:
+- One source of truth (Zustand)
+- Fully working CRUD across all modules
+- Strict role-based permissions
+- Persistent storage (AsyncStorage)
+- Clean modular architecture
+- No placeholder or fake UI actions
+
+Everything in the UI must actually function.
+
+-----------------------------
+TECH STACK
+-----------------------------
+- React Native (Expo)
+- Zustand (global state)
+- AsyncStorage (persistence)
+- React Navigation
+
+-----------------------------
+SYSTEM ARCHITECTURE
+-----------------------------
+
+1. STREAMS (Top level structure)
+2. TEAMS (inside streams)
+3. PROJECTS (inside teams)
+4. MILESTONES (inside projects)
+5. EVENTS (calendar system)
+6. USERS (role-based system)
+
+-----------------------------
+DATA MODEL
+-----------------------------
+
+streams = [
+  {
+    id,
+    name,
+    teams: [
+      {
+        id,
+        name,
+        leaderId,
+        members: [{ id, name }],
+        projects: [
+          {
+            id,
+            title,
+            description,
+            milestones: [
+              {
+                id,
+                title,
+                status: "pending" | "in_progress" | "blocked" | "completed",
+                deadline: ISODate,
+                createdAt,
+                completedAt,
+                assignedTo
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
+
+events = [
+  {
+    id,
+    title,
+    description,
+    date,
+    time,
+    fullDateTime,
+    linkedStreamId,
+    linkedTeamId,
+    createdBy
+  }
+]
+
+users = [
+  {
+    id,
+    name,
+    role: "admin" | "leader" | "member",
+    teamId
+  }
+]
+
+-----------------------------
+AUTH SYSTEM (SIMPLE SESSION LOGIN)
+-----------------------------
+- User selects profile to log in
+- Store currentUser in Zustand
+- Persist session using AsyncStorage
+- Restore session on app launch
+- Block access if no user selected
+
+-----------------------------
+ROLE SYSTEM (STRICT ENFORCEMENT)
+-----------------------------
+
+ADMIN:
+- Full system access
+- Can create/edit/delete everything
+- Can manage users, teams, streams, events
+
+LEADER:
+- Can manage only their assigned team
+- Can create/edit projects and milestones in their team
+- Can view all streams
+
+MEMBER:
+- Read-only access to assigned team
+- No creation or editing rights
+
+IMPORTANT:
+Enforce permissions in:
+- UI (visibility control)
+- Logic (hard restrictions)
+
+-----------------------------
+GLOBAL "+" SYSTEM CREATION HUB
+-----------------------------
+
+The "+" button on dashboard must open a SYSTEM ACTION MENU (NOT event-only).
+
+ADMIN sees:
+- Add Stream
+- Add Team
+- Add User
+- Add Project
+- Add Milestone
+- Add Event
+
+LEADER sees:
+- Add Project
+- Add Milestone
+- Add Event (team-linked only)
+
+MEMBER:
+- No access or disabled button
+
+Each option opens a form modal.
+All actions write directly to Zustand and persist.
+
+-----------------------------
+MILESTONE SYSTEM (WITH DEADLINES)
+-----------------------------
+Each milestone must include:
+
+- title
+- status
+- deadline (required)
+- assignedTo
+
+Rules:
+- Deadline is mandatory
+- System must calculate overdue state
+- Overdue = current date > deadline AND not completed
+
+Views:
+- All milestones
+- Due today
+- Upcoming
+- Overdue
+- Completed
+
+UI must clearly highlight overdue items.
+
+-----------------------------
+EVENT / CALENDAR SYSTEM
+-----------------------------
+- Admin can create events via "+" hub
+- Events include date + time + linked stream/team
+- Must render in a calendar or chronological list
+- Events appear in both:
+  - global view
+  - linked team/stream context
+
+-----------------------------
+STREAMS (COLLAPSIBLE SYSTEM)
+-----------------------------
+- Streams must be collapsible
+- Only one stream open at a time
+- Toggle must be reliable and state-driven
+
+-----------------------------
+PERSISTENCE
+-----------------------------
+- Use AsyncStorage for:
+  - users
+  - currentUser session
+  - streams
+  - events
+- Restore full state on app startup
+
+-----------------------------
+STATE MANAGEMENT (ZUSTAND ONLY)
+-----------------------------
+Store must include:
+- users
+- currentUser
+- streams
+- events
+- selectedStream
+- selectedTeam
+- selectedProject
+
+Actions:
+- login/logout
+- add/edit/delete stream
+- add/edit/delete team
+- add/edit/delete project
+- add/edit/delete milestone
+- add/edit/delete event
+
+NO local state for core logic.
+
+-----------------------------
+ADMIN DASHBOARD
+-----------------------------
+- View full system hierarchy
+- Manage streams, teams, users, events
+- Reassign team leaders
+- Edit names and structure
+
+-----------------------------
+NAVIGATION
+-----------------------------
+- React Navigation must reflect state instantly
+- No stale screens
+- UI updates must be reactive
+
+-----------------------------
+ERROR HANDLING
+-----------------------------
+- Wrap all store actions in try/catch
+- Prevent crashes
+- Log meaningful errors
+
+-----------------------------
+CODE STRUCTURE
+-----------------------------
+Organise cleanly:
+
+/store
+/components
+/screens
+/utils
+/models
+
+No duplicated logic.
+
+-----------------------------
+UI REQUIREMENTS
+-----------------------------
+- Keep UI clean and modern
+- Add loading states
+- Ensure all buttons have real functionality
+- Hide actions based on permissions
+
+-----------------------------
+SUCCESS CRITERIA
+-----------------------------
+The final app must:
+- Fully function end-to-end
+- Support full CRUD across all modules
+- Persist data correctly
+- Enforce roles properly
+- Have working collapsible streams
+- Have a functioning system creation "+" hub
+- Include working events calendar system
+- Include milestone deadlines + overdue logic
+- Behave like a real enterprise operations platform

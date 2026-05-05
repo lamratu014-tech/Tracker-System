@@ -5,37 +5,41 @@ import {
   Inter_700Bold,
   useFonts,
 } from "@expo-google-fonts/inter";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Redirect, Stack, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import React, { useEffect } from "react";
+import { ActivityIndicator, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
-import { AuthProvider, useAuth } from "@/context/AuthContext";
-import { DataProvider } from "@/context/DataContext";
+import { useColors } from "@/hooks/useColors";
+import { useStore } from "@/store/useStore";
 
 SplashScreen.preventAutoHideAsync();
 
-const queryClient = new QueryClient();
-
 function AuthGate({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth();
+  const colors = useColors();
+  const hydrated = useStore((s) => s.hydrated);
+  const currentUserId = useStore((s) => s.currentUserId);
   const segments = useSegments();
 
-  if (isLoading) return null;
+  if (!hydrated) {
+    return (
+      <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
 
-  const inPublic =
-    segments[0] === "login" ||
-    segments[0] === "accept-invite" ||
-    segments[0] === "forgot-password" ||
-    segments[0] === "reset-password" ||
-    segments.length === 0;
+  const inLogin = segments[0] === "login" || segments[0] === undefined;
 
-  if (!isAuthenticated && !inPublic) {
+  if (!currentUserId && !inLogin) {
     return <Redirect href="/login" />;
+  }
+  if (currentUserId && inLogin) {
+    return <Redirect href="/(tabs)" />;
   }
 
   return <>{children}</>;
@@ -46,9 +50,6 @@ function RootLayoutNav() {
     <AuthGate>
       <Stack>
         <Stack.Screen name="login" options={{ headerShown: false }} />
-        <Stack.Screen name="accept-invite" options={{ headerShown: false }} />
-        <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
-        <Stack.Screen name="reset-password" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="admin" options={{ headerShown: false }} />
         <Stack.Screen
@@ -57,11 +58,11 @@ function RootLayoutNav() {
         />
         <Stack.Screen
           name="team/[id]"
-          options={{ title: "Team Workspace", headerBackTitle: "Back" }}
+          options={{ title: "Team", headerBackTitle: "Back" }}
         />
         <Stack.Screen
           name="event/[id]"
-          options={{ title: "Event Details", headerBackTitle: "Back" }}
+          options={{ title: "Event", headerBackTitle: "Back" }}
         />
         <Stack.Screen
           name="project/[id]"
@@ -76,12 +77,20 @@ function RootLayoutNav() {
           options={{ title: "New Team", presentation: "modal", headerBackTitle: "Cancel" }}
         />
         <Stack.Screen
-          name="new-event"
-          options={{ title: "New Event", presentation: "modal", headerBackTitle: "Cancel" }}
+          name="new-user"
+          options={{ title: "New User", presentation: "modal", headerBackTitle: "Cancel" }}
         />
         <Stack.Screen
           name="new-project"
           options={{ title: "New Project", presentation: "modal", headerBackTitle: "Cancel" }}
+        />
+        <Stack.Screen
+          name="new-milestone"
+          options={{ title: "New Milestone", presentation: "modal", headerBackTitle: "Cancel" }}
+        />
+        <Stack.Screen
+          name="new-event"
+          options={{ title: "New Event", presentation: "modal", headerBackTitle: "Cancel" }}
         />
       </Stack>
     </AuthGate>
@@ -107,17 +116,11 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <ErrorBoundary>
-        <QueryClientProvider client={queryClient}>
-          <AuthProvider>
-            <DataProvider>
-              <GestureHandlerRootView>
-                <KeyboardProvider>
-                  <RootLayoutNav />
-                </KeyboardProvider>
-              </GestureHandlerRootView>
-            </DataProvider>
-          </AuthProvider>
-        </QueryClientProvider>
+        <GestureHandlerRootView style={{ flex: 1 }}>
+          <KeyboardProvider>
+            <RootLayoutNav />
+          </KeyboardProvider>
+        </GestureHandlerRootView>
       </ErrorBoundary>
     </SafeAreaProvider>
   );

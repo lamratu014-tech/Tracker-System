@@ -1,994 +1,333 @@
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
-import { useLocalSearchParams } from "expo-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "expo-router";
+import React, { useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AddUserModal, FormModal, TeamPicker } from "@/components/AddUserModal";
-import { useAuth, type UserRole, type AppUser } from "@/context/AuthContext";
-import { useData, type Team, type Stream } from "@/context/DataContext";
+
 import { useColors } from "@/hooks/useColors";
+import type { Role } from "@/models/types";
+import { useCurrentUser, useStore } from "@/store/useStore";
 
-type AdminTab = "users" | "structure" | "activity" | "settings";
+type AdminTab = "users" | "structure" | "events";
 
-const ROLE_COLORS: Record<UserRole, string> = {
-  programme_lead: "#7C3AED",
-  team_lead: "#2563EB",
+const ROLE_LABEL: Record<Role, string> = {
+  admin: "Admin",
+  leader: "Leader",
+  member: "Member",
 };
 
-const ROLE_LABELS: Record<UserRole, string> = {
-  programme_lead: "Programme Lead",
-  team_lead: "Team Lead",
+const ROLE_COLOR: Record<Role, string> = {
+  admin: "#7C3AED",
+  leader: "#2563EB",
+  member: "#059669",
 };
 
-// ─── Role change + team assign modal ─────────────────────────────────────────
-function RoleModal({
-  user,
-  teams,
-  onSave,
-  onClose,
-  colors,
-}: {
-  user: AppUser;
-  teams: Team[];
-  onSave: (role: UserRole, teamId: string | null) => void;
-  onClose: () => void;
-  colors: any;
-}) {
-  const [role, setRole] = useState<UserRole>(user.role);
-  const [teamId, setTeamId] = useState<string | null>(user.teamId);
-
-  return (
-    <FormModal visible title={`Edit: ${user.name}`} onClose={onClose} colors={colors}>
-      <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }} keyboardShouldPersistTaps="handled">
-        <View>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Role</Text>
-          <View style={{ gap: 10, marginTop: 8 }}>
-            {(["programme_lead", "team_lead"] as UserRole[]).map((r) => (
-              <TouchableOpacity
-                key={r}
-                style={[styles.roleOption, { backgroundColor: role === r ? ROLE_COLORS[r] : colors.muted, borderColor: role === r ? ROLE_COLORS[r] : colors.border }]}
-                onPress={() => setRole(r)}
-                activeOpacity={0.8}
-              >
-                <View>
-                  <Text style={[styles.roleOptionLabel, { color: role === r ? "#fff" : colors.foreground }]}>{ROLE_LABELS[r]}</Text>
-                  <Text style={[styles.roleOptionDesc, { color: role === r ? "rgba(255,255,255,0.7)" : colors.mutedForeground }]}>
-                    {r === "programme_lead"
-                      ? "Full access across the entire programme"
-                      : "Manage own team's tasks, events, members"}
-                  </Text>
-                </View>
-                {role === r && <Feather name="check-circle" size={18} color="#fff" />}
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        <View>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-            Assign to Team {role === "programme_lead" ? "(optional)" : "(required for Team Lead)"}
-          </Text>
-          <View style={{ marginTop: 8 }}>
-            <TeamPicker teams={teams} selectedId={teamId} onSelect={setTeamId} colors={colors} allowNone />
-          </View>
-          {teams.length === 0 && (
-            <Text style={[styles.hintText, { color: colors.mutedForeground }]}>Create teams first in the Structure tab.</Text>
-          )}
-        </View>
-
-        <View style={styles.rowBtns}>
-          <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted }]} onPress={onClose}>
-            <Text style={[styles.btnText, { color: colors.foreground }]}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.btn, { backgroundColor: ROLE_COLORS[role] }]}
-            onPress={() => { onSave(role, teamId); onClose(); }}
-          >
-            <Text style={[styles.btnText, { color: "#fff" }]}>Save Changes</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </FormModal>
-  );
+function confirm(message: string, onYes: () => void) {
+  if (Platform.OS === "web") {
+    if (window.confirm(message)) onYes();
+  } else {
+    Alert.alert("Confirm", message, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Yes", style: "destructive", onPress: onYes },
+    ]);
+  }
 }
 
-// ─── Removed: UserFormFields and AddUserModal — now in @/components/AddUserModal
-// ─── Create stream modal ──────────────────────────────────────────────────────
-function CreateStreamModal({ visible, programmeId, onSave, onClose, colors }: {
-  visible: boolean; programmeId: string; onSave: (name: string, desc: string) => void;
-  onClose: () => void; colors: any;
-}) {
-  const [name, setName] = useState("");
-  const [desc, setDesc] = useState("");
-  return (
-    <FormModal visible={visible} title="New Stream" onClose={onClose} colors={colors}>
-      <View style={{ padding: 20, gap: 14 }}>
-        <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Stream Name *</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
-            value={name} onChangeText={setName} placeholder="e.g. Marketing, Operations"
-            placeholderTextColor={colors.mutedForeground} autoFocus
-          />
-        </View>
-        <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Description (optional)</Text>
-          <TextInput
-            style={[styles.input, styles.multiline, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
-            value={desc} onChangeText={setDesc} placeholder="What does this stream cover?"
-            placeholderTextColor={colors.mutedForeground} multiline numberOfLines={2}
-          />
-        </View>
-        <View style={styles.rowBtns}>
-          <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted }]} onPress={() => { setName(""); setDesc(""); onClose(); }}>
-            <Text style={[styles.btnText, { color: colors.foreground }]}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.btn, { backgroundColor: name.trim() ? colors.primary : colors.border }]}
-            onPress={() => { if (!name.trim()) return; onSave(name.trim(), desc.trim()); setName(""); setDesc(""); onClose(); }}
-            disabled={!name.trim()}
-          >
-            <Text style={[styles.btnText, { color: "#fff" }]}>Create</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-    </FormModal>
-  );
-}
-
-// ─── Create team modal ────────────────────────────────────────────────────────
-function CreateTeamModal({ visible, streams, onSave, onClose, colors, defaultStreamId }: {
-  visible: boolean; streams: Stream[]; onSave: (name: string, func: string, streamId: string | null) => void;
-  onClose: () => void; colors: any; defaultStreamId?: string | null;
-}) {
-  const [name, setName] = useState("");
-  const [func, setFunc] = useState("");
-  const [streamId, setStreamId] = useState<string | null>(defaultStreamId ?? null);
-  return (
-    <FormModal visible={visible} title="New Team" onClose={onClose} colors={colors}>
-      <ScrollView contentContainerStyle={{ padding: 20, gap: 14 }} keyboardShouldPersistTaps="handled">
-        <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Team Name *</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
-            value={name} onChangeText={setName} placeholder="e.g. Creative Design, Data Analytics"
-            placeholderTextColor={colors.mutedForeground} autoFocus
-          />
-        </View>
-        <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Function / Role Label</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
-            value={func} onChangeText={setFunc} placeholder="e.g. Brand & Creative"
-            placeholderTextColor={colors.mutedForeground}
-          />
-        </View>
-        <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Stream (optional)</Text>
-          <View style={{ marginTop: 6 }}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-              <TouchableOpacity
-                style={[styles.teamPill, streamId === null && { backgroundColor: colors.primary, borderColor: colors.primary }]}
-                onPress={() => setStreamId(null)}
-              >
-                <Text style={[styles.teamPillText, { color: streamId === null ? "#fff" : colors.mutedForeground }]}>Unassigned</Text>
-              </TouchableOpacity>
-              {streams.map((s) => (
-                <TouchableOpacity
-                  key={s.id}
-                  style={[styles.teamPill, { borderColor: colors.border }, streamId === s.id && { backgroundColor: colors.primary, borderColor: colors.primary }]}
-                  onPress={() => setStreamId(s.id)}
-                >
-                  <Text style={[styles.teamPillText, { color: streamId === s.id ? "#fff" : colors.foreground }]}>{s.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-        <View style={styles.rowBtns}>
-          <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted }]} onPress={() => { setName(""); setFunc(""); onClose(); }}>
-            <Text style={[styles.btnText, { color: colors.foreground }]}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.btn, { backgroundColor: name.trim() ? colors.primary : colors.border }]}
-            onPress={() => { if (!name.trim()) return; onSave(name.trim(), func.trim(), streamId); setName(""); setFunc(""); onClose(); }}
-            disabled={!name.trim()}
-          >
-            <Text style={[styles.btnText, { color: "#fff" }]}>Create Team</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </FormModal>
-  );
-}
-
-// ─── Edit team modal ──────────────────────────────────────────────────────────
-function EditTeamModal({ visible, team, streams, onSave, onClose, colors }: {
-  visible: boolean; team: Team; streams: Stream[];
-  onSave: (patch: { name: string; functionLabel: string; streamId: string | null }) => void;
-  onClose: () => void; colors: any;
-}) {
-  const [name, setName] = useState(team.name);
-  const [func, setFunc] = useState(team.functionLabel ?? "");
-  const [streamId, setStreamId] = useState<string | null>(team.streamId ?? null);
-  return (
-    <FormModal visible={visible} title="Edit Team" onClose={onClose} colors={colors}>
-      <ScrollView contentContainerStyle={{ padding: 20, gap: 14 }} keyboardShouldPersistTaps="handled">
-        <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Team Name *</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
-            value={name} onChangeText={setName}
-            placeholderTextColor={colors.mutedForeground} autoFocus
-          />
-        </View>
-        <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Function / Role Label</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
-            value={func} onChangeText={setFunc} placeholder="e.g. Brand & Creative"
-            placeholderTextColor={colors.mutedForeground}
-          />
-        </View>
-        <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Stream</Text>
-          <View style={{ marginTop: 6 }}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-              <TouchableOpacity
-                style={[styles.teamPill, { borderColor: colors.border }, streamId === null && { backgroundColor: colors.primary, borderColor: colors.primary }]}
-                onPress={() => setStreamId(null)}
-              >
-                <Text style={[styles.teamPillText, { color: streamId === null ? "#fff" : colors.foreground }]}>Unassigned</Text>
-              </TouchableOpacity>
-              {streams.map((s) => (
-                <TouchableOpacity
-                  key={s.id}
-                  style={[styles.teamPill, { borderColor: colors.border }, streamId === s.id && { backgroundColor: colors.primary, borderColor: colors.primary }]}
-                  onPress={() => setStreamId(s.id)}
-                >
-                  <Text style={[styles.teamPillText, { color: streamId === s.id ? "#fff" : colors.foreground }]}>{s.name}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        </View>
-        <View style={styles.rowBtns}>
-          <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted }]} onPress={onClose}>
-            <Text style={[styles.btnText, { color: colors.foreground }]}>Cancel</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.btn, { backgroundColor: name.trim() ? colors.primary : colors.border }]}
-            onPress={() => { if (!name.trim()) return; onSave({ name: name.trim(), functionLabel: func.trim(), streamId }); }}
-            disabled={!name.trim()}
-          >
-            <Text style={[styles.btnText, { color: "#fff" }]}>Save Changes</Text>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </FormModal>
-  );
-}
-
-// ─── Main admin screen ────────────────────────────────────────────────────────
 export default function AdminPanelScreen() {
   const colors = useColors();
-  const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ tab?: string; highlight?: string }>();
-  const { users, currentUser, createUser, updateUserRole, inviteUser, deactivateUser, reactivateUser, deleteUser } = useAuth();
-  const { programme, streams, teams, activityLogs, createTeam, updateTeam, deleteTeam, createStream, deleteStream, updateProgramme, refreshActivity } = useData();
+  const router = useRouter();
+  const me = useCurrentUser();
+  const users = useStore((s) => s.users);
+  const streams = useStore((s) => s.streams);
+  const events = useStore((s) => s.events);
+  const updateUser = useStore((s) => s.updateUser);
+  const deleteUser = useStore((s) => s.deleteUser);
+  const deleteStream = useStore((s) => s.deleteStream);
+  const deleteTeam = useStore((s) => s.deleteTeam);
+  const deleteEvent = useStore((s) => s.deleteEvent);
 
-  const initialTab: AdminTab =
-    params.tab === "structure" || params.tab === "activity" || params.tab === "settings" ? params.tab : "users";
-  const [tab, setTab] = useState<AdminTab>(initialTab);
-  const [showAddUser, setShowAddUser] = useState(false);
-  const [recentlyAddedEmail, setRecentlyAddedEmail] = useState<string | null>(null);
-  const recentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingHighlightRef = useRef<{ email: string; type: "direct" | "invite" } | null>(null);
-  const usersScrollRef = useRef<ScrollView | null>(null);
-  const cardYMapRef = useRef<Record<string, number>>({});
+  const [tab, setTab] = useState<AdminTab>("structure");
+  const [expandedStreamId, setExpandedStreamId] = useState<string | null>(streams[0]?.id ?? null);
 
-  useEffect(() => {
-    if (params.tab === "users" || params.tab === "structure" || params.tab === "activity" || params.tab === "settings") {
-      setTab(params.tab as AdminTab);
+  if (me?.role !== "admin") return null;
+
+  function teamLabel(teamId: string | null): string {
+    if (!teamId) return "—";
+    for (const st of streams) {
+      const t = st.teams.find((x) => x.id === teamId);
+      if (t) return `${st.name} · ${t.name}`;
     }
-  }, [params.tab]);
-
-  useEffect(() => {
-    if (!params.highlight) return;
-    const email = params.highlight.toLowerCase();
-    setTab("users");
-    setSearchQuery("");
-    setRoleFilter("all");
-    setStatusFilter("all");
-    setRecentlyAddedEmail(email);
-    if (recentTimer.current) clearTimeout(recentTimer.current);
-    recentTimer.current = setTimeout(() => setRecentlyAddedEmail(null), 1500);
-    setTimeout(() => {
-      const y = cardYMapRef.current[email];
-      if (y !== undefined && usersScrollRef.current) {
-        usersScrollRef.current.scrollTo({ y: Math.max(0, y - 80), animated: true });
-      }
-    }, 200);
-  }, [params.highlight]);
-  const [roleModalUser, setRoleModalUser] = useState<AppUser | null>(null);
-  const [showCreateStream, setShowCreateStream] = useState(false);
-  const [showCreateTeam, setShowCreateTeam] = useState(false);
-  const [createTeamStreamId, setCreateTeamStreamId] = useState<string | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [roleFilter, setRoleFilter] = useState<"all" | UserRole>("all");
-  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
-  const [activityLoading, setActivityLoading] = useState(false);
-  const [editProgrammeName, setEditProgrammeName] = useState(false);
-  const [draftProgrammeName, setDraftProgrammeName] = useState(programme?.name ?? "");
-  const [editTeamId, setEditTeamId] = useState<string | null>(null);
-  const [expandedStructureStreamId, setExpandedStructureStreamId] = useState<string | null>(null);
-  const [unassignedStructureExpanded, setUnassignedStructureExpanded] = useState(false);
-  const didInitStructureExpandRef = useRef(false);
-  useEffect(() => {
-    if (!didInitStructureExpandRef.current && streams.length > 0) {
-      didInitStructureExpandRef.current = true;
-      setExpandedStructureStreamId(streams[0].id);
-    }
-  }, [streams]);
-  function toggleStructureStream(id: string) {
-    setUnassignedStructureExpanded(false);
-    setExpandedStructureStreamId((cur) => (cur === id ? null : id));
+    return "—";
   }
 
-  const botPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
-
-  const filteredUsers = useMemo(() => {
-    const q = searchQuery.toLowerCase().trim();
-    return users.filter((u) => {
-      if (roleFilter !== "all" && u.role !== roleFilter) return false;
-      if (statusFilter === "active" && !u.active) return false;
-      if (statusFilter === "inactive" && u.active) return false;
-      if (!q) return true;
-      return u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || u.department.toLowerCase().includes(q);
-    });
-  }, [users, searchQuery, roleFilter, statusFilter]);
-
-  function handleRoleSave(user: AppUser, role: UserRole, teamId: string | null) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    updateUserRole(user.id, role, teamId);
+  function changeRole(userId: string, currentRole: Role) {
+    const next: Role = currentRole === "admin" ? "leader" : currentRole === "leader" ? "member" : "admin";
+    updateUser(userId, { role: next });
   }
-
-  function confirmDeactivate(user: AppUser) {
-    Alert.alert("Deactivate User", `Suspend ${user.name}'s access?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Deactivate", style: "destructive", onPress: () => deactivateUser(user.id) },
-    ]);
-  }
-
-  function confirmDelete(user: AppUser) {
-    Alert.alert("Delete User", `Permanently delete ${user.name}? This cannot be undone.`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Delete", style: "destructive", onPress: () => deleteUser(user.id) },
-    ]);
-  }
-
-  function handleAddUserSuccess(info: { email: string; type: "direct" | "invite" }) {
-    pendingHighlightRef.current = info;
-  }
-
-  function handleAddUserClose() {
-    setShowAddUser(false);
-    const pending = pendingHighlightRef.current;
-    pendingHighlightRef.current = null;
-    if (!pending || pending.type !== "direct") return;
-
-    setTab("users");
-    setSearchQuery("");
-    setRoleFilter("all");
-    setStatusFilter("all");
-    setRecentlyAddedEmail(pending.email);
-
-    if (recentTimer.current) clearTimeout(recentTimer.current);
-    recentTimer.current = setTimeout(() => setRecentlyAddedEmail(null), 1500);
-
-    setTimeout(() => {
-      const y = cardYMapRef.current[pending.email];
-      if (y !== undefined && usersScrollRef.current) {
-        usersScrollRef.current.scrollTo({ y: Math.max(0, y - 80), animated: true });
-      }
-    }, 120);
-  }
-
-  useEffect(() => {
-    return () => {
-      if (recentTimer.current) clearTimeout(recentTimer.current);
-    };
-  }, []);
-
-  const TABS: { key: AdminTab; label: string; icon: string }[] = [
-    { key: "users", label: "Users", icon: "users" },
-    { key: "structure", label: "Structure", icon: "grid" },
-    { key: "activity", label: "Activity", icon: "activity" },
-    { key: "settings", label: "Settings", icon: "settings" },
-  ];
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Tab bar */}
-      <View style={[styles.tabBar, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        {TABS.map((t) => (
+      <View style={[styles.tabs, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
+        {(["structure", "users", "events"] as AdminTab[]).map((t) => (
           <TouchableOpacity
-            key={t.key}
-            style={[styles.tab, tab === t.key && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}
-            onPress={() => setTab(t.key)}
+            key={t}
+            style={[styles.tab, tab === t && { borderBottomColor: colors.primary }]}
+            onPress={() => setTab(t)}
           >
-            <Feather name={t.icon as any} size={15} color={tab === t.key ? colors.primary : colors.mutedForeground} />
-            <Text style={[styles.tabLabel, { color: tab === t.key ? colors.primary : colors.mutedForeground }]}>{t.label}</Text>
+            <Text style={[styles.tabText, { color: tab === t ? colors.primary : colors.mutedForeground }]}>
+              {t.charAt(0).toUpperCase() + t.slice(1)}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
 
-      {/* ── Users ────────────────────────────────────────── */}
-      {tab === "users" && (
-        <ScrollView ref={usersScrollRef} contentContainerStyle={{ padding: 16, paddingBottom: botPad }}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-              Users ({users.filter((u) => u.active).length} active / {users.length} total)
-            </Text>
-            <TouchableOpacity style={[styles.addBtn, { backgroundColor: colors.primary }]} onPress={() => setShowAddUser(true)}>
-              <Feather name="user-plus" size={14} color="#fff" />
-              <Text style={styles.addBtnText}>Add User</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Search */}
-          <View style={[styles.searchBar, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-            <Feather name="search" size={15} color={colors.mutedForeground} />
-            <TextInput
-              style={[styles.searchInput, { color: colors.foreground }]}
-              value={searchQuery} onChangeText={setSearchQuery}
-              placeholder="Search name, email or department…"
-              placeholderTextColor={colors.mutedForeground} clearButtonMode="while-editing"
-            />
-          </View>
-
-          {/* Filters */}
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 12 }} contentContainerStyle={{ gap: 6 }}>
-            {(["all", "programme_lead", "team_lead"] as const).map((r) => (
-              <TouchableOpacity key={r} style={[styles.chip, { backgroundColor: roleFilter === r ? (r === "all" ? colors.primary : ROLE_COLORS[r as UserRole]) : colors.muted }]} onPress={() => setRoleFilter(r)}>
-                <Text style={[styles.chipText, { color: roleFilter === r ? "#fff" : colors.mutedForeground }]}>
-                  {r === "all" ? "All Roles" : ROLE_LABELS[r as UserRole]}
-                </Text>
-              </TouchableOpacity>
-            ))}
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-            {(["all", "active", "inactive"] as const).map((s) => (
-              <TouchableOpacity key={s} style={[styles.chip, { backgroundColor: statusFilter === s ? (s === "active" ? "#059669" : s === "inactive" ? "#6B7280" : colors.primary) : colors.muted }]} onPress={() => setStatusFilter(s)}>
-                <Text style={[styles.chipText, { color: statusFilter === s ? "#fff" : colors.mutedForeground }]}>
-                  {s === "all" ? "All Status" : s.charAt(0).toUpperCase() + s.slice(1)}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-
-          {/* User cards */}
-          {filteredUsers.length === 0 ? (
-            <View style={[styles.empty, { backgroundColor: colors.muted }]}>
-              <Feather name="users" size={24} color={colors.mutedForeground} />
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No users match your filters</Text>
-            </View>
-          ) : (
-            filteredUsers.map((user) => {
-              const userTeam = teams.find((t) => t.id === user.teamId);
-              const isMe = currentUser?.id === user.id;
-              const isJustAdded = recentlyAddedEmail === user.email.toLowerCase();
-              return (
-                <View
-                  key={user.id}
-                  onLayout={(e) => {
-                    cardYMapRef.current[user.email.toLowerCase()] = e.nativeEvent.layout.y;
-                  }}
-                  style={[
-                    styles.userCard,
-                    { backgroundColor: colors.card, borderColor: colors.border },
-                    !user.active && styles.inactive,
-                    isJustAdded && styles.userCardJustAdded,
-                  ]}
-                >
-                  <View style={[styles.avatar, { backgroundColor: ROLE_COLORS[user.role] }]}>
-                    <Text style={styles.avatarText}>{user.initials}</Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <View style={styles.userTopRow}>
-                      <Text style={[styles.userName, { color: colors.foreground }]}>{user.name}</Text>
-                      {isMe && <View style={[styles.youTag, { backgroundColor: colors.primary + "20" }]}><Text style={[styles.youTagText, { color: colors.primary }]}>You</Text></View>}
-                      {!user.active && <View style={[styles.youTag, { backgroundColor: "#FEE2E2" }]}><Text style={[styles.youTagText, { color: "#DC2626" }]}>Suspended</Text></View>}
-                    </View>
-                    <Text style={[styles.userSub, { color: colors.mutedForeground }]}>{user.email}</Text>
-                    {user.department ? <Text style={[styles.userSub, { color: colors.mutedForeground }]}>{user.department}</Text> : null}
-                    <View style={styles.userTagRow}>
-                      <View style={[styles.roleBadge, { backgroundColor: ROLE_COLORS[user.role] + "15" }]}>
-                        <Text style={[styles.roleBadgeText, { color: ROLE_COLORS[user.role] }]}>{ROLE_LABELS[user.role]}</Text>
-                      </View>
-                      {userTeam && (
-                        <View style={[styles.teamBadge, { backgroundColor: colors.muted }]}>
-                          <Feather name="users" size={10} color={colors.mutedForeground} />
-                          <Text style={[styles.teamBadgeText, { color: colors.mutedForeground }]}>{userTeam.name}</Text>
-                        </View>
-                      )}
-                    </View>
-                  </View>
-                  {!isMe && (
-                    <View style={styles.userActions}>
-                      <TouchableOpacity
-                        style={[styles.actionBtn, { backgroundColor: colors.muted }]}
-                        onPress={() => setRoleModalUser(user)}
-                      >
-                        <Feather name="edit-2" size={14} color={colors.primary} />
-                      </TouchableOpacity>
-                      {user.active ? (
-                        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#FEF3C7" }]} onPress={() => confirmDeactivate(user)}>
-                          <Feather name="user-x" size={14} color="#D97706" />
-                        </TouchableOpacity>
-                      ) : (
-                        <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#D1FAE5" }]} onPress={() => reactivateUser(user.id)}>
-                          <Feather name="user-check" size={14} color="#059669" />
-                        </TouchableOpacity>
-                      )}
-                      <TouchableOpacity style={[styles.actionBtn, { backgroundColor: "#FEE2E2" }]} onPress={() => confirmDelete(user)}>
-                        <Feather name="trash-2" size={14} color="#DC2626" />
-                      </TouchableOpacity>
-                    </View>
-                  )}
-                </View>
-              );
-            })
-          )}
-        </ScrollView>
-      )}
-
-      {/* ── Structure (Streams with nested Teams) ─────── */}
-      {tab === "structure" && (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: botPad }}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-              Streams ({streams.length}) · Teams ({teams.length})
-            </Text>
-            <View style={{ flexDirection: "row", gap: 6 }}>
-              <TouchableOpacity style={[styles.addBtn, { backgroundColor: colors.muted }]} onPress={() => { setCreateTeamStreamId(null); setShowCreateTeam(true); }}>
-                <Feather name="users" size={14} color={colors.primary} />
-                <Text style={[styles.addBtnText, { color: colors.primary }]}>Team</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.addBtn, { backgroundColor: colors.primary }]} onPress={() => setShowCreateStream(true)}>
-                <Feather name="plus" size={14} color="#fff" />
-                <Text style={styles.addBtnText}>Stream</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {streams.length === 0 && teams.length === 0 && (
-            <View style={[styles.empty, { backgroundColor: colors.muted }]}>
-              <Feather name="grid" size={24} color={colors.mutedForeground} />
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No streams or teams yet. Create a stream to group teams.</Text>
-            </View>
-          )}
-
-          {streams.map((stream) => {
-            const streamTeams = teams.filter((t) => t.streamId === stream.id);
-            const expanded = expandedStructureStreamId === stream.id;
-            return (
-              <View key={stream.id} style={[styles.structureCard, { backgroundColor: colors.card, borderColor: colors.border, padding: 0 }]}>
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
+        {tab === "structure" ? (
+          <>
+            <View style={styles.sectionRow}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+                Streams ({streams.length}) · Teams ({streams.reduce((n, s) => n + s.teams.length, 0)})
+              </Text>
+              <View style={{ flexDirection: "row", gap: 6 }}>
                 <TouchableOpacity
-                  style={styles.collapseHeader}
-                  onPress={() => toggleStructureStream(stream.id)}
-                  activeOpacity={0.8}
+                  style={[styles.smallBtn, { backgroundColor: colors.muted }]}
+                  onPress={() => router.push("/new-team")}
                 >
-                  <Feather
-                    name={expanded ? "chevron-down" : "chevron-right"}
-                    size={18}
-                    color={colors.mutedForeground}
-                  />
-                  <View style={[styles.streamDot, { backgroundColor: colors.primary, marginTop: 0 }]} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.structureName, { color: colors.foreground }]}>{stream.name}</Text>
-                    {stream.description ? <Text style={[styles.structureSub, { color: colors.mutedForeground }]}>{stream.description}</Text> : null}
-                    <Text style={[styles.structureMeta, { color: colors.mutedForeground }]}>{streamTeams.length} team{streamTeams.length !== 1 ? "s" : ""}</Text>
-                  </View>
-                  <View style={styles.structureActions}>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, { backgroundColor: colors.primary + "15" }]}
-                      onPress={(e) => { e.stopPropagation(); setCreateTeamStreamId(stream.id); setShowCreateTeam(true); }}
-                    >
-                      <Feather name="plus" size={14} color={colors.primary} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.actionBtn, { backgroundColor: "#FEE2E2" }]}
-                      onPress={(e) => {
-                        e.stopPropagation();
-                        Alert.alert("Delete Stream", `Delete "${stream.name}"? Teams will become unassigned.`, [
-                          { text: "Cancel", style: "cancel" },
-                          { text: "Delete", style: "destructive", onPress: () => deleteStream(stream.id) },
-                        ]);
-                      }}
-                    >
-                      <Feather name="trash-2" size={14} color="#DC2626" />
-                    </TouchableOpacity>
-                  </View>
+                  <Feather name="users" size={12} color={colors.primary} />
+                  <Text style={[styles.smallBtnText, { color: colors.primary }]}>Team</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.smallBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => router.push("/new-stream")}
+                >
+                  <Feather name="plus" size={12} color="#fff" />
+                  <Text style={[styles.smallBtnText, { color: "#fff" }]}>Stream</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
 
-                {expanded && (
-                  <View style={styles.collapseBody}>
-                    {streamTeams.length === 0 ? (
-                      <View style={[styles.nestedEmpty, { backgroundColor: colors.muted }]}>
-                        <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No teams in this stream yet</Text>
+            {streams.length === 0 ? (
+              <View style={[styles.empty, { backgroundColor: colors.muted }]}>
+                <Text style={{ color: colors.mutedForeground }}>No streams yet.</Text>
+              </View>
+            ) : (
+              streams.map((stream) => {
+                const expanded = expandedStreamId === stream.id;
+                return (
+                  <View key={stream.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 0 }]}>
+                    <TouchableOpacity
+                      style={styles.cardHeader}
+                      onPress={() => setExpandedStreamId(expanded ? null : stream.id)}
+                      activeOpacity={0.85}
+                    >
+                      <Feather name={expanded ? "chevron-down" : "chevron-right"} size={16} color={colors.mutedForeground} />
+                      <View style={[styles.dot, { backgroundColor: colors.primary }]} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.cardTitle, { color: colors.foreground }]}>{stream.name}</Text>
+                        <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
+                          {stream.teams.length} team{stream.teams.length !== 1 ? "s" : ""}
+                        </Text>
                       </View>
-                    ) : (
-                      streamTeams.map((team) => {
-                        const teamUsers = users.filter((u) => u.teamId === team.id);
-                        const lead = teamUsers.find((u) => u.role === "team_lead");
-                        return (
-                          <View key={team.id} style={[styles.nestedTeamRow, { borderColor: colors.border }]}>
-                            <View style={[styles.teamIcon, { backgroundColor: colors.primary + "15" }]}>
+                      <View style={{ flexDirection: "row", gap: 4 }}>
+                        <TouchableOpacity
+                          style={styles.iconBtn}
+                          onPress={(e) => { e.stopPropagation(); router.push({ pathname: "/stream/[id]", params: { id: stream.id } }); }}
+                        >
+                          <Feather name="external-link" size={14} color={colors.primary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={styles.iconBtn}
+                          onPress={(e) => {
+                            e.stopPropagation();
+                            confirm(`Delete stream "${stream.name}"?`, () => deleteStream(stream.id));
+                          }}
+                        >
+                          <Feather name="trash-2" size={14} color="#DC2626" />
+                        </TouchableOpacity>
+                      </View>
+                    </TouchableOpacity>
+
+                    {expanded ? (
+                      <View style={styles.cardBody}>
+                        {stream.teams.length === 0 ? (
+                          <Text style={{ color: colors.mutedForeground, padding: 8, textAlign: "center" }}>
+                            No teams in this stream.
+                          </Text>
+                        ) : (
+                          stream.teams.map((team) => (
+                            <View key={team.id} style={[styles.subRow, { borderColor: colors.border }]}>
                               <Feather name="users" size={14} color={colors.primary} />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.structureName, { color: colors.foreground, fontSize: 14 }]}>{team.name}</Text>
-                              {team.functionLabel ? <Text style={[styles.structureSub, { color: colors.mutedForeground }]}>{team.functionLabel}</Text> : null}
-                              <Text style={[styles.structureMeta, { color: colors.mutedForeground }]}>
-                                {teamUsers.length} user{teamUsers.length !== 1 ? "s" : ""}
-                                {lead ? ` · Lead: ${lead.name}` : ""}
-                              </Text>
-                            </View>
-                            <View style={styles.structureActions}>
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.subTitle, { color: colors.foreground }]}>{team.name}</Text>
+                                <Text style={[styles.subMeta, { color: colors.mutedForeground }]}>
+                                  {team.projects.length} project{team.projects.length !== 1 ? "s" : ""}
+                                </Text>
+                              </View>
                               <TouchableOpacity
-                                style={[styles.actionBtn, { backgroundColor: colors.muted }]}
-                                onPress={() => setEditTeamId(team.id)}
+                                style={styles.iconBtn}
+                                onPress={() => router.push({ pathname: "/team/[id]", params: { id: team.id } })}
                               >
-                                <Feather name="edit-2" size={13} color={colors.primary} />
+                                <Feather name="external-link" size={13} color={colors.primary} />
                               </TouchableOpacity>
                               <TouchableOpacity
-                                style={[styles.actionBtn, { backgroundColor: "#FEE2E2" }]}
-                                onPress={() => Alert.alert("Delete Team", `Delete "${team.name}"?`, [
-                                  { text: "Cancel", style: "cancel" },
-                                  { text: "Delete", style: "destructive", onPress: () => deleteTeam(team.id) },
-                                ])}
+                                style={styles.iconBtn}
+                                onPress={() => confirm(`Delete team "${team.name}"?`, () => deleteTeam(team.id))}
                               >
                                 <Feather name="trash-2" size={13} color="#DC2626" />
                               </TouchableOpacity>
                             </View>
-                          </View>
-                        );
-                      })
-                    )}
-                  </View>
-                )}
-              </View>
-            );
-          })}
-
-          {/* Unassigned teams */}
-          {teams.some((t) => !t.streamId) && (
-            <View style={[styles.structureCard, { backgroundColor: colors.card, borderColor: colors.border, padding: 0 }]}>
-              <TouchableOpacity
-                style={styles.collapseHeader}
-                onPress={() => { setExpandedStructureStreamId(null); setUnassignedStructureExpanded((v) => !v); }}
-                activeOpacity={0.8}
-              >
-                <Feather
-                  name={unassignedStructureExpanded ? "chevron-down" : "chevron-right"}
-                  size={18}
-                  color={colors.mutedForeground}
-                />
-                <View style={[styles.streamDot, { backgroundColor: colors.mutedForeground, marginTop: 0 }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.structureName, { color: colors.foreground }]}>Unassigned Teams</Text>
-                  <Text style={[styles.structureMeta, { color: colors.mutedForeground }]}>
-                    {teams.filter((t) => !t.streamId).length} team{teams.filter((t) => !t.streamId).length !== 1 ? "s" : ""}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-              {unassignedStructureExpanded && (
-                <View style={styles.collapseBody}>
-                  {teams.filter((t) => !t.streamId).map((team) => {
-                    const teamUsers = users.filter((u) => u.teamId === team.id);
-                    const lead = teamUsers.find((u) => u.role === "team_lead");
-                    return (
-                      <View key={team.id} style={[styles.nestedTeamRow, { borderColor: colors.border }]}>
-                        <View style={[styles.teamIcon, { backgroundColor: colors.primary + "15" }]}>
-                          <Feather name="users" size={14} color={colors.primary} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                          <Text style={[styles.structureName, { color: colors.foreground, fontSize: 14 }]}>{team.name}</Text>
-                          {team.functionLabel ? <Text style={[styles.structureSub, { color: colors.mutedForeground }]}>{team.functionLabel}</Text> : null}
-                          <Text style={[styles.structureMeta, { color: colors.mutedForeground }]}>
-                            {teamUsers.length} user{teamUsers.length !== 1 ? "s" : ""}{lead ? ` · Lead: ${lead.name}` : ""}
-                          </Text>
-                        </View>
-                        <View style={styles.structureActions}>
-                          <TouchableOpacity
-                            style={[styles.actionBtn, { backgroundColor: colors.muted }]}
-                            onPress={() => setEditTeamId(team.id)}
-                          >
-                            <Feather name="edit-2" size={13} color={colors.primary} />
-                          </TouchableOpacity>
-                          <TouchableOpacity
-                            style={[styles.actionBtn, { backgroundColor: "#FEE2E2" }]}
-                            onPress={() => Alert.alert("Delete Team", `Delete "${team.name}"?`, [
-                              { text: "Cancel", style: "cancel" },
-                              { text: "Delete", style: "destructive", onPress: () => deleteTeam(team.id) },
-                            ])}
-                          >
-                            <Feather name="trash-2" size={13} color="#DC2626" />
-                          </TouchableOpacity>
-                        </View>
+                          ))
+                        )}
                       </View>
-                    );
-                  })}
-                </View>
-              )}
-            </View>
-          )}
-        </ScrollView>
-      )}
-
-      {/* ── Activity ──────────────────────────────────── */}
-      {tab === "activity" && (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: botPad }}>
-          <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Activity Log ({activityLogs.length})</Text>
-            <TouchableOpacity
-              style={[styles.addBtn, { backgroundColor: colors.muted }]}
-              onPress={async () => { setActivityLoading(true); await refreshActivity(); setActivityLoading(false); }}
-            >
-              {activityLoading ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="refresh-cw" size={14} color={colors.primary} />}
-              <Text style={[styles.addBtnText, { color: colors.primary }]}>Refresh</Text>
-            </TouchableOpacity>
-          </View>
-          {activityLogs.length === 0 ? (
-            <View style={[styles.empty, { backgroundColor: colors.muted }]}>
-              <Feather name="activity" size={24} color={colors.mutedForeground} />
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No activity recorded yet</Text>
-            </View>
-          ) : (
-            activityLogs.map((log) => {
-              const ic = log.actionType === "create" ? { bg: "#D1FAE5", fg: "#059669", name: "plus" }
-                : log.actionType === "delete" ? { bg: "#FEE2E2", fg: "#EF4444", name: "trash-2" }
-                : { bg: "#DBEAFE", fg: "#2563EB", name: "edit-2" };
-              return (
-                <View key={log.id} style={[styles.logRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                  <View style={[styles.logIcon, { backgroundColor: ic.bg }]}>
-                    <Feather name={ic.name as any} size={12} color={ic.fg} />
+                    ) : null}
                   </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.logTitle, { color: colors.foreground }]} numberOfLines={1}>
-                      {log.entityTitle ?? log.entityType}
-                    </Text>
-                    <Text style={[styles.logMeta, { color: colors.mutedForeground }]}>
-                      {log.userName ?? "System"} · {log.actionType} · {log.entityType} ·{" "}
-                      {new Date(log.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-                    </Text>
-                  </View>
-                </View>
-              );
-            })
-          )}
-        </ScrollView>
-      )}
+                );
+              })
+            )}
+          </>
+        ) : null}
 
-      {/* ── Settings ──────────────────────────────────── */}
-      {tab === "settings" && (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: botPad }}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground, marginBottom: 12 }]}>Programme Name</Text>
-          {programme && (
-            <View style={[styles.structureCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              {editProgrammeName ? (
-                <View style={{ gap: 10 }}>
-                  <TextInput
-                    style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
-                    value={draftProgrammeName} onChangeText={setDraftProgrammeName} autoFocus
-                  />
-                  <View style={styles.rowBtns}>
-                    <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted }]} onPress={() => { setDraftProgrammeName(programme.name); setEditProgrammeName(false); }}>
-                      <Text style={[styles.btnText, { color: colors.foreground }]}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary }]} onPress={() => { updateProgramme(programme.id, { name: draftProgrammeName }); setEditProgrammeName(false); }}>
-                      <Text style={[styles.btnText, { color: "#fff" }]}>Save</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <View style={styles.structureCardHeader}>
-                  <Text style={[styles.structureName, { color: colors.foreground, flex: 1, fontSize: 18 }]}>{programme.name}</Text>
-                  <TouchableOpacity style={[styles.actionBtn, { backgroundColor: colors.muted }]} onPress={() => { setDraftProgrammeName(programme.name); setEditProgrammeName(true); }}>
-                    <Feather name="edit-2" size={14} color={colors.primary} />
-                  </TouchableOpacity>
-                </View>
-              )}
+        {tab === "users" ? (
+          <>
+            <View style={styles.sectionRow}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Users ({users.length})</Text>
+              <TouchableOpacity
+                style={[styles.smallBtn, { backgroundColor: colors.primary }]}
+                onPress={() => router.push("/new-user")}
+              >
+                <Feather name="user-plus" size={12} color="#fff" />
+                <Text style={[styles.smallBtnText, { color: "#fff" }]}>User</Text>
+              </TouchableOpacity>
             </View>
-          )}
-
-          <Text style={[styles.sectionTitle, { color: colors.foreground, marginTop: 24, marginBottom: 12 }]}>Role Reference</Text>
-          <View style={[styles.structureCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            {(["programme_lead", "team_lead"] as UserRole[]).map((role, i) => (
-              <View key={role} style={[styles.roleRef, i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border }]}>
-                <View style={[styles.roleDot, { backgroundColor: ROLE_COLORS[role] }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.roleRefLabel, { color: colors.foreground }]}>{ROLE_LABELS[role]}</Text>
-                  <Text style={[styles.roleRefDesc, { color: colors.mutedForeground }]}>
-                    {role === "programme_lead"
-                      ? "Full system access: manage users, streams, teams, all projects and events across the programme. Can edit any team's work."
-                      : "Edit own team's tasks, milestones, events and member records. View other teams (read-only via Programme tab)."}
+            {users.map((u) => (
+              <View key={u.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 10 }]}>
+                <View style={[styles.avatar, { backgroundColor: ROLE_COLOR[u.role] + "22" }]}>
+                  <Text style={[styles.avatarText, { color: ROLE_COLOR[u.role] }]}>
+                    {u.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
                   </Text>
                 </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.cardTitle, { color: colors.foreground }]}>
+                    {u.name} {me?.id === u.id ? <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>(you)</Text> : null}
+                  </Text>
+                  <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
+                    {teamLabel(u.teamId)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={[styles.roleChip, { backgroundColor: ROLE_COLOR[u.role] }]}
+                  onPress={() => changeRole(u.id, u.role)}
+                  hitSlop={6}
+                >
+                  <Text style={styles.roleChipText}>{ROLE_LABEL[u.role]}</Text>
+                </TouchableOpacity>
+                {me?.id !== u.id ? (
+                  <TouchableOpacity
+                    style={styles.iconBtn}
+                    onPress={() => confirm(`Delete user "${u.name}"?`, () => deleteUser(u.id))}
+                  >
+                    <Feather name="trash-2" size={14} color="#DC2626" />
+                  </TouchableOpacity>
+                ) : null}
               </View>
             ))}
-          </View>
-        </ScrollView>
-      )}
+            <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+              Tap the role chip to cycle: Admin → Leader → Member → Admin.
+            </Text>
+          </>
+        ) : null}
 
-      {/* ── Modals ────────────────────────────────────── */}
-      <AddUserModal
-        visible={showAddUser}
-        onClose={handleAddUserClose}
-        onSuccess={handleAddUserSuccess}
-      />
-
-      {roleModalUser && (
-        <RoleModal
-          user={roleModalUser}
-          teams={teams}
-          onSave={(role, teamId) => handleRoleSave(roleModalUser, role, teamId)}
-          onClose={() => setRoleModalUser(null)}
-          colors={colors}
-        />
-      )}
-
-      {showCreateStream && programme && (
-        <CreateStreamModal
-          visible
-          programmeId={programme.id}
-          onSave={(name, desc) => createStream({ name, description: desc, programmeId: programme.id })}
-          onClose={() => setShowCreateStream(false)}
-          colors={colors}
-        />
-      )}
-
-      {showCreateTeam && (
-        <CreateTeamModal
-          visible
-          streams={streams}
-          defaultStreamId={createTeamStreamId}
-          onSave={(name, func, streamId) => createTeam({ name, functionLabel: func || undefined, streamId })}
-          onClose={() => setShowCreateTeam(false)}
-          colors={colors}
-        />
-      )}
-
-      {editTeamId && (() => {
-        const t = teams.find((x) => x.id === editTeamId);
-        if (!t) return null;
-        return (
-          <EditTeamModal
-            visible
-            team={t}
-            streams={streams}
-            onSave={async (patch) => {
-              try {
-                await updateTeam(t.id, patch);
-                setEditTeamId(null);
-              } catch (e) {
-                console.error("updateTeam failed", e);
-                Alert.alert("Error", "Could not update team.");
-              }
-            }}
-            onClose={() => setEditTeamId(null)}
-            colors={colors}
-          />
-        );
-      })()}
+        {tab === "events" ? (
+          <>
+            <View style={styles.sectionRow}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Events ({events.length})</Text>
+              <TouchableOpacity
+                style={[styles.smallBtn, { backgroundColor: colors.primary }]}
+                onPress={() => router.push("/new-event")}
+              >
+                <Feather name="plus" size={12} color="#fff" />
+                <Text style={[styles.smallBtnText, { color: "#fff" }]}>Event</Text>
+              </TouchableOpacity>
+            </View>
+            {events.length === 0 ? (
+              <View style={[styles.empty, { backgroundColor: colors.muted }]}>
+                <Text style={{ color: colors.mutedForeground }}>No events.</Text>
+              </View>
+            ) : (
+              events
+                .slice()
+                .sort((a, b) => +new Date(a.fullDateTime) - +new Date(b.fullDateTime))
+                .map((ev) => (
+                  <View key={ev.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 10 }]}>
+                    <View style={[styles.dateBox, { backgroundColor: colors.primary + "15" }]}>
+                      <Text style={[styles.dateBoxDay, { color: colors.primary }]}>
+                        {new Date(ev.fullDateTime).getDate()}
+                      </Text>
+                      <Text style={[styles.dateBoxMo, { color: colors.primary }]}>
+                        {new Date(ev.fullDateTime).toLocaleDateString([], { month: "short" })}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={1}>{ev.title}</Text>
+                      <Text style={[styles.cardSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                        {ev.time} · {teamLabel(ev.linkedTeamId)}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.iconBtn}
+                      onPress={() => router.push({ pathname: "/event/[id]", params: { id: ev.id } })}
+                    >
+                      <Feather name="external-link" size={14} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.iconBtn}
+                      onPress={() => confirm(`Delete event "${ev.title}"?`, () => deleteEvent(ev.id))}
+                    >
+                      <Feather name="trash-2" size={14} color="#DC2626" />
+                    </TouchableOpacity>
+                  </View>
+                ))
+            )}
+          </>
+        ) : null}
+      </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  tabBar: { flexDirection: "row", borderBottomWidth: StyleSheet.hairlineWidth },
-  tab: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 10, gap: 3, borderBottomWidth: 2, borderBottomColor: "transparent" },
-  tabLabel: { fontSize: 11, fontFamily: "Inter_500Medium" },
-  sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-  sectionTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  addBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 },
-  addBtnText: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  searchBar: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 10 },
-  searchInput: { flex: 1, fontSize: 14, fontFamily: "Inter_400Regular" },
-  chip: { borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 },
-  chipText: { fontSize: 12, fontFamily: "Inter_500Medium" },
-  divider: { width: 1, marginHorizontal: 2 },
-  userCard: { borderRadius: 12, borderWidth: 1, padding: 12, flexDirection: "row", alignItems: "flex-start", gap: 10, marginBottom: 8 },
-  userCardJustAdded: {
-    borderColor: "#10B981",
-    borderWidth: 2,
-    backgroundColor: "#ECFDF5",
-    shadowColor: "#10B981",
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 4,
-  },
-  inactive: { opacity: 0.6 },
-  avatar: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
-  avatarText: { color: "#fff", fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  userTopRow: { flexDirection: "row", alignItems: "center", gap: 6 },
-  userName: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  userSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 1 },
-  userTagRow: { flexDirection: "row", gap: 6, marginTop: 6, flexWrap: "wrap" },
-  roleBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
-  roleBadgeText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
-  teamBadge: { flexDirection: "row", alignItems: "center", gap: 4, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 3 },
-  teamBadgeText: { fontSize: 11, fontFamily: "Inter_400Regular" },
-  youTag: { borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 },
-  youTagText: { fontSize: 10, fontFamily: "Inter_600SemiBold" },
-  userActions: { gap: 6 },
-  actionBtn: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  structureCard: { borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 8, overflow: "hidden" },
-  structureCardHeader: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  collapseHeader: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14 },
-  collapseBody: { paddingHorizontal: 12, paddingBottom: 12, gap: 8 },
-  nestedTeamRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 10, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth },
-  nestedEmpty: { borderRadius: 8, padding: 14, alignItems: "center" },
-  streamDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
-  teamIcon: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  structureName: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  structureSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 1 },
-  structureMeta: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 3 },
-  structureActions: { flexDirection: "row", gap: 6 },
-  logRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, borderRadius: 10, borderWidth: 1, padding: 12, marginBottom: 6 },
-  logIcon: { width: 24, height: 24, borderRadius: 6, alignItems: "center", justifyContent: "center", marginTop: 1 },
-  logTitle: { fontSize: 13, fontFamily: "Inter_500Medium" },
-  logMeta: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
-  empty: { borderRadius: 12, padding: 24, alignItems: "center", gap: 8 },
-  emptyText: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center" },
-  roleRef: { padding: 14, flexDirection: "row", gap: 10, alignItems: "flex-start" },
-  roleDot: { width: 8, height: 8, borderRadius: 4, marginTop: 5 },
-  roleRefLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  roleRefDesc: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 3, lineHeight: 18 },
-  // Shared form styles
-  overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" },
-  sheet: { borderTopLeftRadius: 20, borderTopRightRadius: 20, borderWidth: 1, maxHeight: "90%", overflow: "hidden" },
-  sheetHandle: { width: 36, height: 4, borderRadius: 2, backgroundColor: "#C0C0C0", alignSelf: "center", marginTop: 10 },
-  sheetHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingTop: 16, paddingBottom: 8 },
-  sheetTitle: { fontSize: 17, fontFamily: "Inter_700Bold" },
-  field: { gap: 6 },
-  fieldLabel: { fontSize: 12, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 },
-  input: { borderRadius: 10, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontFamily: "Inter_400Regular" },
-  multiline: { height: 72, textAlignVertical: "top" },
-  roleOption: { borderRadius: 12, borderWidth: 1.5, padding: 14, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  roleOptionLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  roleOptionDesc: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
-  teamPill: { borderRadius: 20, borderWidth: 1.5, paddingHorizontal: 12, paddingVertical: 7, flexDirection: "row", alignItems: "center", gap: 4 },
-  teamPillText: { fontSize: 13, fontFamily: "Inter_500Medium" },
-  rowBtns: { flexDirection: "row", gap: 10 },
-  btn: { flex: 1, borderRadius: 10, paddingVertical: 13, alignItems: "center", flexDirection: "row", justifyContent: "center", gap: 6 },
-  btnText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  errorBox: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 8, borderWidth: 1, padding: 10 },
-  errorText: { color: "#DC2626", fontSize: 13, fontFamily: "Inter_400Regular", flex: 1 },
-  successIcon: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
-  successText: { fontSize: 15, fontFamily: "Inter_500Medium", textAlign: "center" },
-  hintText: { fontSize: 12, fontFamily: "Inter_400Regular" },
-  urlBox: { borderRadius: 8, borderWidth: 1, padding: 12, width: "100%" },
-  urlText: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 18 },
-  // Mode toggle (AddUserModal)
-  modeToggleRow: { flexDirection: "row", borderBottomWidth: StyleSheet.hairlineWidth },
-  modeTab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: 12, borderBottomWidth: 2, borderBottomColor: "transparent" },
-  modeTabText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  modeHintBox: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderRadius: 10, borderWidth: 1, padding: 12 },
-  modeHintText: { fontSize: 12, fontFamily: "Inter_400Regular", flex: 1, lineHeight: 18 },
-  passwordRow: { flexDirection: "row", gap: 8, alignItems: "center" },
-  eyeBtn: { width: 48, height: 48, borderRadius: 10, borderWidth: 1, alignItems: "center", justifyContent: "center" },
+  tabs: { flexDirection: "row", borderBottomWidth: StyleSheet.hairlineWidth },
+  tab: { flex: 1, paddingVertical: 12, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
+  tabText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
+  sectionTitle: { fontSize: 15, fontFamily: "Inter_700Bold" },
+  smallBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  smallBtnText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  card: { borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 8, overflow: "hidden" },
+  cardHeader: { flexDirection: "row", alignItems: "center", gap: 10, padding: 12 },
+  cardBody: { paddingHorizontal: 10, paddingBottom: 10, gap: 6 },
+  cardTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  cardSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  iconBtn: { width: 28, height: 28, borderRadius: 6, alignItems: "center", justifyContent: "center" },
+  subRow: { flexDirection: "row", alignItems: "center", gap: 8, padding: 8, borderRadius: 8, borderWidth: 1 },
+  subTitle: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  subMeta: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 1 },
+  empty: { padding: 16, borderRadius: 10, alignItems: "center" },
+  avatar: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
+  avatarText: { fontSize: 12, fontFamily: "Inter_700Bold" },
+  roleChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
+  roleChipText: { color: "#fff", fontSize: 10, fontFamily: "Inter_700Bold", letterSpacing: 0.4 },
+  hint: { fontSize: 11, fontFamily: "Inter_400Regular", textAlign: "center", marginTop: 12 },
+  dateBox: { width: 40, height: 40, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  dateBoxDay: { fontSize: 16, fontFamily: "Inter_700Bold" },
+  dateBoxMo: { fontSize: 9, fontFamily: "Inter_600SemiBold", textTransform: "uppercase" },
 });

@@ -1,168 +1,108 @@
 # Ops & Planning — Programme Operations & Planning Platform
 
 ## Overview
-A mobile Expo app (React Native) for organisations to manage a Programme → Stream → Team → Tasks/Calendar/Files hierarchy. Fully server-backed with strict role-based access control (RBAC), cross-team events, calendar, and backend-enforced permissions.
+A mobile Expo app (React Native) for organisations to manage a Stream → Team → Project → Milestone hierarchy plus a separate Events calendar. **Local-first**: all data lives in a Zustand global store persisted to AsyncStorage on the device. There are no backend reads or writes from the mobile app.
+
+The Express + PostgreSQL API server in `artifacts/api-server` is retained in the repo but is no longer called by the mobile app. It can be removed in a future cleanup pass if not needed.
 
 ## Architecture
 
 ### Stack
-- **Runtime**: Expo SDK 54, expo-router v6, React Native
-- **API Server**: Express 5 + PostgreSQL via Drizzle ORM
-- **Auth**: bcryptjs password hashing, 64-char hex session tokens in DB, Resend for invite emails
-- **Fonts**: @expo-google-fonts/inter (Inter 400/500/600/700)
+- **Runtime**: Expo SDK 54, expo-router v6, React Native 0.81
+- **State**: Zustand global store with `persist` middleware (AsyncStorage backend)
+- **Auth**: Profile-select login — pick a user from the seeded list; selection persists. No password, no email.
+- **Fonts**: @expo-google-fonts/inter (400/500/600/700)
 - **Icons**: @expo/vector-icons (Feather)
-- **State**: React Context (AuthContext, DataContext) — all API-backed, no local storage
 
-### Roles (2 tiers)
-- **programme_lead** — Full access: manage programme, streams, teams, users, all projects/events across the programme
-- **team_lead** — Manage own team's workspace (tasks, milestones, events, members/personnel)
+### Roles (3 tiers)
+- **admin** — Full access: create/edit/delete streams, teams, users, all projects/milestones/events
+- **leader** — Manage own team only: create/edit projects, milestones, and events scoped to their team
+- **member** — Read-only across visible content; no creation. The "+" hub is hidden for members.
 
-### Helper flags in AuthContext
-- `isProgrammeLead` — true only for programme_lead
-- `isTeamLead` — true for both programme_lead and team_lead (can edit any team data)
+### Permission helpers (`store/useStore.ts`)
+- `canManageEverything(user)` — admin only
+- `canManageTeam(user, teamId)` — admin OR leader of that team
+- `canCreateForTeam(user, teamId)` — admin OR leader for the matching team
 
 ### Hierarchy
 ```
-Programme
-└── Stream(s)  (e.g. Marketing, Operations, Technology)
-    └── Team(s)  (execution groups; teamId assigned to users)
-        ├── Tasks  (via Projects)
-        ├── Calendar Events
-        ├── Members (non-user Personnel records)
-        └── Projects / Notes
+Streams (e.g. Marketing, Operations)
+└── Teams (e.g. Brand & Creative)
+    └── Projects (e.g. Spring Campaign)
+        └── Milestones (status: pending | in_progress | blocked | completed; deadline; overdue calc)
+
+Events (separate)
+└── Linked optionally to a stream OR team (or programme-wide)
 ```
 
 ### App Structure
 ```
 artifacts/mobile/
 ├── app/
-│   ├── _layout.tsx          # Root layout; AuthProvider > DataProvider > AuthGate
-│   ├── login.tsx            # Sign-in / first-run programme lead setup screen
-│   ├── accept-invite.tsx    # Accept invite link → set name+password → auto-login
+│   ├── _layout.tsx              # Root layout; AuthGate redirects based on currentUserId + hydration
+│   ├── login.tsx                # Profile picker — tap a user to sign in
 │   ├── (tabs)/
-│   │   ├── _layout.tsx      # Bottom tab navigator (Dashboard/Programme/Calendar/Settings)
-│   │   ├── index.tsx        # Dashboard: role-split (PL sees programme stats; TL sees own team)
-│   │   ├── programme.tsx    # Programme hierarchy: Streams → Team cards (locked if not own)
-│   │   ├── calendar.tsx     # Monthly calendar + event list
-│   │   └── settings.tsx     # User profile (shows stream, team, role), PL shortcut, sign-out
+│   │   ├── _layout.tsx          # 4-tab bar: Dashboard / Programme / Calendar / Settings
+│   │   ├── index.tsx            # Dashboard: stat tiles + Overdue + Due Today + Upcoming Events; "+" FAB
+│   │   ├── programme.tsx        # Collapsible streams (only one open) → teams
+│   │   ├── calendar.tsx         # Chronological events with Upcoming/Past/All filter
+│   │   └── settings.tsx         # Profile card, role chip, sign-out, admin shortcut, reset to seed
 │   ├── admin/
-│   │   ├── _layout.tsx      # Programme Lead area layout + auth guard
-│   │   └── index.tsx        # PL Panel: Users / Structure (streams+teams) / Activity / Settings
-│   ├── stream/[id].tsx      # Stream detail: edit stream, list teams with progress
-│   ├── team/[id].tsx        # Team workspace: Tasks | Projects | Members | Notes tabs
-│   ├── event/[id].tsx       # Event detail: visibility-aware (full vs shared)
-│   ├── project/[id].tsx     # Project detail + role-gated edit actions + task/milestone tabs
-│   ├── new-stream.tsx       # New stream modal (PL only)
-│   ├── new-team.tsx         # New team modal (PL only)
-│   ├── new-event.tsx        # New event modal: internal + shared descriptions, team invites
-│   └── new-project.tsx      # New project modal: team selector + metadata
-├── context/
-│   ├── AuthContext.tsx      # API-backed auth: login/logout/setup/invite/role mgmt
-│   │                        # Exports: isProgrammeLead, isTeamLead
-│   └── DataContext.tsx      # API-backed: Programme, Streams, Teams, Personnel, Projects,
-│                            #             Tasks, Milestones, Events, Activity
-├── services/
-│   └── api.ts               # Typed fetch wrapper; token in SecureStore/localStorage
+│   │   ├── _layout.tsx          # Admin guard (role === "admin")
+│   │   └── index.tsx            # Three tabs: Structure / Users / Events with full CRUD
+│   ├── stream/[id].tsx          # Stream detail: rename, delete, list teams, add team
+│   ├── team/[id].tsx            # Team detail: rename, delete, assign leader, list projects + members
+│   ├── project/[id].tsx         # Project detail: edit, delete, milestone list with status pills
+│   ├── event/[id].tsx           # Event detail with delete (admin or creator)
+│   ├── new-stream.tsx           # Modal — admin only
+│   ├── new-team.tsx             # Modal — admin only; pick stream + optional leader
+│   ├── new-user.tsx             # Modal — admin only; name + role + optional team
+│   ├── new-project.tsx          # Modal — admin/leader; pick team
+│   ├── new-milestone.tsx        # Modal — admin/leader; pick project + status + deadline chips
+│   └── new-event.tsx            # Modal — admin/leader; date/time chips + linked team
 ├── components/
-│   ├── EventCard.tsx        # Visibility-aware: shows "Shared" badge for invited teams
-│   ├── ProjectCard.tsx      # Shows teamName + dueDate
-│   ├── TaskItem.tsx         # Shows assignedUserName or assignedMemberName
-│   └── StatusBadge.tsx
+│   ├── CreateActionSheet.tsx    # Bottom sheet "+" hub with role-gated options
+│   ├── MilestoneRow.tsx         # Status pill cycler + overdue highlight + delete
+│   ├── ErrorBoundary.tsx        # Kept from scaffold
+│   ├── ErrorFallback.tsx        # Kept from scaffold
+│   └── KeyboardAwareScrollViewCompat.tsx  # Kept from scaffold
+├── store/
+│   └── useStore.ts              # Zustand store: state, actions (try/catch wrapped), permission helpers,
+│                                # lookup helpers (findStream/Team/Project), useCurrentUser hook,
+│                                # AsyncStorage persistence under key "ops-planning-store-v1"
+├── models/
+│   └── types.ts                 # User, Stream, Team, Project, Milestone, AppEvent, isOverdue()
 ├── hooks/
-│   └── useColors.ts         # Light/dark palette from constants/colors.ts
+│   └── useColors.ts             # Light/dark palette
 └── constants/
-    └── colors.ts            # Design tokens
-
-artifacts/api-server/src/
-├── app.ts                   # Express app, CORS, pino-http, /api router
-├── index.ts                 # Listens on $PORT
-├── middlewares/
-│   └── requireAuth.ts       # requireAuth, requireProgrammeLead, requireTeamLead
-├── lib/
-│   ├── logger.ts            # pino structured logger
-│   ├── auth.ts              # hashPassword, verifyPassword, createSession, getUserFromToken
-│   └── activity.ts          # logActivity helper
-└── routes/
-    ├── index.ts             # Mounts all routers
-    ├── auth.ts              # /api/auth/* (login, setup, invite, accept-invite, forgot/reset)
-    ├── users.ts             # /api/users (programme_lead-only CRUD + role update)
-    ├── programmes.ts        # /api/programmes (get/update programme name)
-    ├── streams.ts           # /api/streams (CRUD + stream teams)
-    ├── teams.ts             # /api/teams (CRUD, assign-lead, personnel)
-    ├── projects.ts          # /api/projects (team-scoped CRUD)
-    ├── tasks.ts             # /api/tasks (project-scoped)
-    ├── milestones.ts        # /api/milestones (project-scoped)
-    ├── events.ts            # /api/events (visibility-filtered: full|shared)
-    └── activity.ts          # /api/activity (programme_lead sees all; team_lead sees own)
-
-lib/db/src/schema/
-├── users.ts                 # role: "programme_lead" | "team_lead"
-├── programmes.ts            # Single programme record (name)
-├── streams.ts               # programmeId, name, description
-├── teams.ts                 # streamId (nullable), name, functionLabel
-├── assigned_personnel.ts    # Non-user personnel per team (name, roleLabel)
-├── projects.ts              # teamId, title, status, phase, notes, color, tags, dueDate
-├── tasks.ts                 # projectId, status, priority, assignedToUserId | assignedToMemberId
-├── milestones.ts            # projectId, title, date, completed
-├── events.ts                # internalDescription, sharedDescription, invitedTeamIds
-├── event_invitations.ts     # teamId <-> eventId junction
-├── sessions.ts              # session tokens
-├── invites.ts               # invite tokens (role: programme_lead | team_lead)
-└── activity_logs.ts         # CRUD audit trail
+    └── colors.ts                # Design tokens
 ```
 
-## Key Concepts
+## "+" System Creation Hub
+On the Dashboard, a floating "+" FAB (hidden for members) opens a bottom sheet with role-gated options:
+- **admin**: Stream, Team, User, Project, Milestone, Event
+- **leader**: Project, Milestone, Event (scoped to their team)
+- **member**: hidden
 
-### Team Access Control
-- **Programme Lead**: sees all streams, teams, data across programme; team cards are all clickable
-- **Team Lead**: sees all streams/team cards for situational awareness; only their own team card is clickable (others show lock icon with status/progress visible but no internal data)
+Each option pushes a modal screen (`new-*.tsx`) that writes via a store action and dismisses on success.
 
-### Events: Cross-Team Sharing
-- `internalDescription` — visible only to creator team + programme_lead (visibility: "full")
-- `sharedDescription` — visible to all invited teams (visibility: "shared")
-- `invitedTeamIds[]` — controls which teams can see the event
+## Persistence & Reset
+- All store state (users, currentUserId, streams, events) is persisted to AsyncStorage on every change
+- On app launch the store rehydrates and `hydrated` flips to true; the AuthGate waits on this before routing
+- Settings → "Reset to seed data" wipes everything and re-seeds (admin only)
 
-### Task Assignment
-- `assignedToUserId` (nullable) — links to a registered user
-- `assignedToMemberId` (nullable) — links to assigned_personnel (non-user entity)
-- Exactly one or neither; TaskItem shows `assignedUserName` / `assignedMemberName`
-
-### Personnel (Members)
-- Non-user entities (no login) representing team members not registered in the system
-- Created per team by team leads
-- Can be assigned to tasks
-
-## API Endpoints
-- `POST /api/auth/setup` / `POST /api/auth/login` / `POST /api/auth/logout`
-- `POST /api/auth/invite` / `GET /api/auth/invite/:token` / `POST /api/auth/accept-invite`
-- `POST /api/auth/forgot-password` / `POST /api/auth/reset-password`
-- `GET /api/auth/me` / `GET /api/auth/status`
-- `GET /api/users` / `PATCH /api/users/:id/role` / `PATCH /api/users/:id/deactivate` / `DELETE /api/users/:id`
-- `GET /api/programmes` / `PATCH /api/programmes/:id`
-- `GET/POST /api/streams` / `GET/PATCH/DELETE /api/streams/:id` / `GET /api/streams/:id/teams`
-- `GET/POST /api/teams` / `GET/PATCH/DELETE /api/teams/:id` / `POST /api/teams/:id/assign-lead`
-- `GET/POST /api/teams/:id/personnel` / `PATCH/DELETE /api/personnel/:id`
-- `GET/POST /api/projects` / `GET/PATCH/DELETE /api/projects/:id`
-- `GET /api/projects/:id/tasks` / `POST /api/tasks` / `PATCH/DELETE /api/tasks/:id`
-- `GET /api/projects/:id/milestones` / `POST /api/milestones` / `PATCH/DELETE /api/milestones/:id`
-- `GET/POST /api/events` / `GET/PATCH/DELETE /api/events/:id`
-- `GET /api/activity`
-
-## DB Migration
-Push schema changes: `pnpm --filter @workspace/db run push`
-
-## Environment Secrets
-- `RESEND_API_KEY` — Resend email for invite/password-reset emails
-- `SESSION_SECRET` — session creation entropy
-- `DATABASE_URL` — PostgreSQL connection string (auto-provided by Replit DB integration)
-- `SETUP_SECRET` — first-run secret to create the programme lead account
+## Seed Data
+The store seeds 5 users (1 admin, 2 leaders, 2 members), 2 streams (Marketing, Operations), 2 teams, 2 projects, 3 milestones, and 1 upcoming event so the app is demonstrable on first launch.
 
 ## Design Tokens
-Colors extend navyDark, navyMid, slate, success alongside standard foreground/background/card/muted/primary/border palette. Supports light/dark mode via useColors hook.
+Colors come from `constants/colors.ts` via the `useColors` hook. Inter font family throughout. Feather icons.
 
-## Recent UI Polish (CRUD completeness)
-- **Programme tab** (`(tabs)/programme.tsx`): streams collapse — only one expanded at a time (first auto-expanded on first load). Chevron toggle, external-link button to `/stream/[id]`, `+` button on each stream for programme leads. Unassigned Teams card is also collapsible.
-- **Admin → Structure** (`admin/index.tsx`): merged streams/teams into nested collapsible cards (teams render under their parent stream). Added `EditTeamModal` (name, function label, stream picker) wired to `updateTeam`. Combined header with Team and Stream add buttons. Unassigned Teams shown as its own collapsible group.
-- **Project detail** (`project/[id].tsx`): inline milestone create form with Today / +1wk / +2wks / +1mo / +3mo offset chips. Trash icon on each milestone for `canEditHighLevel`. Long-press on a `TaskItem` confirms (Alert on native, `window.confirm` on web) and deletes via `deleteTask`.
-- **TaskItem** (`components/TaskItem.tsx`): added optional `onLongPress` prop (`delayLongPress=400`).
-- Auto-expand uses a `didInit` ref to avoid re-opening the first stream after the user manually collapses it.
+## Removed in this rebuild
+- `context/AuthContext`, `context/DataContext`, `context/AuditContext` (replaced by Zustand store)
+- `services/api.ts`, `services/encryption.ts`, `services/audit.ts` (no API calls)
+- `app/accept-invite.tsx`, `app/forgot-password.tsx`, `app/reset-password.tsx` (no email/password auth)
+- `components/AddUserModal.tsx`, `components/TaskItem.tsx`, `components/EventCard.tsx`, `components/ProjectCard.tsx`, `components/StatusBadge.tsx` (replaced by `MilestoneRow` + inline rendering)
+- `@tanstack/react-query` provider (no remote data)
+
+## Environment
+The Express API server still references `RESEND_API_KEY` and `SESSION_SECRET` but the mobile app does not consume any environment secrets.

@@ -1,7 +1,6 @@
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import React, { useRef, useState } from "react";
+import React from "react";
 import {
   Alert,
   Platform,
@@ -12,320 +11,134 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { AddUserModal } from "@/components/AddUserModal";
-import { useAuth, type UserRole } from "@/context/AuthContext";
-import { useData } from "@/context/DataContext";
+
 import { useColors } from "@/hooks/useColors";
-
-const ROLE_COLORS: Record<UserRole, string> = {
-  programme_lead: "#7C3AED",
-  team_lead: "#2563EB",
-};
-
-const ROLE_LABELS: Record<UserRole, string> = {
-  programme_lead: "Programme Lead",
-  team_lead: "Team Lead",
-};
-
-function SettingRow({
-  icon,
-  label,
-  value,
-  onPress,
-  danger,
-}: {
-  icon: string;
-  label: string;
-  value?: string;
-  onPress?: () => void;
-  danger?: boolean;
-}) {
-  const colors = useColors();
-  return (
-    <TouchableOpacity
-      style={[styles.row, { borderBottomColor: colors.border }]}
-      onPress={onPress}
-      activeOpacity={onPress ? 0.7 : 1}
-    >
-      <View style={[styles.rowIcon, { backgroundColor: danger ? "#FEE2E2" : colors.muted }]}>
-        <Feather name={icon as any} size={16} color={danger ? "#EF4444" : colors.primary} />
-      </View>
-      <Text style={[styles.rowLabel, { color: danger ? "#EF4444" : colors.foreground }]}>{label}</Text>
-      <View style={styles.rowRight}>
-        {value ? (
-          <Text style={[styles.rowValue, { color: colors.mutedForeground }]}>{value}</Text>
-        ) : null}
-        {onPress ? (
-          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
-        ) : null}
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-function SectionHeader({ title }: { title: string }) {
-  const colors = useColors();
-  return <Text style={[styles.sectionHeader, { color: colors.mutedForeground }]}>{title}</Text>;
-}
+import { useCurrentUser, useStore } from "@/store/useStore";
 
 export default function SettingsScreen() {
   const colors = useColors();
-  const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { currentUser, users, isProgrammeLead, logout } = useAuth();
-  const { activityLogs, teams, streams, programme } = useData();
-  const [showAddUser, setShowAddUser] = useState(false);
-  const [addUserMode, setAddUserMode] = useState<"direct" | "invite">("direct");
-  const pendingHighlightRef = useRef<{ email: string; type: "direct" | "invite" } | null>(null);
+  const insets = useSafeAreaInsets();
+  const me = useCurrentUser();
+  const streams = useStore((s) => s.streams);
+  const logout = useStore((s) => s.logout);
+  const resetSeed = useStore((s) => s.resetSeed);
 
-  function openAddUser(mode: "direct" | "invite") {
-    setAddUserMode(mode);
-    setShowAddUser(true);
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-  }
+  if (!me) return null;
 
-  const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const tabBarH = Platform.OS === "web" ? 84 : Platform.OS === "ios" ? 49 : 56;
-  const botPad = (Platform.OS === "web" ? 0 : insets.bottom) + tabBarH + 24;
+  const team = streams.flatMap((s) => s.teams).find((t) => t.id === me.teamId);
+  const stream = streams.find((s) => s.teams.some((t) => t.id === me.teamId));
 
-  if (!currentUser) return null;
-
-  const myTeam = teams.find((t) => t.id === currentUser.teamId);
-  const myStream = streams.find((s) => s.id === myTeam?.streamId);
-
-  async function performLogout() {
-    await logout();
-    router.replace("/login");
+  function confirm(message: string, onYes: () => void) {
+    if (Platform.OS === "web") {
+      if (window.confirm(message)) onYes();
+    } else {
+      Alert.alert("Confirm", message, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Yes", style: "destructive", onPress: onYes },
+      ]);
+    }
   }
 
   function handleLogout() {
-    if (Platform.OS === "web") {
-      const ok = typeof window !== "undefined" && window.confirm("Sign out of Ops & Planning?");
-      if (ok) void performLogout();
-      return;
-    }
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      { text: "Sign Out", style: "destructive", onPress: () => { void performLogout(); } },
-    ]);
+    confirm("Sign out?", () => {
+      logout();
+      router.replace("/login");
+    });
+  }
+
+  function handleReset() {
+    confirm("Reset all data to seed values? This cannot be undone.", () => {
+      resetSeed();
+      router.replace("/login");
+    });
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.header, { backgroundColor: colors.navyDark, paddingTop: topPad + 16 }]}>
-        <Text style={styles.headerTitle}>Settings</Text>
-        {programme && (
-          <Text style={styles.headerSub}>{programme.name}</Text>
-        )}
+    <ScrollView
+      style={{ backgroundColor: colors.background }}
+      contentContainerStyle={[styles.scroll, { paddingTop: insets.top + 12, paddingBottom: 100 }]}
+    >
+      <Text style={[styles.title, { color: colors.foreground }]}>Settings</Text>
+
+      <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <View style={[styles.avatar, { backgroundColor: colors.primary + "22" }]}>
+          <Text style={[styles.avatarText, { color: colors.primary }]}>
+            {me.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+          </Text>
+        </View>
+        <Text style={[styles.name, { color: colors.foreground }]}>{me.name}</Text>
+        <View style={[styles.roleChip, { backgroundColor: colors.primary }]}>
+          <Text style={styles.roleChipText}>{me.role.toUpperCase()}</Text>
+        </View>
+        <Text style={[styles.profileMeta, { color: colors.mutedForeground }]}>
+          {stream ? `${stream.name} · ${team?.name ?? "—"}` : team ? team.name : "No team"}
+        </Text>
       </View>
 
-      <ScrollView
-        contentContainerStyle={{ paddingBottom: botPad }}
-        showsVerticalScrollIndicator={false}
+      {me.role === "admin" ? (
+        <TouchableOpacity
+          style={[styles.btn, { backgroundColor: colors.card, borderColor: colors.border }]}
+          onPress={() => router.push("/admin")}
+        >
+          <Feather name="shield" size={16} color={colors.primary} />
+          <Text style={[styles.btnText, { color: colors.foreground }]}>Admin Panel</Text>
+          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+        </TouchableOpacity>
+      ) : null}
+
+      <TouchableOpacity
+        style={[styles.btn, { backgroundColor: colors.card, borderColor: colors.border }]}
+        onPress={handleLogout}
       >
-        {/* Profile */}
-        <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={[styles.avatar, { backgroundColor: ROLE_COLORS[currentUser.role] }]}>
-            <Text style={styles.avatarText}>{currentUser.initials}</Text>
-          </View>
-          <View style={styles.profileInfo}>
-            <Text style={[styles.profileName, { color: colors.foreground }]}>
-              {currentUser.name}
-            </Text>
-            <Text style={[styles.profileRole, { color: colors.mutedForeground }]}>
-              {currentUser.department ? `${currentUser.department} · ` : ""}
-              <Text style={{ color: ROLE_COLORS[currentUser.role] }}>
-                {ROLE_LABELS[currentUser.role]}
-              </Text>
-            </Text>
-            {myTeam && (
-              <Text style={[styles.profileTeam, { color: colors.primary }]}>
-                {myTeam.name}{myTeam.functionLabel ? ` — ${myTeam.functionLabel}` : ""}
-                {myStream ? ` (${myStream.name})` : ""}
-              </Text>
-            )}
-            {isProgrammeLead && (
-              <Text style={[styles.profileTeam, { color: colors.primary }]}>
-                {streams.length} stream{streams.length !== 1 ? "s" : ""} · {teams.length} team{teams.length !== 1 ? "s" : ""}
-              </Text>
-            )}
-            <Text style={[styles.profileEmail, { color: colors.mutedForeground }]}>
-              {currentUser.email}
-            </Text>
-          </View>
-        </View>
+        <Feather name="log-out" size={16} color={colors.foreground} />
+        <Text style={[styles.btnText, { color: colors.foreground }]}>Sign out</Text>
+        <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+      </TouchableOpacity>
 
-        {/* Programme Lead admin panel */}
-        {isProgrammeLead && (
-          <>
-            <SectionHeader title="Programme Management" />
+      {me.role === "admin" ? (
+        <TouchableOpacity
+          style={[styles.btn, { backgroundColor: "#FEE2E2", borderColor: "#FCA5A5" }]}
+          onPress={handleReset}
+        >
+          <Feather name="rotate-ccw" size={16} color="#DC2626" />
+          <Text style={[styles.btnText, { color: "#DC2626" }]}>Reset to seed data</Text>
+        </TouchableOpacity>
+      ) : null}
 
-            {/* Two distinct Add-User CTAs */}
-            <View style={styles.ctaRow}>
-              <TouchableOpacity
-                style={[styles.ctaCard, { backgroundColor: "#7C3AED" }]}
-                onPress={() => openAddUser("direct")}
-                activeOpacity={0.85}
-              >
-                <View style={styles.ctaIcon}>
-                  <Feather name="user-plus" size={18} color="#fff" />
-                </View>
-                <Text style={styles.ctaTitle}>Add User</Text>
-                <Text style={styles.ctaSub}>Set their password now</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[styles.ctaCard, { backgroundColor: "#2563EB" }]}
-                onPress={() => openAddUser("invite")}
-                activeOpacity={0.85}
-              >
-                <View style={styles.ctaIcon}>
-                  <Feather name="send" size={18} color="#fff" />
-                </View>
-                <Text style={styles.ctaTitle}>Invite User</Text>
-                <Text style={styles.ctaSub}>Send an invite link</Text>
-              </TouchableOpacity>
-            </View>
-
-            <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <SettingRow
-                icon="users"
-                label="Manage Users"
-                value={`${users.filter((u) => u.active).length} active`}
-                onPress={() => router.push("/admin?tab=users")}
-              />
-              <SettingRow
-                icon="grid"
-                label="Streams & Teams"
-                value={`${streams.length} streams · ${teams.length} teams`}
-                onPress={() => router.push("/admin?tab=structure")}
-              />
-              <SettingRow
-                icon="activity"
-                label="Activity Log"
-                value={`${activityLogs.length} entries`}
-                onPress={() => router.push("/admin?tab=activity")}
-              />
-            </View>
-          </>
-        )}
-
-        <SectionHeader title="Calendar" />
-        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <SettingRow icon="clock" label="Default Event Duration" value="1 hour" />
-          <SettingRow icon="bell" label="Default Reminder" value="15 min before" />
-          <SettingRow icon="globe" label="Time Zone" value="GMT+0 London" />
-          <SettingRow icon="eye" label="Default Calendar View" value="Month" />
-        </View>
-
-        <SectionHeader title="Programme" />
-        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <SettingRow icon="flag" label="Default Task Priority" value="Medium" />
-          <SettingRow icon="users" label="Task Assignment" value="User or Member" />
-        </View>
-
-        <SectionHeader title="Data & Security" />
-        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <SettingRow icon="server" label="Storage" value="PostgreSQL (server-side)" />
-          <SettingRow icon="lock" label="Authentication" value="bcrypt + tokens" />
-          <SettingRow icon="shield" label="Authorisation" value="Role-based (RBAC)" />
-          <SettingRow icon="file-text" label="Privacy" value="UK GDPR / DPA 2018" />
-        </View>
-
-        <SectionHeader title="About" />
-        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <SettingRow icon="info" label="Version" value="2.0.0" />
-        </View>
-
-        <SectionHeader title="Account" />
-        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <SettingRow icon="log-out" label="Sign Out" onPress={handleLogout} danger />
-        </View>
-      </ScrollView>
-
-      {isProgrammeLead && (
-        <AddUserModal
-          visible={showAddUser}
-          defaultMode={addUserMode}
-          onClose={() => {
-            const pending = pendingHighlightRef.current;
-            pendingHighlightRef.current = null;
-            setShowAddUser(false);
-            if (pending && pending.type === "direct") {
-              router.push(`/admin?tab=users&highlight=${encodeURIComponent(pending.email)}`);
-            }
-          }}
-          onSuccess={(info) => { pendingHighlightRef.current = info; }}
-        />
-      )}
-    </View>
+      <Text style={[styles.footnote, { color: colors.mutedForeground }]}>
+        Ops & Planning · Local-first · Data lives on this device
+      </Text>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingBottom: 20, gap: 2 },
-  headerTitle: { color: "#fff", fontSize: 24, fontFamily: "Inter_700Bold" },
-  headerSub: { color: "rgba(255,255,255,0.5)", fontSize: 13, fontFamily: "Inter_400Regular" },
+  scroll: { padding: 20 },
+  title: { fontSize: 24, fontFamily: "Inter_700Bold", marginBottom: 16 },
   profileCard: {
-    margin: 16, borderRadius: 14, borderWidth: 1, padding: 16,
-    flexDirection: "row", alignItems: "center", gap: 14,
+    alignItems: "center",
+    padding: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 8,
+    marginBottom: 16,
   },
-  avatar: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center" },
-  avatarText: { color: "#fff", fontSize: 18, fontFamily: "Inter_600SemiBold" },
-  profileInfo: { flex: 1, gap: 2 },
-  profileName: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
-  profileRole: { fontSize: 13, fontFamily: "Inter_400Regular" },
-  profileTeam: { fontSize: 12, fontFamily: "Inter_500Medium" },
-  profileEmail: { fontSize: 12, fontFamily: "Inter_400Regular" },
-  sectionHeader: {
-    fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 0.8,
-    textTransform: "uppercase", paddingHorizontal: 20, paddingTop: 16, paddingBottom: 6,
-  },
-  section: { marginHorizontal: 16, borderRadius: 14, borderWidth: 1, overflow: "hidden" },
-  row: {
-    flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth, gap: 12,
-  },
-  rowIcon: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  rowLabel: { flex: 1, fontSize: 14, fontFamily: "Inter_400Regular" },
-  rowRight: { flexDirection: "row", alignItems: "center", gap: 4 },
-  rowValue: { fontSize: 13, fontFamily: "Inter_400Regular" },
-  ctaRow: {
+  avatar: { width: 64, height: 64, borderRadius: 32, alignItems: "center", justifyContent: "center" },
+  avatarText: { fontSize: 22, fontFamily: "Inter_700Bold" },
+  name: { fontSize: 18, fontFamily: "Inter_700Bold" },
+  roleChip: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 10 },
+  roleChipText: { color: "#fff", fontSize: 10, fontFamily: "Inter_700Bold", letterSpacing: 0.5 },
+  profileMeta: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  btn: {
     flexDirection: "row",
-    gap: 10,
-    marginHorizontal: 16,
+    alignItems: "center",
+    gap: 12,
+    padding: 14,
+    borderWidth: 1,
+    borderRadius: 10,
     marginBottom: 8,
   },
-  ctaCard: {
-    flex: 1,
-    borderRadius: 14,
-    padding: 14,
-    gap: 6,
-    minHeight: 110,
-    justifyContent: "space-between",
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 4,
-  },
-  ctaIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  ctaTitle: {
-    color: "#fff",
-    fontSize: 15,
-    fontFamily: "Inter_700Bold",
-  },
-  ctaSub: {
-    color: "rgba(255,255,255,0.85)",
-    fontSize: 12,
-    fontFamily: "Inter_400Regular",
-  },
+  btnText: { flex: 1, fontSize: 15, fontFamily: "Inter_500Medium" },
+  footnote: { marginTop: 24, fontSize: 11, textAlign: "center", fontFamily: "Inter_400Regular" },
 });

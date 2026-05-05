@@ -1,25 +1,27 @@
-import { Stack, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
+import { Stack, useRouter } from "expo-router";
+import React, { useEffect } from "react";
 import { TouchableOpacity } from "react-native";
+
 import { useColors } from "@/hooks/useColors";
-import { useAuth } from "@/context/AuthContext";
-import { useEffect } from "react";
+import { useCurrentUser } from "@/store/useStore";
 
 export default function AdminLayout() {
   const colors = useColors();
   const router = useRouter();
-  const { isProgrammeLead } = useAuth();
+  const me = useCurrentUser();
+  const isAdmin = me?.role === "admin";
 
   useEffect(() => {
-    if (!isProgrammeLead) router.replace("/(tabs)");
-  }, [isProgrammeLead]);
+    if (!isAdmin) router.replace("/(tabs)");
+  }, [isAdmin, router]);
 
-  if (!isProgrammeLead) return null;
+  if (!isAdmin) return null;
 
   return (
     <Stack
       screenOptions={{
-        headerStyle: { backgroundColor: colors.navyDark },
+        headerStyle: { backgroundColor: colors.primary },
         headerTintColor: "#fff",
         headerTitleStyle: { fontFamily: "Inter_600SemiBold" },
       }}
@@ -27,10 +29,10 @@ export default function AdminLayout() {
       <Stack.Screen
         name="index"
         options={{
-          title: "Programme Lead Panel",
+          title: "Admin Panel",
           headerLeft: () => (
             <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: -4, padding: 8 }}>
-              <Feather name="x" size={20} color="rgba(255,255,255,0.7)" />
+              <Feather name="x" size={20} color="rgba(255,255,255,0.85)" />
             </TouchableOpacity>
           ),
         }}

@@ -1,111 +1,120 @@
-import { useRouter, useLocalSearchParams } from "expo-router";
-import React, { useState } from "react";
-import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useData } from "@/context/DataContext";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useMemo, useState } from "react";
+import {
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from "react-native";
+
 import { useColors } from "@/hooks/useColors";
+import { canManageEverything, useCurrentUser, useStore } from "@/store/useStore";
 
 export default function NewTeamScreen() {
   const colors = useColors();
-  const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ streamId?: string }>();
-  const { streams, createTeam } = useData();
+  const me = useCurrentUser();
+  const streams = useStore((s) => s.streams);
+  const users = useStore((s) => s.users);
+  const addTeam = useStore((s) => s.addTeam);
 
   const [name, setName] = useState("");
-  const [functionLabel, setFunctionLabel] = useState("");
-  const [selectedStreamId, setSelectedStreamId] = useState<string | null>(params.streamId ?? null);
-  const [saving, setSaving] = useState(false);
+  const [streamId, setStreamId] = useState<string>(params.streamId || streams[0]?.id || "");
+  const [leaderId, setLeaderId] = useState<string | null>(null);
 
-  const botPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
+  const leaderOptions = useMemo(
+    () => users.filter((u) => u.role === "leader" || u.role === "admin"),
+    [users],
+  );
 
-  async function handleSave() {
-    if (!name.trim()) { Alert.alert("Name required"); return; }
-    setSaving(true);
-    await createTeam({ name: name.trim(), functionLabel: functionLabel.trim() || undefined, streamId: selectedStreamId });
-    setSaving(false);
-    router.back();
+  if (!canManageEverything(me)) {
+    return (
+      <View style={[styles.gate, { backgroundColor: colors.background }]}>
+        <Text style={{ color: colors.mutedForeground }}>Only admins can create teams.</Text>
+      </View>
+    );
+  }
+
+  function save() {
+    if (!name.trim()) return Alert.alert("Name required", "Please enter a team name.");
+    if (!streamId) return Alert.alert("Stream required", "Pick a stream to put this team in.");
+    const created = addTeam(streamId, { name: name.trim(), leaderId });
+    if (created) router.back();
+    else Alert.alert("Error", "Could not create team.");
   }
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: colors.background }}
-      contentContainerStyle={{ padding: 20, paddingBottom: botPad, gap: 16 }}
-      keyboardShouldPersistTaps="handled"
-    >
-      <Text style={[styles.intro, { color: colors.mutedForeground }]}>
-        Teams are execution groups within a Stream. Each team has its own workspace with tasks, calendar, and members.
-      </Text>
+    <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}>
+      <Text style={[styles.label, { color: colors.mutedForeground }]}>Team name *</Text>
+      <TextInput
+        style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+        value={name}
+        onChangeText={setName}
+        placeholder="e.g. Brand & Creative"
+        placeholderTextColor={colors.mutedForeground}
+        autoFocus
+      />
 
-      <View style={styles.field}>
-        <Text style={[styles.label, { color: colors.mutedForeground }]}>Team Name *</Text>
-        <TextInput
-          style={[styles.input, { backgroundColor: colors.card, color: colors.foreground, borderColor: colors.border }]}
-          value={name}
-          onChangeText={setName}
-          placeholder="e.g. Creative Design, Data Analytics"
-          placeholderTextColor={colors.mutedForeground}
-          autoFocus
-        />
-      </View>
-
-      <View style={styles.field}>
-        <Text style={[styles.label, { color: colors.mutedForeground }]}>Function / Role</Text>
-        <TextInput
-          style={[styles.input, { backgroundColor: colors.card, color: colors.foreground, borderColor: colors.border }]}
-          value={functionLabel}
-          onChangeText={setFunctionLabel}
-          placeholder="e.g. Brand & Creative"
-          placeholderTextColor={colors.mutedForeground}
-        />
-      </View>
-
-      <View style={styles.field}>
-        <Text style={[styles.label, { color: colors.mutedForeground }]}>Assign to Stream</Text>
-        <View style={styles.streamList}>
+      <Text style={[styles.label, { color: colors.mutedForeground }]}>Stream *</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+        {streams.map((s) => (
           <TouchableOpacity
-            style={[styles.streamOption, !selectedStreamId && [styles.selectedOption, { borderColor: colors.primary }], { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => setSelectedStreamId(null)}
+            key={s.id}
+            style={[styles.chip, { borderColor: colors.border, backgroundColor: streamId === s.id ? colors.primary : colors.muted }]}
+            onPress={() => setStreamId(s.id)}
           >
-            <Text style={[styles.streamOptionText, { color: !selectedStreamId ? colors.primary : colors.mutedForeground }]}>
-              Unassigned
-            </Text>
+            <Text style={[styles.chipText, { color: streamId === s.id ? "#fff" : colors.foreground }]}>{s.name}</Text>
           </TouchableOpacity>
-          {streams.map((s) => (
-            <TouchableOpacity
-              key={s.id}
-              style={[styles.streamOption, selectedStreamId === s.id && [styles.selectedOption, { borderColor: colors.primary }], { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => setSelectedStreamId(s.id)}
-            >
-              <Text style={[styles.streamOptionText, { color: selectedStreamId === s.id ? colors.primary : colors.foreground }]}>
-                {s.name}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-      </View>
+        ))}
+      </ScrollView>
 
-      <TouchableOpacity
-        style={[styles.saveBtn, { backgroundColor: saving ? colors.muted : colors.primary }]}
-        onPress={handleSave}
-        disabled={saving}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.saveBtnText}>{saving ? "Creating..." : "Create Team"}</Text>
-      </TouchableOpacity>
+      <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 8 }]}>Team leader</Text>
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+        <TouchableOpacity
+          style={[styles.chip, { borderColor: colors.border, backgroundColor: leaderId === null ? colors.primary : colors.muted }]}
+          onPress={() => setLeaderId(null)}
+        >
+          <Text style={[styles.chipText, { color: leaderId === null ? "#fff" : colors.foreground }]}>None</Text>
+        </TouchableOpacity>
+        {leaderOptions.map((u) => (
+          <TouchableOpacity
+            key={u.id}
+            style={[styles.chip, { borderColor: colors.border, backgroundColor: leaderId === u.id ? colors.primary : colors.muted }]}
+            onPress={() => setLeaderId(u.id)}
+          >
+            <Text style={[styles.chipText, { color: leaderId === u.id ? "#fff" : colors.foreground }]}>{u.name}</Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      <View style={styles.row}>
+        <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted }]} onPress={() => router.back()}>
+          <Text style={[styles.btnText, { color: colors.foreground }]}>Cancel</Text>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={[styles.btn, { backgroundColor: name.trim() && streamId ? colors.primary : colors.border }]}
+          onPress={save}
+          disabled={!name.trim() || !streamId}
+        >
+          <Text style={[styles.btnText, { color: "#fff" }]}>Create Team</Text>
+        </TouchableOpacity>
+      </View>
     </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
-  intro: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20 },
-  field: { gap: 6 },
-  label: { fontSize: 12, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 },
-  input: { borderRadius: 10, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 12, fontSize: 15, fontFamily: "Inter_400Regular" },
-  streamList: { gap: 6 },
-  streamOption: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 14, paddingVertical: 10 },
-  selectedOption: { borderWidth: 2 },
-  streamOptionText: { fontSize: 14, fontFamily: "Inter_500Medium" },
-  saveBtn: { borderRadius: 10, paddingVertical: 14, alignItems: "center", marginTop: 8 },
-  saveBtnText: { color: "#fff", fontSize: 16, fontFamily: "Inter_600SemiBold" },
+  container: { padding: 20, gap: 10 },
+  gate: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
+  label: { fontSize: 12, fontFamily: "Inter_500Medium", marginTop: 4 },
+  input: { padding: 12, borderRadius: 10, borderWidth: 1, fontSize: 15, fontFamily: "Inter_400Regular" },
+  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, borderWidth: 1 },
+  chipText: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  row: { flexDirection: "row", gap: 8, marginTop: 16 },
+  btn: { flex: 1, padding: 14, borderRadius: 10, alignItems: "center" },
+  btnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
 });
