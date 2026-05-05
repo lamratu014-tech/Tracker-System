@@ -28,6 +28,9 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
+  // Apply a session that was issued out-of-band (e.g. by the
+  // accept-invite flow which returns its own token + user).
+  applySession: (session: { token: string; user: User }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -135,8 +138,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     qc.clear();
   }, [qc, setToken]);
 
+  const applySession = useCallback(
+    async (session: { token: string; user: User }) => {
+      await setToken(session.token);
+      setUser(session.user);
+      qc.setQueryData(getGetMeQueryKey(), session.user);
+    },
+    [qc, setToken],
+  );
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, signIn, signOut, refresh }}>
+    <AuthContext.Provider
+      value={{ user, isLoading, signIn, signOut, refresh, applySession }}
+    >
       {children}
     </AuthContext.Provider>
   );

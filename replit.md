@@ -1,9 +1,9 @@
 # Ops & Planning — Programme Operations & Planning Platform
 
 ## Overview
-Mobile Expo app (React Native) for organisations to manage a Stream → Team → Project → Milestone hierarchy plus a separate Events calendar. **Local-first**: all data lives in a Zustand global store persisted to AsyncStorage. The mobile app does not call the API server.
+Mobile Expo app (React Native) for organisations to manage a Stream → Team → Project → Milestone hierarchy plus a separate Events calendar. **Migrating from local-first to API-backed**: domain data (streams/teams/projects/milestones/events/members/team-notes) still lives in a Zustand global store persisted to AsyncStorage, but **auth/invites are server-backed** — login, invite creation, and invite acceptance go through the Express + PostgreSQL API in `artifacts/api-server`. Per-screen migration of the rest of the data layer is tracked in follow-up tasks.
 
-The Express + PostgreSQL API server in `artifacts/api-server` is retained but not used by mobile. Its contract (`lib/api-spec/openapi.yaml`) covers the Stream→Team→Project→Milestone hierarchy plus events/team-notes/members and the new 3-role auth model, ready for the mobile app to wire up later. Run `pnpm --filter @workspace/api-spec run codegen` after editing the spec; generated zod schemas live in `lib/api-zod` and React Query hooks in `lib/api-client-react`. DB schema sources of truth: `lib/db/src/schema/*` (push with `pnpm --filter @workspace/db run push`).
+API contract: `lib/api-spec/openapi.yaml` covers the Stream→Team→Project→Milestone hierarchy plus events/team-notes/members and the 3-role auth model. Run `pnpm --filter @workspace/api-spec run codegen` after editing the spec; generated zod schemas live in `lib/api-zod` and React Query hooks in `lib/api-client-react`. DB schema sources of truth: `lib/db/src/schema/*` (push with `pnpm --filter @workspace/db run push`).
 
 ## Architecture
 
@@ -35,19 +35,29 @@ Each Team has its own Notes timeline (TeamNote[] on Team)
 Events are separate, optionally linked to a stream OR team
 ```
 
-### Auth flow
-1. Admin invites a user via `/new-user` → store generates a 6-char code, sets `active: false`
-2. Invitee opens `/accept-invite`, enters the code → account is activated and signed in
-3. Subsequent logins use email at `/login`
-4. Demo emails (all active): admin@ops.test · pat@ops.test · jess@ops.test · morgan@ops.test
+### Auth flow (server-backed)
+1. **First admin** is created via `POST /api/auth/setup` (only allowed when the
+   `users` table is empty AND `SETUP_SECRET` is set). Example:
+   `curl -X POST "$REPLIT_DEV_DOMAIN/api/auth/setup" -H "content-type: application/json" -d "{\"email\":\"...\",\"name\":\"...\",\"password\":\"...\",\"setupSecret\":\"$SETUP_SECRET\"}"`
+2. Admin (or in-scope stream overseer) invites a user via `/new-user` →
+   server creates an **inactive** user row (no passwordHash, active=false)
+   plus an invite row in a single transaction, and returns a 6-char code
+   (Crockford-ish alphabet, no I/O/0/1). The "Invite created" screen
+   displays the code with a Copy action.
+3. Invitee opens `/accept-invite`, enters the code + a password (display
+   name comes from the invite row) → server activates the pre-provisioned
+   user (sets passwordHash, flips active=true), consumes the invite, and
+   returns a session token; the mobile app immediately signs them in.
+4. Subsequent logins use email + password at `/login`.
+5. Reusing or mistyping a code surfaces a clear server-side error.
 
 ### App Structure
 ```
 artifacts/mobile/app/
 ├── _layout.tsx              # AuthGate; PUBLIC_ROUTES: /login, /accept-invite
-├── login.tsx                # Email login
-├── accept-invite.tsx        # 6-char invite code activation
-├── new-user.tsx             # Invite a new user → shows generated code
+├── login.tsx                # Email + password login (calls /api/auth/login)
+├── accept-invite.tsx        # 6-char code + password; name pulled from invite preview (calls /api/auth/accept-invite)
+├── new-user.tsx             # Admin invite → calls /api/auth/invite, shows returned code
 ├── (tabs)/
 │   ├── index.tsx            # Dashboard: tiles, overdue, due today, upcoming events
 │   ├── programme.tsx        # Streams → teams view

@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, usersTable, invitesTable, passwordResetsTable, sessionsTable } from "@workspace/db";
+import { db, usersTable, invitesTable, passwordResetsTable, sessionsTable, teamsTable, streamsTable } from "@workspace/db";
 import { eq, and, gt, isNull } from "drizzle-orm";
 import {
   LoginBody,
@@ -16,10 +16,11 @@ import {
   createSession,
   deleteSession,
   generateToken,
+  generateUniqueInviteCode,
   countUsers,
 } from "../lib/auth";
 import { sendInviteEmail, sendPasswordResetEmail } from "../lib/email";
-import { requireAuth, requireAdmin } from "../middlewares/requireAuth";
+import { requireAuth, requireManager } from "../middlewares/requireAuth";
 
 const router = Router();
 
@@ -117,7 +118,7 @@ router.post("/auth/logout", requireAuth, async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
-router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
+router.post("/auth/invite", requireManager, async (req, res): Promise<void> => {
   const parsed = CreateInviteBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
@@ -125,45 +126,215 @@ router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
   }
 
   const { email, name, role, department, streamId, teamId } = parsed.data;
+  const inviter = req.authUser!;
 
+  // Leaders can never invite anyone.
+  if (inviter.role === "leader") {
+    res.status(403).json({ error: "Team leaders cannot invite users" });
+    return;
+  }
+
+  // Validate scope coherence and that referenced rows exist. We only
+  // load the team when we actually need its streamId for cross-checks.
+  let resolvedStreamId: string | null = null;
+
+  if (role === "admin") {
+    if (streamId || teamId) {
+      res.status(400).json({ error: "Admin invites cannot be scoped to a stream or team" });
+      return;
+    }
+  } else if (role === "stream_overseer") {
+    if (!streamId) {
+      res.status(400).json({ error: "Stream overseer invites must include a streamId" });
+      return;
+    }
+    if (teamId) {
+      res.status(400).json({ error: "Stream overseer invites cannot include a teamId" });
+      return;
+    }
+    const [stream] = await db
+      .select({ id: streamsTable.id })
+      .from(streamsTable)
+      .where(eq(streamsTable.id, streamId))
+      .limit(1);
+    if (!stream) {
+      res.status(400).json({ error: "Stream not found" });
+      return;
+    }
+    resolvedStreamId = streamId;
+  } else if (role === "leader") {
+    if (!teamId) {
+      res.status(400).json({ error: "Leader invites must include a teamId" });
+      return;
+    }
+    const [team] = await db
+      .select()
+      .from(teamsTable)
+      .where(eq(teamsTable.id, teamId))
+      .limit(1);
+    if (!team) {
+      res.status(400).json({ error: "Team not found" });
+      return;
+    }
+    if (streamId && team.streamId && streamId !== team.streamId) {
+      res.status(400).json({ error: "streamId does not match the team's stream" });
+      return;
+    }
+    resolvedStreamId = team.streamId ?? streamId ?? null;
+  }
+
+  // Inviter-role authorization. Admins may invite anyone; stream
+  // overseers may only invite within their own stream.
+  if (inviter.role === "stream_overseer") {
+    if (role === "admin") {
+      res.status(403).json({ error: "Stream overseers cannot invite admins" });
+      return;
+    }
+    if (!inviter.streamId) {
+      res.status(403).json({ error: "Your account is not assigned to a stream" });
+      return;
+    }
+    if (resolvedStreamId !== inviter.streamId) {
+      res.status(403).json({ error: "You can only invite users within your own stream" });
+      return;
+    }
+  }
+
+  const lowerEmail = email.toLowerCase();
   const [existing] = await db
     .select()
     .from(usersTable)
-    .where(eq(usersTable.email, email.toLowerCase()))
+    .where(eq(usersTable.email, lowerEmail))
     .limit(1);
-  if (existing) {
+  // Active accounts (or anyone with a passwordHash) cannot be re-invited;
+  // an inactive, never-redeemed account is allowed to be re-invited so a
+  // lost code or expired invite isn't a permanent dead-end.
+  if (existing && (existing.active || existing.passwordHash)) {
     res.status(409).json({ error: "A user with this email already exists" });
     return;
   }
 
-  const token = generateToken(24);
+  // Re-invite of a pre-existing inactive user is privileged: the
+  // inviter must also have authority over the *existing* row's scope,
+  // not just the new requested scope. Otherwise an overseer could
+  // overwrite a pending admin invite (or a pending user in a different
+  // stream) by re-inviting the same email into their own stream.
+  if (existing) {
+    if (existing.role === "admin" && inviter.role !== "admin") {
+      res.status(403).json({ error: "Only admins can re-invite an admin account" });
+      return;
+    }
+    if (
+      inviter.role === "stream_overseer" &&
+      existing.streamId &&
+      existing.streamId !== inviter.streamId
+    ) {
+      res.status(403).json({ error: "This pending account is in a different stream" });
+      return;
+    }
+    if (
+      inviter.role === "stream_overseer" &&
+      existing.role === "stream_overseer" &&
+      existing.streamId !== inviter.streamId
+    ) {
+      res.status(403).json({ error: "Stream overseers can only re-invite within their own stream" });
+      return;
+    }
+  }
+
+  const token = await generateUniqueInviteCode();
   const expiresAt = new Date();
   expiresAt.setHours(expiresAt.getHours() + 72);
+  const initials = name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
-  await db.insert(invitesTable).values({
-    email: email.toLowerCase(),
-    name,
-    token,
-    role,
-    department: department ?? "",
-    streamId: streamId ?? null,
-    teamId: teamId ?? null,
-    invitedByName: req.authUser!.name,
-    expiresAt,
-  });
+  // Provision (or refresh) an inactive user row alongside the invite so
+  // the account exists from invitation time. The user has no
+  // passwordHash and active=false, which means `/auth/login` will reject
+  // them until they redeem the invite. Wrap in a transaction so we never
+  // end up with an orphan user row if invite insert fails. Map Postgres
+  // unique-violation (23505) to a clean 409 in case a concurrent invite
+  // beats the pre-check above.
+  try {
+    await db.transaction(async (tx) => {
+      if (existing) {
+        // Re-invite path: refresh role/scope on the inactive shell and
+        // wipe any prior outstanding invite codes for this email so only
+        // the new code is valid.
+        await tx
+          .update(usersTable)
+          .set({
+            name,
+            initials,
+            department: department ?? "",
+            role,
+            streamId: resolvedStreamId,
+            teamId: teamId ?? null,
+            invitedByName: req.authUser!.name,
+          })
+          .where(eq(usersTable.id, existing.id));
+        await tx
+          .delete(invitesTable)
+          .where(and(eq(invitesTable.email, lowerEmail), isNull(invitesTable.usedAt)));
+      } else {
+        await tx.insert(usersTable).values({
+          email: lowerEmail,
+          name,
+          initials,
+          department: department ?? "",
+          role,
+          streamId: resolvedStreamId,
+          teamId: teamId ?? null,
+          passwordHash: null,
+          active: false,
+          invitedByName: req.authUser!.name,
+        });
+      }
+      await tx.insert(invitesTable).values({
+        email: lowerEmail,
+        name,
+        token,
+        role,
+        department: department ?? "",
+        streamId: resolvedStreamId,
+        teamId: teamId ?? null,
+        invitedByName: req.authUser!.name,
+        expiresAt,
+      });
+    });
+  } catch (err) {
+    const e = err as { code?: string; constraint?: string; constraint_name?: string } | null;
+    if (e?.code === "23505") {
+      const constraint = e.constraint ?? e.constraint_name ?? "";
+      if (constraint.includes("token")) {
+        // Astronomically rare: invite-code collision after pre-check.
+        res.status(503).json({ error: "Could not allocate an invite code, please retry" });
+        return;
+      }
+      res.status(409).json({ error: "A user with this email already exists" });
+      return;
+    }
+    throw err;
+  }
 
   const acceptUrl = `${getAppDomain(req)}/accept-invite?token=${token}`;
   req.log.info({ email }, "Invite created");
 
-  await sendInviteEmail({
-    toEmail: email,
-    toName: name,
-    invitedByName: req.authUser!.name,
-    role,
-    acceptUrl,
-  });
+  // Email delivery is strictly best-effort — surfacing the code in-app
+  // is the primary handoff, so a transport failure must not 500 the
+  // request and lose the code.
+  try {
+    await sendInviteEmail({
+      toEmail: email,
+      toName: name,
+      invitedByName: req.authUser!.name,
+      role,
+      acceptUrl,
+    });
+  } catch (err) {
+    req.log.warn({ err, email }, "Invite email send failed; continuing");
+  }
 
-  res.status(201).json({ message: "Invite sent", acceptUrl });
+  res.status(201).json({ message: "Invite sent", acceptUrl, code: token });
 });
 
 router.post("/auth/accept-invite", async (req, res): Promise<void> => {
@@ -173,62 +344,91 @@ router.post("/auth/accept-invite", async (req, res): Promise<void> => {
     return;
   }
 
-  const { token, name, password } = parsed.data;
-  const now = new Date();
+  const { token, password } = parsed.data;
+  const normalizedToken = token.trim().toUpperCase();
 
-  const [invite] = await db
-    .select()
+  // Pre-flight invite check before paying for bcrypt — invalid/expired
+  // codes must not waste CPU and become a brute-force amplifier.
+  const [preflight] = await db
+    .select({ id: invitesTable.id })
     .from(invitesTable)
     .where(
       and(
-        eq(invitesTable.token, token),
+        eq(invitesTable.token, normalizedToken),
         isNull(invitesTable.usedAt),
-        gt(invitesTable.expiresAt, now)
+        gt(invitesTable.expiresAt, new Date())
       )
     )
     .limit(1);
-
-  if (!invite) {
+  if (!preflight) {
     res.status(400).json({ error: "Invite link is invalid or has expired" });
     return;
   }
 
-  const [existing] = await db
-    .select()
-    .from(usersTable)
-    .where(eq(usersTable.email, invite.email))
-    .limit(1);
-  if (existing) {
-    res.status(409).json({ error: "An account with this email already exists. Please log in." });
+  const passwordHash = await hashPassword(password);
+
+  // Activate the pre-provisioned user, consume the invite, and create
+  // a session in a single transaction so concurrent redemptions can't
+  // both succeed and so a partial failure can't leave an orphan token.
+  let result: { userId: string } | { error: string; status: number };
+  try {
+    result = await db.transaction(async (tx) => {
+      const now = new Date();
+      const [invite] = await tx
+        .select()
+        .from(invitesTable)
+        .where(
+          and(
+            eq(invitesTable.token, normalizedToken),
+            isNull(invitesTable.usedAt),
+            gt(invitesTable.expiresAt, now)
+          )
+        )
+        .limit(1);
+      if (!invite) {
+        return { error: "Invite link is invalid or has expired", status: 400 };
+      }
+
+      const [pending] = await tx
+        .select()
+        .from(usersTable)
+        .where(eq(usersTable.email, invite.email))
+        .limit(1);
+      if (!pending) {
+        return { error: "Invite link is invalid or has expired", status: 400 };
+      }
+      if (pending.active || pending.passwordHash) {
+        return {
+          error: "An account with this email already exists. Please log in.",
+          status: 409,
+        };
+      }
+
+      await tx
+        .update(usersTable)
+        .set({ passwordHash, active: true })
+        .where(eq(usersTable.id, pending.id));
+      await tx
+        .update(invitesTable)
+        .set({ usedAt: now })
+        .where(eq(invitesTable.id, invite.id));
+
+      return { userId: pending.id };
+    });
+  } catch (err) {
+    req.log.error({ err }, "accept-invite transaction failed");
+    res.status(500).json({ error: "Could not activate your account" });
     return;
   }
 
-  const initials = name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
-  const passwordHash = await hashPassword(password);
+  if ("error" in result) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
 
-  const [user] = await db
-    .insert(usersTable)
-    .values({
-      email: invite.email,
-      name,
-      initials,
-      department: invite.department,
-      role: invite.role,
-      streamId: invite.streamId ?? null,
-      teamId: invite.teamId ?? null,
-      passwordHash,
-      active: true,
-      invitedByName: invite.invitedByName,
-    })
-    .returning();
-
-  await db
-    .update(invitesTable)
-    .set({ usedAt: now })
-    .where(eq(invitesTable.id, invite.id));
-
-  const sessionToken = await createSession(user.id);
-  req.log.info({ userId: user.id }, "User accepted invite and created account");
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, result.userId)).limit(1);
+  const sessionToken = await createSession(result.userId);
+  req.log.info({ userId: result.userId }, "User accepted invite and activated account");
   res.status(201).json({ token: sessionToken, user: safeUser(user) });
 });
 
@@ -316,13 +516,14 @@ router.get("/auth/invite/:token", async (req, res): Promise<void> => {
   const params = GetInviteByTokenParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const now = new Date();
+  const normalized = params.data.token.trim().toUpperCase();
 
   const [invite] = await db
     .select()
     .from(invitesTable)
     .where(
       and(
-        eq(invitesTable.token, params.data.token),
+        eq(invitesTable.token, normalized),
         isNull(invitesTable.usedAt),
         gt(invitesTable.expiresAt, now)
       )

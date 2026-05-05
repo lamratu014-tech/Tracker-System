@@ -170,7 +170,7 @@ paths:
     post:
       operationId: createInvite
       tags: [auth, invites]
-      summary: Admin creates an invite
+      summary: Admin or in-scope stream overseer creates an invite
       security: [{ bearerAuth: [] }]
       requestBody:
         required: true
@@ -957,10 +957,9 @@ components:
 
     AcceptInviteBody:
       type: object
-      required: [token, name, password]
+      required: [token, password]
       properties:
         token: { type: string, minLength: 1 }
-        name: { type: string, minLength: 1 }
         password: { type: string, minLength: 8 }
 
     ForgotPasswordBody:
@@ -989,10 +988,15 @@ components:
 
     CreateInviteResponse:
       type: object
-      required: [message, acceptUrl]
+      required: [message, acceptUrl, code]
       properties:
         message: { type: string }
         acceptUrl: { type: string }
+        code:
+          type: string
+          description: 6-character invite code that the recipient enters to activate their account
+          minLength: 6
+          maxLength: 6
 
     InvitePreview:
       type: object

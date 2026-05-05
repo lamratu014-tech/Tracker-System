@@ -146,16 +146,6 @@ export default function LoginScreen() {
             <Feather name="mail" size={14} color={colors.primary} />
             <Text style={[styles.btnGhostText, { color: colors.primary }]}>I have an invite code</Text>
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.linkRow}
-            activeOpacity={0.7}
-            onPress={() => router.push("/create-admin")}
-          >
-            <Text style={[styles.linkText, { color: colors.mutedForeground }]}>
-              First-time setup? <Text style={{ color: colors.primary }}>Create admin account</Text>
-            </Text>
-          </TouchableOpacity>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
@@ -185,6 +175,4 @@ const styles = StyleSheet.create({
     gap: 8, padding: 14, borderRadius: 10, borderWidth: 1,
   },
   btnGhostText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  linkRow: { alignItems: "center", marginTop: 16, padding: 8 },
-  linkText: { fontSize: 13, fontFamily: "Inter_500Medium" },
 });

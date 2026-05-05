@@ -808,7 +808,7 @@ export const useAcceptInvite = <
 };
 
 /**
- * @summary Admin creates an invite
+ * @summary Admin or in-scope stream overseer creates an invite
  */
 export const getCreateInviteUrl = () => {
   return `/api/auth/invite`;
@@ -881,7 +881,7 @@ export type CreateInviteMutationError = ErrorType<
 >;
 
 /**
- * @summary Admin creates an invite
+ * @summary Admin or in-scope stream overseer creates an invite
  */
 export const useCreateInvite = <
   TError = ErrorType<

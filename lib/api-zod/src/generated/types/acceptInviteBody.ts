@@ -9,8 +9,6 @@
 export interface AcceptInviteBody {
   /** @minLength 1 */
   token: string;
-  /** @minLength 1 */
-  name: string;
   /** @minLength 8 */
   password: string;
 }

@@ -1,5 +1,5 @@
 import bcrypt from "bcryptjs";
-import { db, sessionsTable, usersTable } from "@workspace/db";
+import { db, invitesTable, sessionsTable, usersTable } from "@workspace/db";
 import { eq, gt } from "drizzle-orm";
 import type { User } from "@workspace/db";
 
@@ -10,6 +10,29 @@ export function generateToken(bytes = 32): string {
   const arr = new Uint8Array(bytes);
   crypto.getRandomValues(arr);
   return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+// 6-char Crockford-ish alphabet (no I, O, 1, 0 to avoid confusion when
+// the recipient types the code by hand).
+const INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+
+export function generateInviteCode(): string {
+  const arr = new Uint8Array(6);
+  crypto.getRandomValues(arr);
+  return Array.from(arr, (b) => INVITE_ALPHABET[b % INVITE_ALPHABET.length]).join("");
+}
+
+export async function generateUniqueInviteCode(): Promise<string> {
+  for (let i = 0; i < 8; i++) {
+    const code = generateInviteCode();
+    const [existing] = await db
+      .select({ id: invitesTable.id })
+      .from(invitesTable)
+      .where(eq(invitesTable.token, code))
+      .limit(1);
+    if (!existing) return code;
+  }
+  throw new Error("Could not generate a unique invite code");
 }
 
 export async function hashPassword(plain: string): Promise<string> {

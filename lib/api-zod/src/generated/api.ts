@@ -114,12 +114,11 @@ export const acceptInviteBodyPasswordMin = 8;
 
 export const AcceptInviteBody = zod.object({
   token: zod.string().min(1),
-  name: zod.string().min(1),
   password: zod.string().min(acceptInviteBodyPasswordMin),
 });
 
 /**
- * @summary Admin creates an invite
+ * @summary Admin or in-scope stream overseer creates an invite
  */
 
 export const CreateInviteBody = zod.object({

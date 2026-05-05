@@ -9,4 +9,10 @@
 export interface CreateInviteResponse {
   message: string;
   acceptUrl: string;
+  /**
+   * 6-character invite code that the recipient enters to activate their account
+   * @minLength 6
+   * @maxLength 6
+   */
+  code: string;
 }
