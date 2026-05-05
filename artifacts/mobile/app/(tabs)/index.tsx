@@ -198,7 +198,7 @@ export default function DashboardScreen() {
   const [showAddUser, setShowAddUser] = useState(false);
   if (!currentUser) return null;
   const { events, projects, tasks, milestones, updateTask } = useData();
-  const showTeamCta = isProgrammeLead && users.length > 0 && users.length < 3;
+  const showTeamCta = isProgrammeLead && users.length < 3;
 
   function handleTaskToggle(task: { id: string; status: string }) {
     updateTask(task.id, { status: task.status });
