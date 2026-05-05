@@ -14,6 +14,8 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { AuthProvider } from "@/context/AuthContext";
+import { AuditProvider } from "@/context/AuditContext";
 import { DataProvider } from "@/context/DataContext";
 
 SplashScreen.preventAutoHideAsync();
@@ -24,10 +26,31 @@ function RootLayoutNav() {
   return (
     <Stack>
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-      <Stack.Screen name="event/[id]" options={{ title: "Event Details", headerBackTitle: "Back" }} />
-      <Stack.Screen name="project/[id]" options={{ title: "Project", headerBackTitle: "Back" }} />
-      <Stack.Screen name="new-event" options={{ title: "New Event", presentation: "modal", headerBackTitle: "Cancel" }} />
-      <Stack.Screen name="new-project" options={{ title: "New Project", presentation: "modal", headerBackTitle: "Cancel" }} />
+      <Stack.Screen name="admin" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="event/[id]"
+        options={{ title: "Event Details", headerBackTitle: "Back" }}
+      />
+      <Stack.Screen
+        name="project/[id]"
+        options={{ title: "Project", headerBackTitle: "Back" }}
+      />
+      <Stack.Screen
+        name="new-event"
+        options={{
+          title: "New Event",
+          presentation: "modal",
+          headerBackTitle: "Cancel",
+        }}
+      />
+      <Stack.Screen
+        name="new-project"
+        options={{
+          title: "New Project",
+          presentation: "modal",
+          headerBackTitle: "Cancel",
+        }}
+      />
     </Stack>
   );
 }
@@ -52,13 +75,17 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
-          <DataProvider>
-            <GestureHandlerRootView>
-              <KeyboardProvider>
-                <RootLayoutNav />
-              </KeyboardProvider>
-            </GestureHandlerRootView>
-          </DataProvider>
+          <AuthProvider>
+            <AuditProvider>
+              <DataProvider>
+                <GestureHandlerRootView>
+                  <KeyboardProvider>
+                    <RootLayoutNav />
+                  </KeyboardProvider>
+                </GestureHandlerRootView>
+              </DataProvider>
+            </AuditProvider>
+          </AuthProvider>
         </QueryClientProvider>
       </ErrorBoundary>
     </SafeAreaProvider>
