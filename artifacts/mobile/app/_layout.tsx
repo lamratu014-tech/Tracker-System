@@ -5,9 +5,10 @@ import {
   Inter_700Bold,
   useFonts,
 } from "@expo-google-fonts/inter";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Redirect, Stack, useSegments } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { ActivityIndicator, View } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
@@ -15,6 +16,7 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useColors } from "@/hooks/useColors";
+import { AuthProvider, useAuth } from "@/lib/auth/AuthContext";
 import { useStore } from "@/store/useStore";
 
 SplashScreen.preventAutoHideAsync();
@@ -23,11 +25,11 @@ const PUBLIC_ROUTES = new Set(["login", "accept-invite", "create-admin"]);
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const colors = useColors();
+  const { user, isLoading } = useAuth();
   const hydrated = useStore((s) => s.hydrated);
-  const currentUserId = useStore((s) => s.currentUserId);
   const segments = useSegments();
 
-  if (!hydrated) {
+  if (isLoading || !hydrated) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
         <ActivityIndicator color={colors.primary} />
@@ -38,8 +40,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const first = segments[0];
   const inPublic = first === undefined || PUBLIC_ROUTES.has(first as string);
 
-  if (!currentUserId && !inPublic) return <Redirect href="/login" />;
-  if (currentUserId && first === "login") return <Redirect href="/(tabs)" />;
+  if (!user && !inPublic) return <Redirect href="/login" />;
+  if (user && first === "login") return <Redirect href="/(tabs)" />;
   return <>{children}</>;
 }
 
@@ -74,6 +76,14 @@ export default function RootLayout() {
     Inter_600SemiBold,
     Inter_700Bold,
   });
+  const [queryClient] = useState(
+    () =>
+      new QueryClient({
+        defaultOptions: {
+          queries: { retry: 1, refetchOnWindowFocus: false },
+        },
+      }),
+  );
 
   useEffect(() => {
     if (fontsLoaded || fontError) {
@@ -88,7 +98,11 @@ export default function RootLayout() {
       <ErrorBoundary>
         <GestureHandlerRootView style={{ flex: 1 }}>
           <KeyboardProvider>
-            <RootLayoutNav />
+            <QueryClientProvider client={queryClient}>
+              <AuthProvider>
+                <RootLayoutNav />
+              </AuthProvider>
+            </QueryClientProvider>
           </KeyboardProvider>
         </GestureHandlerRootView>
       </ErrorBoundary>

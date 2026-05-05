@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
+import { useAuth } from "@/lib/auth/AuthContext";
 import { useCurrentUser, useStore } from "@/store/useStore";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -25,10 +26,12 @@ export default function SettingsScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const me = useCurrentUser();
+  const { user: authUser, signOut } = useAuth();
+  const localMe = useCurrentUser();
+  const me = authUser ?? localMe;
   const streams = useStore((s) => s.streams);
-  const logout = useStore((s) => s.logout);
   const resetSeed = useStore((s) => s.resetSeed);
+  const [signingOut, setSigningOut] = React.useState(false);
 
   if (!me) return null;
 
@@ -54,9 +57,15 @@ export default function SettingsScreen() {
   }
 
   function handleLogout() {
-    confirm("Sign out?", () => {
-      logout();
-      router.replace("/login");
+    confirm("Sign out?", async () => {
+      if (signingOut) return;
+      setSigningOut(true);
+      try {
+        await signOut();
+      } finally {
+        setSigningOut(false);
+        router.replace("/login");
+      }
     });
   }
 

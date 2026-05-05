@@ -183,6 +183,17 @@ export interface AppState {
   loginByEmail: (email: string) => { ok: boolean; error?: string };
   loginById: (userId: string) => void;
   logout: () => void;
+  syncAuthUser: (
+    authUser: {
+      id: string;
+      email: string;
+      name: string;
+      role: string;
+      active: boolean;
+      streamId?: string | null;
+      teamId?: string | null;
+    } | null,
+  ) => void;
 
   selectStream: (id: string | null) => void;
   selectTeam: (id: string | null) => void;
@@ -276,6 +287,47 @@ export const useStore = create<AppState>()(
           selectedTeamId: null,
           selectedProjectId: null,
         }));
+      },
+
+      syncAuthUser: (authUser) => {
+        tryAct("syncAuthUser", () => {
+          if (!authUser) {
+            set({
+              currentUserId: null,
+              selectedStreamId: null,
+              selectedTeamId: null,
+              selectedProjectId: null,
+            });
+            return;
+          }
+          const role: User["role"] =
+            authUser.role === "admin" ||
+            authUser.role === "stream_overseer" ||
+            authUser.role === "leader"
+              ? (authUser.role as User["role"])
+              : "leader";
+          const email = normalizeEmail(authUser.email);
+          set((s) => {
+            const byId = s.users.find((u) => u.id === authUser.id);
+            const byEmail =
+              byId ?? s.users.find((u) => u.email.toLowerCase() === email);
+            const merged: User = {
+              id: authUser.id,
+              name: authUser.name,
+              email,
+              role,
+              active: authUser.active,
+              streamId: authUser.streamId ?? byEmail?.streamId ?? null,
+              teamId: authUser.teamId ?? byEmail?.teamId ?? null,
+              inviteCode: null,
+              createdAt: byEmail?.createdAt ?? nowIso(),
+            };
+            const others = s.users.filter(
+              (u) => u.id !== merged.id && u.email.toLowerCase() !== email,
+            );
+            return { users: [...others, merged], currentUserId: merged.id };
+          });
+        });
       },
 
       selectStream: (id) => set({ selectedStreamId: id }),

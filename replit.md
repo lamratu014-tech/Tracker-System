@@ -10,7 +10,7 @@ The Express + PostgreSQL API server in `artifacts/api-server` is retained but no
 ### Stack
 - **Runtime**: Expo SDK 54, expo-router v6, React Native 0.81
 - **State**: Zustand global store with `persist` middleware (AsyncStorage); persist key `ops-planning-store-v2`
-- **Auth**: Real email login + 6-character invite-code activation
+- **Auth**: Real password auth via `/api/auth/login` (server bcrypt + 30-day session token). Token stored in `expo-secure-store` (native) / `localStorage` (web). `lib/auth/AuthContext.tsx` is the source of truth for the signed-in user; AuthGate in `_layout.tsx` waits on it. Generated client base URL + bearer header are configured at module load via `setBaseUrl`/`setAuthTokenGetter`.
 - **Fonts**: @expo-google-fonts/inter (400/500/600/700)
 - **Icons**: @expo/vector-icons (Feather)
 
