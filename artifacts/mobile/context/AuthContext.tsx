@@ -23,6 +23,8 @@ interface AuthContextType {
   updateUserRole: (userId: string, role: UserRole) => void;
   addUser: (user: Omit<AppUser, "id" | "createdAt">) => void;
   deactivateUser: (userId: string) => void;
+  deleteUser: (userId: string) => void;
+  reactivateUser: (userId: string) => void;
 }
 
 const DEFAULT_USER: AppUser = {
@@ -45,6 +47,8 @@ const AuthContext = createContext<AuthContextType>({
   updateUserRole: () => {},
   addUser: () => {},
   deactivateUser: () => {},
+  deleteUser: () => {},
+  reactivateUser: () => {},
 });
 
 const USERS_KEY = "ops_users_v1";
@@ -102,6 +106,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     saveUsers(users.map((u) => (u.id === userId ? { ...u, active: false } : u)));
   }, [users, saveUsers]);
 
+  const reactivateUser = useCallback((userId: string) => {
+    saveUsers(users.map((u) => (u.id === userId ? { ...u, active: true } : u)));
+  }, [users, saveUsers]);
+
+  const deleteUser = useCallback((userId: string) => {
+    saveUsers(users.filter((u) => u.id !== userId));
+  }, [users, saveUsers]);
+
   const currentUser = users.find((u) => u.id === currentUserId) ?? DEFAULT_USER;
 
   return (
@@ -114,6 +126,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updateUserRole,
       addUser,
       deactivateUser,
+      deleteUser,
+      reactivateUser,
     }}>
       {children}
     </AuthContext.Provider>

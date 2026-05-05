@@ -35,7 +35,7 @@ const SEVERITY_COLORS = {
 export default function AdminPanelScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { users, currentUser, updateUserRole, addUser, deactivateUser, switchUser } = useAuth();
+  const { users, currentUser, updateUserRole, addUser, deactivateUser, reactivateUser, deleteUser, switchUser } = useAuth();
   const { entries, clearOldEntries } = useAudit();
   const [tab, setTab] = useState<AdminTab>("users");
   const [auditFilter, setAuditFilter] = useState<"all" | "warn" | "critical">("all");
@@ -59,7 +59,7 @@ export default function AdminPanelScreen() {
   function handleDeactivate(user: AppUser) {
     Alert.alert(
       "Deactivate User",
-      `Remove ${user.name}'s access to the system?`,
+      `Suspend ${user.name}'s access? They will not be able to log in but their data is preserved.`,
       [
         { text: "Cancel", style: "cancel" },
         {
@@ -68,6 +68,29 @@ export default function AdminPanelScreen() {
           onPress: () => {
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
             deactivateUser(user.id);
+          },
+        },
+      ]
+    );
+  }
+
+  function handleReactivate(user: AppUser) {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    reactivateUser(user.id);
+  }
+
+  function handleDelete(user: AppUser) {
+    Alert.alert(
+      "Delete User",
+      `Permanently delete ${user.name}? This cannot be undone and all their profile data will be removed.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete Permanently",
+          style: "destructive",
+          onPress: () => {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+            deleteUser(user.id);
           },
         },
       ]
@@ -136,28 +159,47 @@ export default function AdminPanelScreen() {
               <View style={styles.userRight}>
                 <TouchableOpacity
                   style={[styles.roleBadge, { backgroundColor: ROLE_COLORS[user.role] + "20" }]}
-                  onPress={() => user.id !== currentUser.id && setShowRoleModal(user)}
+                  onPress={() => user.id !== currentUser.id && user.active && setShowRoleModal(user)}
                   activeOpacity={0.7}
                 >
                   <Text style={[styles.roleText, { color: ROLE_COLORS[user.role] }]}>
                     {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
                   </Text>
                 </TouchableOpacity>
-                {user.id !== currentUser.id && user.active && (
+                {user.id !== currentUser.id && (
                   <View style={styles.userActions}>
-                    <TouchableOpacity
-                      style={[styles.iconBtn, { backgroundColor: colors.muted }]}
-                      onPress={() => switchUser(user.id)}
-                      activeOpacity={0.7}
-                    >
-                      <Feather name="log-in" size={13} color={colors.primary} />
-                    </TouchableOpacity>
+                    {user.active ? (
+                      <>
+                        <TouchableOpacity
+                          style={[styles.iconBtn, { backgroundColor: colors.muted }]}
+                          onPress={() => switchUser(user.id)}
+                          activeOpacity={0.7}
+                        >
+                          <Feather name="log-in" size={13} color={colors.primary} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          style={[styles.iconBtn, { backgroundColor: "#FEF3C7" }]}
+                          onPress={() => handleDeactivate(user)}
+                          activeOpacity={0.7}
+                        >
+                          <Feather name="user-x" size={13} color="#D97706" />
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <TouchableOpacity
+                        style={[styles.iconBtn, { backgroundColor: "#D1FAE5" }]}
+                        onPress={() => handleReactivate(user)}
+                        activeOpacity={0.7}
+                      >
+                        <Feather name="user-check" size={13} color="#059669" />
+                      </TouchableOpacity>
+                    )}
                     <TouchableOpacity
                       style={[styles.iconBtn, { backgroundColor: "#FEE2E2" }]}
-                      onPress={() => handleDeactivate(user)}
+                      onPress={() => handleDelete(user)}
                       activeOpacity={0.7}
                     >
-                      <Feather name="user-x" size={13} color="#EF4444" />
+                      <Feather name="trash-2" size={13} color="#EF4444" />
                     </TouchableOpacity>
                   </View>
                 )}
