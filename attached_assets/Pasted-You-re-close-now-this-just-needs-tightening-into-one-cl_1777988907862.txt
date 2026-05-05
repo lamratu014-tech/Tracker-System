@@ -1,0 +1,171 @@
+You’re close now — this just needs tightening into one clean, consistent instruction so the system doesn’t implement conflicting logic.
+
+Paste this full prompt into Replit AI:
+
+⸻
+
+Prompt:
+
+“Refactor the application to implement a secure, scalable role-based system with strict data isolation, controlled cross-team visibility, and non-user team members.
+
+ROLES:
+
+* Admin:
+    Full system access. Can create/edit/delete all teams, projects, tasks, milestones, events. შეუძლია assign roles, invite users, and view all activity in real time across the platform.
+* Team Leader:
+    Restricted to their assigned team (project team). Can create and manage tasks, milestones, and events, update phases, assign tasks, and add tags. Cannot access other teams’ internal data, cannot modify roles, and cannot delete entire projects.
+* Owner (Project Owner):
+    The Owner is assigned by Admin and is the owner of a specific project team.
+    Can view full project progress, track updates, approve milestones, and update high-level project fields (e.g. phase, notes).
+    Cannot manage tasks, cannot assign roles, and cannot access other teams.
+
+AUTHENTICATION:
+
+* Only Admin, Team Leader, and Owner can have user accounts and log into the platform.
+* Remove “Team Member” as a user role completely.
+
+NON-USER TEAM MEMBERS:
+
+* Implement “Assigned Personnel” (non-user entities).
+* هؤلاء are stored as data only and cannot log in.
+
+Create a table/collection:
+assigned_personnel:
+
+* id
+* name
+* optional role_label
+* team_id
+
+Rules:
+
+* No email or password fields
+* No authentication access
+* No invite system
+
+Team Leaders and Admins can:
+
+* create, edit, delete assigned personnel
+* assign tasks to them
+
+TASK ASSIGNMENT:
+
+Update tasks schema to support:
+
+* assigned_to_user_id (nullable)
+* assigned_to_member_id (nullable)
+
+Ensure tasks can be assigned to either a Team Leader (user) or Assigned Personnel (non-user).
+
+TEAM VISIBILITY MODEL:
+
+* All Team Leaders can see a list of all team names (public metadata only).
+* Public metadata includes:
+    * team_id
+    * team_name
+    * optional function label
+* No access to:
+    * tasks
+    * milestones
+    * notes
+    * files
+    * timelines of other teams
+
+CROSS-TEAM EVENT SYSTEM:
+
+* Team Leaders can create events and invite other teams.
+* Events must include two separate fields:
+    1. internal_description (private to creator team and Admin)
+    2. shared_description (visible to invited teams)
+
+EVENT PERMISSIONS:
+
+* If user.team_id == event.created_by_team_id:
+    → show full event (internal + shared)
+* If user.team_id is in invited_team_ids:
+    → show only:
+    * title
+    * datetime
+    * shared_description
+    * creator team name
+* Otherwise:
+    → no access
+
+STRICT DATA ISOLATION:
+
+* Enforce all permissions at backend/API level, not just frontend
+* Filter all queries by user.role and user.team_id
+* Never return private team data to non-members
+
+DATA OWNERSHIP RULES:
+
+* Admin can edit/delete everything
+* Team Leaders can fully manage data within their own team
+* Owner can update high-level project fields only
+* Assigned Personnel cannot modify anything directly
+
+TEAM CREATION FLOW:
+
+1. Admin creates a team (project team)
+2. Admin assigns a Team Leader
+3. Admin assigns an Owner (project owner)
+4. Admin or Team Leader adds Assigned Personnel (names only)
+
+REAL-TIME UPDATES:
+
+* Implement live updates for:
+    * tasks
+    * milestones
+    * events
+    * activity log
+
+ACTIVITY LOG:
+
+Track all actions with:
+
+* user_id
+* role
+* action type
+* entity affected
+* timestamp
+
+DATABASE STRUCTURE:
+
+Use separate collections/tables:
+
+* users
+* teams
+* assigned_personnel
+* projects (linked to team)
+* tasks
+* milestones
+* events
+* activity_logs
+
+Events must include:
+
+* created_by_team_id
+* invited_team_ids (array)
+* internal_description
+* shared_description
+
+UI REQUIREMENTS:
+
+* Team Leaders can:
+    * see all team names in a selector (no details)
+    * create events with internal vs shared descriptions
+    * manage assigned personnel
+    * assign tasks to users or assigned personnel
+* Owners can:
+    * view their project team dashboard
+    * track progress
+    * approve milestones
+    * update high-level project phase only
+
+Ensure the system is secure, scalable, and prevents any cross-team data leakage while still allowing controlled collaboration through shared events.”
+
+⸻
+
+This version removes ambiguity, locks down access properly, and makes it very clear that the Owner is tied to a specific project team, not a global role.
+
+If the build comes back slightly off, the next step would be refining the database rules directly (that’s usually where Replit gets a bit loose).

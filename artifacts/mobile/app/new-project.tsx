@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Platform,
   ScrollView,
   StyleSheet,
@@ -14,6 +15,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import type { ProjectStatus } from "@/context/DataContext";
 import { useData } from "@/context/DataContext";
+import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
 const PROJECT_COLORS = [
@@ -31,32 +33,45 @@ export default function NewProjectScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { addProject } = useData();
+  const { createProject, teams } = useData();
+  const { currentUser, isAdmin } = useAuth();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [owner, setOwner] = useState("");
   const [phase, setPhase] = useState("Phase 1: Planning");
   const [color, setColor] = useState(PROJECT_COLORS[0]);
   const [status, setStatus] = useState<ProjectStatus>("not_started");
+  const [selectedTeamId, setSelectedTeamId] = useState<string>(
+    isAdmin ? "" : (currentUser?.teamId ?? "")
+  );
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
 
   const dueDate = new Date();
   dueDate.setMonth(dueDate.getMonth() + 3);
 
-  function handleCreate() {
+  async function handleCreate() {
     if (!title.trim()) return;
+    if (!selectedTeamId) { setError("Please select a team."); return; }
+    setError("");
+    setSaving(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    addProject({
+    const project = await createProject({
+      teamId: selectedTeamId,
       title: title.trim(),
       description,
-      owner,
       phase,
       color,
       status,
       dueDate: dueDate.toISOString(),
       tags: [],
     });
-    router.back();
+    setSaving(false);
+    if (project) {
+      router.back();
+    } else {
+      setError("Failed to create project. Please try again.");
+    }
   }
 
   const botPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
@@ -65,6 +80,45 @@ export default function NewProjectScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: botPad }} showsVerticalScrollIndicator={false}>
         <Text style={[styles.heading, { color: colors.foreground }]}>New Project</Text>
+
+        {/* Team selector — admin picks any team; team_leader defaults to their own */}
+        {isAdmin && (
+          <FormField label="Team">
+            {teams.length === 0 ? (
+              <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>No teams yet. Create a team in Admin first.</Text>
+            ) : (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+                {teams.map((t) => (
+                  <TouchableOpacity
+                    key={t.id}
+                    style={[
+                      styles.teamChip,
+                      { backgroundColor: selectedTeamId === t.id ? colors.primary : colors.muted },
+                    ]}
+                    onPress={() => setSelectedTeamId(t.id)}
+                    activeOpacity={0.7}
+                  >
+                    {selectedTeamId === t.id && <Feather name="check" size={12} color="#fff" />}
+                    <Text style={[styles.teamChipText, { color: selectedTeamId === t.id ? "#fff" : colors.mutedForeground }]}>
+                      {t.name}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+          </FormField>
+        )}
+
+        {!isAdmin && currentUser?.teamId && (
+          <FormField label="Team">
+            <View style={[styles.teamFixed, { backgroundColor: colors.muted }]}>
+              <Feather name="users" size={14} color={colors.primary} />
+              <Text style={[styles.teamFixedText, { color: colors.foreground }]}>
+                {teams.find((t) => t.id === currentUser.teamId)?.name ?? "Your Team"}
+              </Text>
+            </View>
+          </FormField>
+        )}
 
         <FormField label="Project Title">
           <TextInput
@@ -89,16 +143,6 @@ export default function NewProjectScreen() {
           />
         </FormField>
 
-        <FormField label="Owner">
-          <TextInput
-            style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
-            value={owner}
-            onChangeText={setOwner}
-            placeholder="Project owner name"
-            placeholderTextColor={colors.mutedForeground}
-          />
-        </FormField>
-
         <FormField label="Phase">
           <TextInput
             style={[styles.input, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
@@ -114,10 +158,7 @@ export default function NewProjectScreen() {
             {STATUS_OPTIONS.map(s => (
               <TouchableOpacity
                 key={s.value}
-                style={[
-                  styles.statusChip,
-                  { backgroundColor: status === s.value ? colors.primary : colors.muted },
-                ]}
+                style={[styles.statusChip, { backgroundColor: status === s.value ? colors.primary : colors.muted }]}
                 onPress={() => setStatus(s.value)}
                 activeOpacity={0.7}
               >
@@ -145,15 +186,23 @@ export default function NewProjectScreen() {
           </View>
         </FormField>
 
+        {error ? (
+          <Text style={[styles.errorText, { color: "#EF4444" }]}>{error}</Text>
+        ) : null}
+
         <TouchableOpacity
           style={[styles.createBtn, { backgroundColor: title.trim() ? colors.primary : colors.muted }]}
           onPress={handleCreate}
-          disabled={!title.trim()}
+          disabled={!title.trim() || saving}
           activeOpacity={0.8}
         >
-          <Text style={[styles.createBtnText, { color: title.trim() ? "#fff" : colors.mutedForeground }]}>
-            Create Project
-          </Text>
+          {saving ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={[styles.createBtnText, { color: title.trim() ? "#fff" : colors.mutedForeground }]}>
+              Create Project
+            </Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -185,6 +234,11 @@ const styles = StyleSheet.create({
   colorRow: { flexDirection: "row", gap: 10 },
   colorSwatch: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   colorSelected: { borderWidth: 3, borderColor: "rgba(0,0,0,0.2)" },
+  teamChip: { borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8, flexDirection: "row", alignItems: "center", gap: 5 },
+  teamChipText: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  teamFixed: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 10, padding: 12 },
+  teamFixedText: { fontSize: 14, fontFamily: "Inter_500Medium" },
+  errorText: { fontSize: 13, fontFamily: "Inter_400Regular", marginBottom: 8 },
   createBtn: { borderRadius: 12, paddingVertical: 14, alignItems: "center", marginTop: 8 },
   createBtnText: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
 });

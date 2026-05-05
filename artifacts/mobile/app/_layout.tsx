@@ -15,7 +15,6 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
-import { AuditProvider } from "@/context/AuditContext";
 import { DataProvider } from "@/context/DataContext";
 
 SplashScreen.preventAutoHideAsync();
@@ -102,15 +101,13 @@ export default function RootLayout() {
       <ErrorBoundary>
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
-            <AuditProvider>
-              <DataProvider>
-                <GestureHandlerRootView>
-                  <KeyboardProvider>
-                    <RootLayoutNav />
-                  </KeyboardProvider>
-                </GestureHandlerRootView>
-              </DataProvider>
-            </AuditProvider>
+            <DataProvider>
+              <GestureHandlerRootView>
+                <KeyboardProvider>
+                  <RootLayoutNav />
+                </KeyboardProvider>
+              </GestureHandlerRootView>
+            </DataProvider>
           </AuthProvider>
         </QueryClientProvider>
       </ErrorBoundary>

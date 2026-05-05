@@ -12,13 +12,19 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth, type UserRole } from "@/context/AuthContext";
-import { useAudit } from "@/context/AuditContext";
+import { useData } from "@/context/DataContext";
 import { useColors } from "@/hooks/useColors";
 
 const ROLE_COLORS: Record<UserRole, string> = {
   admin: "#7C3AED",
-  manager: "#2563EB",
-  viewer: "#64748B",
+  team_leader: "#2563EB",
+  owner: "#059669",
+};
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  admin: "Admin",
+  team_leader: "Team Leader",
+  owner: "Owner",
 };
 
 function SettingRow({
@@ -67,12 +73,14 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currentUser, users, isAdmin, logout } = useAuth();
-  const { entries } = useAudit();
+  const { activityLogs, teams } = useData();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
 
   if (!currentUser) return null;
+
+  const myTeam = teams.find((t) => t.id === currentUser.teamId);
 
   function handleLogout() {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -108,12 +116,16 @@ export default function SettingsScreen() {
               {currentUser.name}
             </Text>
             <Text style={[styles.profileRole, { color: colors.mutedForeground }]}>
-              {currentUser.department}
-              {currentUser.department ? " · " : ""}
+              {currentUser.department ? `${currentUser.department} · ` : ""}
               <Text style={{ color: ROLE_COLORS[currentUser.role] }}>
-                {currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1)}
+                {ROLE_LABELS[currentUser.role]}
               </Text>
             </Text>
+            {myTeam && (
+              <Text style={[styles.profileTeam, { color: colors.primary }]}>
+                {myTeam.name}{myTeam.functionLabel ? ` — ${myTeam.functionLabel}` : ""}
+              </Text>
+            )}
             <Text style={[styles.profileEmail, { color: colors.mutedForeground }]}>
               {currentUser.email}
             </Text>
@@ -133,8 +145,8 @@ export default function SettingsScreen() {
               />
               <SettingRow
                 icon="activity"
-                label="Audit Log"
-                value={`${entries.length} entries`}
+                label="Activity Log"
+                value={`${activityLogs.length} entries`}
                 onPress={() => router.push("/admin")}
               />
               <SettingRow
@@ -143,43 +155,41 @@ export default function SettingsScreen() {
                 value={`${users.filter((u) => u.active).length} active`}
                 onPress={() => router.push("/admin")}
               />
+              <SettingRow
+                icon="briefcase"
+                label="Teams"
+                value={`${teams.length} team${teams.length !== 1 ? "s" : ""}`}
+                onPress={() => router.push("/admin")}
+              />
             </View>
           </>
         )}
 
         <SectionHeader title="Calendar" />
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <SettingRow icon="clock" label="Default Event Duration" value="1 hour" onPress={() => {}} />
-          <SettingRow icon="bell" label="Default Reminder" value="15 min before" onPress={() => {}} />
-          <SettingRow icon="globe" label="Time Zone" value="GMT+0 London" onPress={() => {}} />
-          <SettingRow icon="eye" label="Default Calendar View" value="Month" onPress={() => {}} />
+          <SettingRow icon="clock" label="Default Event Duration" value="1 hour" />
+          <SettingRow icon="bell" label="Default Reminder" value="15 min before" />
+          <SettingRow icon="globe" label="Time Zone" value="GMT+0 London" />
+          <SettingRow icon="eye" label="Default Calendar View" value="Month" />
         </View>
 
         <SectionHeader title="Projects" />
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <SettingRow icon="user" label="Default Task Assignee" value="Unassigned" onPress={() => {}} />
-          <SettingRow icon="flag" label="Default Task Priority" value="Medium" onPress={() => {}} />
-        </View>
-
-        <SectionHeader title="Notifications" />
-        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <SettingRow icon="bell" label="Event Reminders" value="On" onPress={() => {}} />
-          <SettingRow icon="alert-triangle" label="At-Risk Alerts" value="On" onPress={() => {}} />
-          <SettingRow icon="check-circle" label="Task Completion" value="Off" onPress={() => {}} />
+          <SettingRow icon="flag" label="Default Task Priority" value="Medium" />
+          <SettingRow icon="users" label="Task Assignment" value="User or Member" />
         </View>
 
         <SectionHeader title="Data & Security" />
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <SettingRow icon="lock" label="Encryption" value="AES-256-GCM" />
-          <SettingRow icon="shield" label="Key Storage" value="OS Secure Enclave" />
-          <SettingRow icon="database" label="Data Location" value="On-device only" />
-          <SettingRow icon="file-text" label="Privacy Policy" value="UK GDPR / DPA 2018" onPress={() => {}} />
+          <SettingRow icon="server" label="Storage" value="PostgreSQL (server-side)" />
+          <SettingRow icon="lock" label="Authentication" value="bcrypt + tokens" />
+          <SettingRow icon="shield" label="Authorisation" value="Role-based (RBAC)" />
+          <SettingRow icon="file-text" label="Privacy" value="UK GDPR / DPA 2018" />
         </View>
 
         <SectionHeader title="About" />
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <SettingRow icon="info" label="Version" value="1.0.0" />
-          <SettingRow icon="book-open" label="Documentation" onPress={() => {}} />
+          <SettingRow icon="info" label="Version" value="2.0.0" />
         </View>
 
         {/* Sign Out */}
@@ -197,56 +207,26 @@ const styles = StyleSheet.create({
   header: { paddingHorizontal: 20, paddingBottom: 20 },
   headerTitle: { color: "#fff", fontSize: 24, fontFamily: "Inter_700Bold" },
   profileCard: {
-    margin: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 16,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
+    margin: 16, borderRadius: 14, borderWidth: 1, padding: 16,
+    flexDirection: "row", alignItems: "center", gap: 14,
   },
-  avatar: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  avatar: { width: 52, height: 52, borderRadius: 26, alignItems: "center", justifyContent: "center" },
   avatarText: { color: "#fff", fontSize: 18, fontFamily: "Inter_600SemiBold" },
-  profileInfo: { flex: 1 },
+  profileInfo: { flex: 1, gap: 2 },
   profileName: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
-  profileRole: { fontSize: 13, fontFamily: "Inter_400Regular", marginTop: 2 },
-  profileEmail: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
+  profileRole: { fontSize: 13, fontFamily: "Inter_400Regular" },
+  profileTeam: { fontSize: 12, fontFamily: "Inter_500Medium" },
+  profileEmail: { fontSize: 12, fontFamily: "Inter_400Regular" },
   sectionHeader: {
-    fontSize: 11,
-    fontFamily: "Inter_600SemiBold",
-    letterSpacing: 0.8,
-    textTransform: "uppercase",
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 6,
+    fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 0.8,
+    textTransform: "uppercase", paddingHorizontal: 20, paddingTop: 16, paddingBottom: 6,
   },
-  section: {
-    marginHorizontal: 16,
-    borderRadius: 14,
-    borderWidth: 1,
-    overflow: "hidden",
-  },
+  section: { marginHorizontal: 16, borderRadius: 14, borderWidth: 1, overflow: "hidden" },
   row: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    gap: 12,
+    flexDirection: "row", alignItems: "center", paddingHorizontal: 14, paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth, gap: 12,
   },
-  rowIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 8,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  rowIcon: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   rowLabel: { flex: 1, fontSize: 14, fontFamily: "Inter_400Regular" },
   rowRight: { flexDirection: "row", alignItems: "center", gap: 4 },
   rowValue: { fontSize: 13, fontFamily: "Inter_400Regular" },

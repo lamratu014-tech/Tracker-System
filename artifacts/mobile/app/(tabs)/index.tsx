@@ -16,7 +16,6 @@ import { ProjectCard } from "@/components/ProjectCard";
 import { TaskItem } from "@/components/TaskItem";
 import { StatusBadge } from "@/components/StatusBadge";
 import { useAuth } from "@/context/AuthContext";
-import { useAudit } from "@/context/AuditContext";
 import { useData } from "@/context/DataContext";
 import { useColors } from "@/hooks/useColors";
 
@@ -141,13 +140,13 @@ function WeekMiniCalendar() {
 
 function ActivityFeed() {
   const colors = useColors();
-  const { entries } = useAudit();
-  const recent = useMemo(() => [...entries].reverse().slice(0, 5), [entries]);
+  const { activityLogs } = useData();
+  const recent = useMemo(() => activityLogs.slice(0, 5), [activityLogs]);
 
-  const SEVERITY_ICON: Record<string, { icon: string; color: string }> = {
-    info: { icon: "activity", color: "#2563EB" },
-    warn: { icon: "alert-triangle", color: "#F59E0B" },
-    critical: { icon: "alert-circle", color: "#EF4444" },
+  const ACTION_ICON: Record<string, { icon: string; color: string }> = {
+    create: { icon: "plus-circle", color: "#059669" },
+    update: { icon: "edit-2", color: "#2563EB" },
+    delete: { icon: "trash-2", color: "#EF4444" },
   };
 
   if (recent.length === 0) {
@@ -164,20 +163,20 @@ function ActivityFeed() {
   return (
     <View style={[styles.widgetCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
       <Text style={[styles.widgetTitle, { color: colors.foreground }]}>Activity Feed</Text>
-      {recent.map((e) => {
-        const si = SEVERITY_ICON[e.severity];
+      {recent.map((entry) => {
+        const si = ACTION_ICON[entry.actionType] ?? { icon: "activity", color: "#6B7280" };
         return (
-          <View key={e.id} style={[styles.feedRow, { borderBottomColor: colors.border }]}>
+          <View key={entry.id} style={[styles.feedRow, { borderBottomColor: colors.border }]}>
             <View style={[styles.feedIconWrap, { backgroundColor: si.color + "15" }]}>
               <Feather name={si.icon as any} size={12} color={si.color} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.feedSummary, { color: colors.foreground }]} numberOfLines={1}>
-                {e.summary}
+                {entry.entityTitle ?? entry.entityType}
               </Text>
               <Text style={[styles.feedMeta, { color: colors.mutedForeground }]}>
-                {e.userName} ·{" "}
-                {new Date(e.timestamp).toLocaleTimeString([], {
+                {entry.userName ?? "System"} · {entry.actionType} ·{" "}
+                {new Date(entry.createdAt).toLocaleTimeString([], {
                   hour: "2-digit",
                   minute: "2-digit",
                 })}
@@ -195,7 +194,12 @@ export default function DashboardScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { currentUser, isAdmin } = useAuth();
+  if (!currentUser) return null;
   const { events, projects, tasks, milestones, updateTask } = useData();
+
+  function handleTaskToggle(task: { id: string; status: string }) {
+    updateTask(task.id, { status: task.status });
+  }
 
   const [focus, setFocus] = useState<DashFocus>("project");
 
@@ -222,14 +226,14 @@ export default function DashboardScreen() {
     () =>
       tasks
         .filter((t) => {
-          if (t.status === "done") return false;
+          if (t.status === "done" || !t.dueDate) return false;
           const due = new Date(t.dueDate);
           const diff = (due.getTime() - today.getTime()) / 86400000;
           return diff <= 7;
         })
         .sort(
           (a, b) =>
-            new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()
+            new Date(a.dueDate!).getTime() - new Date(b.dueDate!).getTime()
         )
         .slice(0, 5),
     [tasks]
@@ -247,7 +251,7 @@ export default function DashboardScreen() {
   const atRiskCount = projects.filter((p) => p.status === "at_risk").length;
   const pendingEvents = events.filter((e) => e.status === "pending").length;
   const overdueTasks = tasks.filter(
-    (t) => t.status !== "done" && new Date(t.dueDate) < today
+    (t) => t.status !== "done" && !!t.dueDate && new Date(t.dueDate) < today
   ).length;
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
@@ -408,7 +412,7 @@ export default function DashboardScreen() {
               ) : (
                 <View style={[styles.taskBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   {tasksDueSoon.map((t) => (
-                    <TaskItem key={t.id} task={t} onToggle={updateTask} />
+                    <TaskItem key={t.id} task={t} onToggle={handleTaskToggle} />
                   ))}
                 </View>
               )}
@@ -508,7 +512,7 @@ export default function DashboardScreen() {
               ) : (
                 <View style={[styles.taskBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   {tasksDueSoon.map((t) => (
-                    <TaskItem key={t.id} task={t} onToggle={updateTask} />
+                    <TaskItem key={t.id} task={t} onToggle={handleTaskToggle} />
                   ))}
                 </View>
               )}

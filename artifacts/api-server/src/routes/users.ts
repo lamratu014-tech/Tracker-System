@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { db, usersTable } from "@workspace/db";
+import { db, usersTable, teamsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireAdmin } from "../middlewares/requireAuth";
 
@@ -19,7 +19,10 @@ router.get("/users", requireAdmin, async (req, res): Promise<void> => {
   res.json(users.map(safeUser));
 });
 
-const UpdateRoleBody = z.object({ role: z.enum(["admin", "manager", "viewer"]) });
+const UpdateRoleBody = z.object({
+  role: z.enum(["admin", "team_leader", "owner"]),
+  teamId: z.string().optional().nullable(),
+});
 
 router.patch("/users/:id/role", requireAdmin, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
@@ -37,7 +40,7 @@ router.patch("/users/:id/role", requireAdmin, async (req, res): Promise<void> =>
 
   const [user] = await db
     .update(usersTable)
-    .set({ role: parsed.data.role })
+    .set({ role: parsed.data.role, teamId: parsed.data.teamId ?? undefined })
     .where(eq(usersTable.id, id))
     .returning();
 

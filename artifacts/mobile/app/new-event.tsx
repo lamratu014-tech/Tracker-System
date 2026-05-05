@@ -3,6 +3,7 @@ import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Platform,
   ScrollView,
   StyleSheet,
@@ -13,6 +14,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useData } from "@/context/DataContext";
+import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
 const EVENT_COLORS = [
@@ -23,37 +25,53 @@ export default function NewEventScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { addEvent, projects } = useData();
+  const { createEvent, projects, teams } = useData();
+  const { currentUser } = useAuth();
 
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
+  const [internalDescription, setInternalDescription] = useState("");
+  const [sharedDescription, setSharedDescription] = useState("");
   const [location, setLocation] = useState("");
   const [color, setColor] = useState(EVENT_COLORS[0]);
   const [projectId, setProjectId] = useState<string | undefined>();
+  const [invitedTeamIds, setInvitedTeamIds] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
 
   const tomorrow = new Date();
   tomorrow.setDate(tomorrow.getDate() + 1);
   tomorrow.setHours(9, 0, 0, 0);
 
-  function handleCreate() {
+  function toggleTeamInvite(teamId: string) {
+    setInvitedTeamIds((prev) =>
+      prev.includes(teamId) ? prev.filter((id) => id !== teamId) : [...prev, teamId]
+    );
+  }
+
+  async function handleCreate() {
     if (!title.trim()) return;
+    setSaving(true);
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     const end = new Date(tomorrow);
     end.setHours(10, 30, 0, 0);
-    addEvent({
+    await createEvent({
       title: title.trim(),
-      description,
+      internalDescription,
+      sharedDescription,
       location,
       color,
       startDate: tomorrow.toISOString(),
       endDate: end.toISOString(),
       status: "pending",
       isAllDay: false,
-      projectId,
-      attendees: [],
+      projectId: projectId ?? null,
+      invitedTeamIds,
     });
+    setSaving(false);
     router.back();
   }
+
+  // Teams that can be invited (all teams except creator's own)
+  const invitableTeams = teams.filter((t) => t.id !== currentUser?.teamId);
 
   const botPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
 
@@ -73,16 +91,40 @@ export default function NewEventScreen() {
           />
         </FormField>
 
-        <FormField label="Description">
-          <TextInput
-            style={[styles.textarea, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
-            value={description}
-            onChangeText={setDescription}
-            placeholder="Add a description..."
-            placeholderTextColor={colors.mutedForeground}
-            multiline
-            numberOfLines={3}
-          />
+        <FormField label="Internal Description">
+          <View style={[styles.descBox, { borderColor: colors.border, backgroundColor: colors.card }]}>
+            <View style={styles.descHeader}>
+              <Feather name="lock" size={12} color="#7C3AED" />
+              <Text style={[styles.descLabel, { color: "#7C3AED" }]}>Private — visible only to your team and Admin</Text>
+            </View>
+            <TextInput
+              style={[styles.textareaInner, { color: colors.foreground }]}
+              value={internalDescription}
+              onChangeText={setInternalDescription}
+              placeholder="Internal notes, context, or strategy..."
+              placeholderTextColor={colors.mutedForeground}
+              multiline
+              numberOfLines={3}
+            />
+          </View>
+        </FormField>
+
+        <FormField label="Shared Description">
+          <View style={[styles.descBox, { borderColor: colors.border, backgroundColor: colors.card }]}>
+            <View style={styles.descHeader}>
+              <Feather name="globe" size={12} color="#2563EB" />
+              <Text style={[styles.descLabel, { color: "#2563EB" }]}>Visible to invited teams</Text>
+            </View>
+            <TextInput
+              style={[styles.textareaInner, { color: colors.foreground }]}
+              value={sharedDescription}
+              onChangeText={setSharedDescription}
+              placeholder="What invited teams will see..."
+              placeholderTextColor={colors.mutedForeground}
+              multiline
+              numberOfLines={3}
+            />
+          </View>
         </FormField>
 
         <FormField label="Location">
@@ -94,6 +136,33 @@ export default function NewEventScreen() {
             placeholderTextColor={colors.mutedForeground}
           />
         </FormField>
+
+        {invitableTeams.length > 0 && (
+          <FormField label="Invite Other Teams">
+            <View style={{ gap: 6 }}>
+              {invitableTeams.map((t) => {
+                const selected = invitedTeamIds.includes(t.id);
+                return (
+                  <TouchableOpacity
+                    key={t.id}
+                    style={[
+                      styles.teamRow,
+                      { borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary + "15" : colors.card },
+                    ]}
+                    onPress={() => toggleTeamInvite(t.id)}
+                    activeOpacity={0.7}
+                  >
+                    <Feather name={selected ? "check-square" : "square"} size={16} color={selected ? colors.primary : colors.mutedForeground} />
+                    <Text style={[styles.teamRowText, { color: colors.foreground }]}>{t.name}</Text>
+                    {t.functionLabel ? (
+                      <Text style={[styles.teamRowSub, { color: colors.mutedForeground }]}>{t.functionLabel}</Text>
+                    ) : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </FormField>
+        )}
 
         <FormField label="Colour">
           <View style={styles.colorRow}>
@@ -137,12 +206,16 @@ export default function NewEventScreen() {
         <TouchableOpacity
           style={[styles.createBtn, { backgroundColor: title.trim() ? colors.primary : colors.muted }]}
           onPress={handleCreate}
-          disabled={!title.trim()}
+          disabled={!title.trim() || saving}
           activeOpacity={0.8}
         >
-          <Text style={[styles.createBtnText, { color: title.trim() ? "#fff" : colors.mutedForeground }]}>
-            Create Event
-          </Text>
+          {saving ? (
+            <ActivityIndicator color="#fff" size="small" />
+          ) : (
+            <Text style={[styles.createBtnText, { color: title.trim() ? "#fff" : colors.mutedForeground }]}>
+              Create Event
+            </Text>
+          )}
         </TouchableOpacity>
       </ScrollView>
     </View>
@@ -167,7 +240,13 @@ const styles = StyleSheet.create({
   container: { flex: 1 },
   heading: { fontSize: 22, fontFamily: "Inter_700Bold", marginBottom: 20 },
   input: { borderRadius: 10, borderWidth: 1, padding: 12, fontSize: 15, fontFamily: "Inter_400Regular" },
-  textarea: { borderRadius: 10, borderWidth: 1, padding: 12, fontSize: 15, fontFamily: "Inter_400Regular", minHeight: 80, textAlignVertical: "top" },
+  descBox: { borderRadius: 10, borderWidth: 1, overflow: "hidden" },
+  descHeader: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4 },
+  descLabel: { fontSize: 11, fontFamily: "Inter_500Medium" },
+  textareaInner: { padding: 12, paddingTop: 4, fontSize: 15, fontFamily: "Inter_400Regular", minHeight: 70, textAlignVertical: "top" },
+  teamRow: { flexDirection: "row", alignItems: "center", gap: 10, borderWidth: 1, borderRadius: 10, padding: 12 },
+  teamRowText: { flex: 1, fontSize: 14, fontFamily: "Inter_500Medium" },
+  teamRowSub: { fontSize: 12, fontFamily: "Inter_400Regular" },
   colorRow: { flexDirection: "row", gap: 10, flexWrap: "wrap" },
   colorSwatch: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center" },
   colorSelected: { borderWidth: 3, borderColor: "rgba(0,0,0,0.2)" },

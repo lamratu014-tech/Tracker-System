@@ -53,14 +53,18 @@ export function ProjectCard({ project, tasks, compact }: Props) {
       </View>
 
       <View style={styles.footer}>
-        <View style={styles.metaItem}>
-          <Feather name="user" size={12} color={colors.mutedForeground} />
-          <Text style={[styles.metaText, { color: colors.mutedForeground }]}>{project.owner}</Text>
-        </View>
-        <View style={styles.metaItem}>
-          <Feather name="calendar" size={12} color={colors.mutedForeground} />
-          <Text style={[styles.metaText, { color: colors.mutedForeground }]}>Due {formatDate(project.dueDate)}</Text>
-        </View>
+        {project.teamName ? (
+          <View style={styles.metaItem}>
+            <Feather name="briefcase" size={12} color={colors.mutedForeground} />
+            <Text style={[styles.metaText, { color: colors.mutedForeground }]} numberOfLines={1}>{project.teamName}</Text>
+          </View>
+        ) : null}
+        {project.dueDate ? (
+          <View style={styles.metaItem}>
+            <Feather name="calendar" size={12} color={colors.mutedForeground} />
+            <Text style={[styles.metaText, { color: colors.mutedForeground }]}>Due {formatDate(project.dueDate)}</Text>
+          </View>
+        ) : null}
       </View>
     </TouchableOpacity>
   );

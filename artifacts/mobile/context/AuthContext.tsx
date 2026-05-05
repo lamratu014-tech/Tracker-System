@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { api, getStoredToken, storeToken, clearToken } from "@/services/api";
 
-export type UserRole = "admin" | "manager" | "viewer";
+export type UserRole = "admin" | "team_leader" | "owner";
 
 export interface AppUser {
   id: string;
@@ -16,6 +16,7 @@ export interface AppUser {
   initials: string;
   department: string;
   role: UserRole;
+  teamId: string | null;
   active: boolean;
   createdAt: string;
   invitedByName?: string | null;
@@ -25,7 +26,8 @@ interface AuthContextType {
   currentUser: AppUser | null;
   users: AppUser[];
   isAdmin: boolean;
-  isManager: boolean;
+  isTeamLeader: boolean;
+  isOwner: boolean;
   isLoading: boolean;
   isAuthenticated: boolean;
   needsSetup: boolean;
@@ -35,7 +37,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   setup: (email: string, name: string, password: string, department?: string, setupSecret?: string) => Promise<{ error?: string }>;
   inviteUser: (email: string, name: string, role: UserRole, department?: string) => Promise<{ error?: string; acceptUrl?: string }>;
-  updateUserRole: (userId: string, role: UserRole) => Promise<void>;
+  updateUserRole: (userId: string, role: UserRole, teamId?: string | null) => Promise<void>;
   deactivateUser: (userId: string) => Promise<void>;
   reactivateUser: (userId: string) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
@@ -76,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
       } catch {
-        // API unreachable — app will show login/setup after load
+        // API unreachable
       } finally {
         setIsLoading(false);
       }
@@ -119,9 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(async () => {
     if (sessionToken) {
-      try {
-        await api.logout(sessionToken);
-      } catch {}
+      try { await api.logout(sessionToken); } catch {}
     }
     await clearToken();
     setSessionToken(null);
@@ -176,9 +176,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const updateUserRole = useCallback(
-    async (userId: string, role: UserRole) => {
+    async (userId: string, role: UserRole, teamId?: string | null) => {
       if (!sessionToken) return;
-      const res = await api.updateRole(sessionToken, userId, role);
+      const res = await api.updateRole(sessionToken, userId, role, teamId);
       if (res.ok) await refreshUsers();
     },
     [sessionToken, refreshUsers]
@@ -213,7 +213,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const isAuthenticated = !!currentUser;
   const isAdmin = currentUser?.role === "admin";
-  const isManager = isAdmin || currentUser?.role === "manager";
+  const isTeamLeader = isAdmin || currentUser?.role === "team_leader";
+  const isOwner = currentUser?.role === "owner";
 
   return (
     <AuthContext.Provider
@@ -221,7 +222,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         currentUser,
         users,
         isAdmin,
-        isManager,
+        isTeamLeader,
+        isOwner,
         isLoading,
         isAuthenticated,
         needsSetup,
@@ -249,14 +251,15 @@ export function useAuth(): AuthContextType {
       currentUser: null,
       users: [],
       isAdmin: false,
-      isManager: false,
+      isTeamLeader: false,
+      isOwner: false,
       isLoading: true,
       isAuthenticated: false,
       needsSetup: false,
       sessionToken: null,
       login: async () => ({}),
       logout: async () => {},
-      setup: async (_e, _n, _p, _d, _s) => ({}),
+      setup: async () => ({}),
       inviteUser: async () => ({}),
       updateUserRole: async () => {},
       deactivateUser: async () => {},

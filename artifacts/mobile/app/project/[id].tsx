@@ -15,30 +15,43 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBadge } from "@/components/StatusBadge";
 import { TaskItem } from "@/components/TaskItem";
-import type { Project, Task } from "@/context/DataContext";
+import type { ProjectStatus } from "@/context/DataContext";
 import { useData } from "@/context/DataContext";
+import { useAuth } from "@/context/AuthContext";
 import { useColors } from "@/hooks/useColors";
 
 type TabType = "overview" | "tasks" | "milestones" | "events";
+
+const STATUS_OPTIONS: { label: string; value: ProjectStatus }[] = [
+  { label: "Not Started", value: "not_started" },
+  { label: "In Progress", value: "in_progress" },
+  { label: "At Risk", value: "at_risk" },
+  { label: "Completed", value: "completed" },
+];
 
 export default function ProjectDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { projects, tasks, milestones, events, updateProject, deleteProject, updateTask, addTask, updateMilestone } = useData();
+  const { isAdmin, isTeamLeader, isOwner, currentUser } = useAuth();
+  const { projects, tasks, milestones, events, updateProject, deleteProject, updateTask, createTask, updateMilestone } = useData();
 
   const project = projects.find(p => p.id === id);
   const [tab, setTab] = useState<TabType>("overview");
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<Project | null>(project ?? null);
+  const [draftTitle, setDraftTitle] = useState(project?.title ?? "");
+  const [draftDescription, setDraftDescription] = useState(project?.description ?? "");
+  const [draftPhase, setDraftPhase] = useState(project?.phase ?? "");
+  const [draftNotes, setDraftNotes] = useState(project?.notes ?? "");
+  const [draftStatus, setDraftStatus] = useState<ProjectStatus>(project?.status ?? "not_started");
   const [newTaskTitle, setNewTaskTitle] = useState("");
 
   const projectTasks = useMemo(() => tasks.filter(t => t.projectId === id), [tasks, id]);
   const projectMilestones = useMemo(() => milestones.filter(m => m.projectId === id), [milestones, id]);
   const projectEvents = useMemo(() => events.filter(e => e.projectId === id), [events, id]);
 
-  if (!project || !draft) {
+  if (!project) {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.mutedForeground }}>Project not found.</Text>
@@ -46,13 +59,37 @@ export default function ProjectDetailScreen() {
     );
   }
 
+  // Permissions
+  const canEdit = isAdmin || (isTeamLeader && currentUser?.teamId === project.teamId);
+  const canEditHighLevel = canEdit || (isOwner && currentUser?.teamId === project.teamId);
+  const canDelete = isAdmin || (isTeamLeader && currentUser?.teamId === project.teamId);
+
   const total = projectTasks.length;
   const done = projectTasks.filter(t => t.status === "done").length;
   const progress = total > 0 ? done / total : 0;
 
-  function save() {
+  function startEditing() {
+    setDraftTitle(project!.title);
+    setDraftDescription(project!.description);
+    setDraftPhase(project!.phase);
+    setDraftNotes(project!.notes);
+    setDraftStatus(project!.status);
+    setEditing(true);
+  }
+
+  async function save() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    updateProject(draft!);
+    if (isOwner && !isTeamLeader) {
+      await updateProject(id!, { phase: draftPhase, notes: draftNotes });
+    } else {
+      await updateProject(id!, {
+        title: draftTitle,
+        description: draftDescription,
+        phase: draftPhase,
+        notes: draftNotes,
+        status: draftStatus,
+      });
+    }
     setEditing(false);
   }
 
@@ -62,24 +99,25 @@ export default function ProjectDetailScreen() {
       {
         text: "Delete", style: "destructive", onPress: () => {
           Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-          deleteProject(project.id);
+          deleteProject(project!.id);
           router.back();
         }
       },
     ]);
   }
 
-  function addQuickTask() {
+  async function addQuickTask() {
     if (!newTaskTitle.trim()) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    addTask({
+    await createTask({
       projectId: id,
       title: newTaskTitle.trim(),
       description: "",
       status: "todo",
-      assignee: "",
-      dueDate: new Date().toISOString(),
       priority: "medium",
+      dueDate: null,
+      assignedToUserId: null,
+      assignedToMemberId: null,
     });
     setNewTaskTitle("");
   }
@@ -93,25 +131,27 @@ export default function ProjectDetailScreen() {
     { key: "events", label: "Events", count: projectEvents.length },
   ];
 
+  const displayTitle = editing && !isOwner ? draftTitle : project.title;
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Header */}
       <View style={[styles.header, { backgroundColor: colors.navyDark }]}>
-        <View style={[styles.projectDot, { backgroundColor: draft.color }]} />
-        {editing ? (
+        <View style={[styles.projectDot, { backgroundColor: project.color }]} />
+        {editing && canEdit ? (
           <TextInput
-            style={[styles.titleInput]}
-            value={draft.title}
-            onChangeText={t => setDraft({ ...draft, title: t })}
+            style={styles.titleInput}
+            value={draftTitle}
+            onChangeText={setDraftTitle}
             autoFocus
           />
         ) : (
-          <Text style={styles.headerTitle} numberOfLines={1}>{draft.title}</Text>
+          <Text style={styles.headerTitle} numberOfLines={1}>{displayTitle}</Text>
         )}
         <View style={styles.headerActions}>
           {editing ? (
             <>
-              <TouchableOpacity style={styles.headerBtn} onPress={() => { setDraft(project); setEditing(false); }} activeOpacity={0.7}>
+              <TouchableOpacity style={styles.headerBtn} onPress={() => setEditing(false)} activeOpacity={0.7}>
                 <Feather name="x" size={18} color="rgba(255,255,255,0.7)" />
               </TouchableOpacity>
               <TouchableOpacity style={[styles.headerBtn, { backgroundColor: colors.primary }]} onPress={save} activeOpacity={0.7}>
@@ -120,12 +160,16 @@ export default function ProjectDetailScreen() {
             </>
           ) : (
             <>
-              <TouchableOpacity style={styles.headerBtn} onPress={() => setEditing(true)} activeOpacity={0.7}>
-                <Feather name="edit-2" size={18} color="rgba(255,255,255,0.7)" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.headerBtn} onPress={handleDelete} activeOpacity={0.7}>
-                <Feather name="trash-2" size={18} color="rgba(255,255,255,0.5)" />
-              </TouchableOpacity>
+              {canEditHighLevel && (
+                <TouchableOpacity style={styles.headerBtn} onPress={startEditing} activeOpacity={0.7}>
+                  <Feather name="edit-2" size={18} color="rgba(255,255,255,0.7)" />
+                </TouchableOpacity>
+              )}
+              {canDelete && (
+                <TouchableOpacity style={styles.headerBtn} onPress={handleDelete} activeOpacity={0.7}>
+                  <Feather name="trash-2" size={18} color="rgba(255,255,255,0.5)" />
+                </TouchableOpacity>
+              )}
             </>
           )}
         </View>
@@ -134,11 +178,11 @@ export default function ProjectDetailScreen() {
       {/* Progress bar */}
       <View style={[styles.progressSection, { backgroundColor: colors.navyMid }]}>
         <View style={styles.progressMeta}>
-          <StatusBadge status={draft.status} small />
+          <StatusBadge status={project.status} small />
           <Text style={styles.progressFraction}>{done}/{total} tasks</Text>
         </View>
         <View style={[styles.progressTrack, { backgroundColor: "rgba(255,255,255,0.15)" }]}>
-          <View style={[styles.progressFill, { width: `${progress * 100}%` as any, backgroundColor: draft.color }]} />
+          <View style={[styles.progressFill, { width: `${progress * 100}%` as any, backgroundColor: project.color }]} />
         </View>
       </View>
 
@@ -163,33 +207,93 @@ export default function ProjectDetailScreen() {
         ))}
       </ScrollView>
 
-      <ScrollView
-        contentContainerStyle={{ padding: 16, paddingBottom: botPad }}
-        showsVerticalScrollIndicator={false}
-      >
+      <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: botPad }} showsVerticalScrollIndicator={false}>
         {tab === "overview" && (
           <View style={styles.tabContent}>
             <View style={[styles.infoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <InfoRow label="Phase" value={draft.phase} />
-              <InfoRow label="Owner" value={draft.owner} />
-              <InfoRow label="Due Date" value={new Date(draft.dueDate).toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" })} />
-              <InfoRow label="Tags" value={draft.tags.join(", ") || "—"} />
+              {project.teamName && <InfoRow label="Team" value={project.teamName} />}
+
+              {editing ? (
+                <View style={{ paddingVertical: 10 }}>
+                  <Text style={[infoStyles.label, { color: colors.mutedForeground }]}>Phase</Text>
+                  <TextInput
+                    style={[styles.inlineInput, { color: colors.foreground, borderBottomColor: colors.border }]}
+                    value={draftPhase}
+                    onChangeText={setDraftPhase}
+                    placeholder="e.g. Phase 1: Planning"
+                    placeholderTextColor={colors.mutedForeground}
+                  />
+                </View>
+              ) : (
+                <InfoRow label="Phase" value={project.phase || "—"} />
+              )}
+
+              {project.dueDate && (
+                <InfoRow label="Due Date" value={new Date(project.dueDate).toLocaleDateString([], { month: "long", day: "numeric", year: "numeric" })} />
+              )}
+              {project.tags.length > 0 && <InfoRow label="Tags" value={project.tags.join(", ")} />}
             </View>
+
+            {/* Status — only editable by team_leader/admin */}
+            {editing && canEdit && (
+              <View style={styles.fieldBlock}>
+                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Status</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                  {STATUS_OPTIONS.map(s => (
+                    <TouchableOpacity
+                      key={s.value}
+                      style={[styles.statusChip, { backgroundColor: draftStatus === s.value ? colors.primary : colors.muted }]}
+                      onPress={() => setDraftStatus(s.value)}
+                      activeOpacity={0.7}
+                    >
+                      {draftStatus === s.value && <Feather name="check" size={12} color="#fff" />}
+                      <Text style={[{ fontSize: 13, fontFamily: "Inter_500Medium", color: draftStatus === s.value ? "#fff" : colors.mutedForeground }]}>
+                        {s.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
             <View style={styles.fieldBlock}>
               <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Description</Text>
-              {editing ? (
+              {editing && canEdit ? (
                 <TextInput
                   style={[styles.textarea, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
-                  value={draft.description}
-                  onChangeText={t => setDraft({ ...draft, description: t })}
+                  value={draftDescription}
+                  onChangeText={setDraftDescription}
                   multiline
                   numberOfLines={4}
                   placeholderTextColor={colors.mutedForeground}
                   placeholder="Add a description..."
                 />
               ) : (
-                <Text style={[styles.bodyText, { color: draft.description ? colors.foreground : colors.mutedForeground }]}>
-                  {draft.description || "No description"}
+                <Text style={[styles.bodyText, { color: project.description ? colors.foreground : colors.mutedForeground }]}>
+                  {project.description || "No description"}
+                </Text>
+              )}
+            </View>
+
+            {/* Notes — editable by owner and above */}
+            <View style={styles.fieldBlock}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Notes</Text>
+                {isOwner && !canEdit && <View style={[styles.ownerBadge, { backgroundColor: "#DBEAFE" }]}><Text style={styles.ownerBadgeText}>Owner can edit</Text></View>}
+              </View>
+              {editing ? (
+                <TextInput
+                  style={[styles.textarea, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.card }]}
+                  value={draftNotes}
+                  onChangeText={setDraftNotes}
+                  multiline
+                  numberOfLines={3}
+                  placeholderTextColor={colors.mutedForeground}
+                  placeholder="Project notes or high-level observations..."
+                />
+              ) : (
+                <Text style={[styles.bodyText, { color: project.notes ? colors.foreground : colors.mutedForeground }]}>
+                  {project.notes || "No notes"}
                 </Text>
               )}
             </View>
@@ -198,21 +302,22 @@ export default function ProjectDetailScreen() {
 
         {tab === "tasks" && (
           <View>
-            {/* Quick add */}
-            <View style={[styles.quickAdd, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <TextInput
-                style={[styles.quickInput, { color: colors.foreground }]}
-                value={newTaskTitle}
-                onChangeText={setNewTaskTitle}
-                placeholder="Add a task..."
-                placeholderTextColor={colors.mutedForeground}
-                onSubmitEditing={addQuickTask}
-                returnKeyType="done"
-              />
-              <TouchableOpacity onPress={addQuickTask} style={[styles.quickBtn, { backgroundColor: colors.primary }]} activeOpacity={0.7}>
-                <Feather name="plus" size={16} color="#fff" />
-              </TouchableOpacity>
-            </View>
+            {canEdit && (
+              <View style={[styles.quickAdd, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <TextInput
+                  style={[styles.quickInput, { color: colors.foreground }]}
+                  value={newTaskTitle}
+                  onChangeText={setNewTaskTitle}
+                  placeholder="Add a task..."
+                  placeholderTextColor={colors.mutedForeground}
+                  onSubmitEditing={addQuickTask}
+                  returnKeyType="done"
+                />
+                <TouchableOpacity onPress={addQuickTask} style={[styles.quickBtn, { backgroundColor: colors.primary }]} activeOpacity={0.7}>
+                  <Feather name="plus" size={16} color="#fff" />
+                </TouchableOpacity>
+              </View>
+            )}
 
             {projectTasks.length === 0 ? (
               <View style={[styles.empty, { backgroundColor: colors.muted }]}>
@@ -222,7 +327,13 @@ export default function ProjectDetailScreen() {
             ) : (
               <View style={[styles.taskList, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 {projectTasks.map(t => (
-                  <TaskItem key={t.id} task={t} onToggle={updateTask} />
+                  <TaskItem
+                    key={t.id}
+                    task={t}
+                    onToggle={(updated) => {
+                      if (canEdit) updateTask(t.id, { status: updated.status });
+                    }}
+                  />
                 ))}
               </View>
             )}
@@ -243,10 +354,11 @@ export default function ProjectDetailScreen() {
                     key={m.id}
                     style={[styles.milestoneRow, { borderBottomColor: colors.border }]}
                     onPress={() => {
+                      if (!canEditHighLevel) return;
                       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      updateMilestone({ ...m, completed: !m.completed });
+                      updateMilestone(m.id, { completed: !m.completed });
                     }}
-                    activeOpacity={0.7}
+                    activeOpacity={canEditHighLevel ? 0.7 : 1}
                   >
                     <View style={[styles.milestoneCheck, { borderColor: m.completed ? colors.success : colors.border, backgroundColor: m.completed ? colors.success : "transparent" }]}>
                       {m.completed && <Feather name="check" size={12} color="#fff" />}
@@ -319,13 +431,7 @@ const infoStyles = StyleSheet.create({
 const styles = StyleSheet.create({
   container: { flex: 1 },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  header: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    gap: 10,
-  },
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 14, gap: 10 },
   projectDot: { width: 10, height: 10, borderRadius: 5 },
   headerTitle: { flex: 1, color: "#fff", fontSize: 18, fontFamily: "Inter_600SemiBold" },
   titleInput: { flex: 1, color: "#fff", fontSize: 18, fontFamily: "Inter_600SemiBold", borderBottomWidth: 1, borderBottomColor: "rgba(255,255,255,0.3)" },
@@ -344,7 +450,9 @@ const styles = StyleSheet.create({
   fieldBlock: { gap: 6 },
   fieldLabel: { fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 0.5, textTransform: "uppercase" },
   bodyText: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20 },
+  inlineInput: { fontSize: 14, fontFamily: "Inter_400Regular", borderBottomWidth: 1, paddingBottom: 2 },
   textarea: { borderRadius: 10, borderWidth: 1, padding: 12, fontSize: 14, fontFamily: "Inter_400Regular", minHeight: 80, textAlignVertical: "top" },
+  statusChip: { borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6, flexDirection: "row", alignItems: "center", gap: 4 },
   quickAdd: { flexDirection: "row", alignItems: "center", borderRadius: 10, borderWidth: 1, paddingLeft: 12, paddingRight: 6, paddingVertical: 6, marginBottom: 12, gap: 8 },
   quickInput: { flex: 1, fontSize: 14, fontFamily: "Inter_400Regular", paddingVertical: 4 },
   quickBtn: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
@@ -361,4 +469,6 @@ const styles = StyleSheet.create({
   eventInfo: { flex: 1 },
   eventTitle: { fontSize: 14, fontFamily: "Inter_500Medium" },
   eventDate: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
+  ownerBadge: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
+  ownerBadgeText: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: "#2563EB" },
 });

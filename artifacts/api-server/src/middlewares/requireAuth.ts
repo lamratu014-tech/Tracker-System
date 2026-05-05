@@ -43,3 +43,18 @@ export async function requireAdmin(
     next();
   });
 }
+
+export async function requireTeamLeader(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  await requireAuth(req, res, () => {
+    const role = req.authUser?.role;
+    if (role !== "admin" && role !== "team_leader") {
+      res.status(403).json({ error: "Team leader access required" });
+      return;
+    }
+    next();
+  });
+}

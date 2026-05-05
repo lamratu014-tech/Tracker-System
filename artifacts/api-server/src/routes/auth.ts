@@ -42,7 +42,7 @@ const SetupBody = z.object({
 const InviteBody = z.object({
   email: z.string().email(),
   name: z.string().min(1),
-  role: z.enum(["admin", "manager", "viewer"]),
+  role: z.enum(["admin", "team_leader", "owner"]),
   department: z.string().optional(),
 });
 
