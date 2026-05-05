@@ -257,7 +257,7 @@ export function AddUserModal({
         {([
           { key: "direct", label: "Add Directly", icon: "user-check", caption: "Set their password now" },
           { key: "invite", label: "Send Invite Link", icon: "link", caption: "They set their own password" },
-        ] as { key: Mode; label: string; icon: string; caption: string }[]).map((m) => {
+        ] as { key: Mode; label: string; icon: React.ComponentProps<typeof Feather>["name"]; caption: string }[]).map((m) => {
           const active = mode === m.key;
           const a = m.key === "direct" ? "#7C3AED" : "#2563EB";
           const aBg = m.key === "direct" ? "#EDE9FE" : "#DBEAFE";
@@ -275,7 +275,7 @@ export function AddUserModal({
               activeOpacity={0.85}
             >
               <View style={[s.modePillIcon, { backgroundColor: active ? a : colors.background }]}>
-                <Feather name={m.icon as any} size={16} color={active ? "#fff" : colors.mutedForeground} />
+                <Feather name={m.icon} size={16} color={active ? "#fff" : colors.mutedForeground} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[s.modePillLabel, { color: active ? a : colors.foreground }]}>{m.label}</Text>

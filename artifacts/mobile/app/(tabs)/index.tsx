@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useRef, useState } from "react";
 import {
   Platform,
   ScrollView,
@@ -196,6 +196,7 @@ export default function DashboardScreen() {
   const router = useRouter();
   const { currentUser, isProgrammeLead, users } = useAuth();
   const [showAddUser, setShowAddUser] = useState(false);
+  const pendingHighlightRef = useRef<{ email: string; type: "direct" | "invite" } | null>(null);
   if (!currentUser) return null;
   const { events, projects, tasks, milestones, updateTask } = useData();
   const [teamCtaDismissed, setTeamCtaDismissed] = useState(false);
@@ -610,7 +611,15 @@ export default function DashboardScreen() {
       {isProgrammeLead && (
         <AddUserModal
           visible={showAddUser}
-          onClose={() => setShowAddUser(false)}
+          onClose={() => {
+            const pending = pendingHighlightRef.current;
+            pendingHighlightRef.current = null;
+            setShowAddUser(false);
+            if (pending && pending.type === "direct") {
+              router.push(`/admin?tab=users&highlight=${encodeURIComponent(pending.email)}`);
+            }
+          }}
+          onSuccess={(info) => { pendingHighlightRef.current = info; }}
         />
       )}
     </ScrollView>

@@ -217,7 +217,7 @@ function CreateTeamModal({ visible, streams, onSave, onClose, colors, defaultStr
 export default function AdminPanelScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ tab?: string }>();
+  const params = useLocalSearchParams<{ tab?: string; highlight?: string }>();
   const { users, currentUser, createUser, updateUserRole, inviteUser, deactivateUser, reactivateUser, deleteUser } = useAuth();
   const { programme, streams, teams, activityLogs, createTeam, deleteTeam, createStream, deleteStream, updateProgramme, refreshActivity } = useData();
 
@@ -236,6 +236,24 @@ export default function AdminPanelScreen() {
       setTab(params.tab as AdminTab);
     }
   }, [params.tab]);
+
+  useEffect(() => {
+    if (!params.highlight) return;
+    const email = params.highlight.toLowerCase();
+    setTab("users");
+    setSearchQuery("");
+    setRoleFilter("all");
+    setStatusFilter("all");
+    setRecentlyAddedEmail(email);
+    if (recentTimer.current) clearTimeout(recentTimer.current);
+    recentTimer.current = setTimeout(() => setRecentlyAddedEmail(null), 1500);
+    setTimeout(() => {
+      const y = cardYMapRef.current[email];
+      if (y !== undefined && usersScrollRef.current) {
+        usersScrollRef.current.scrollTo({ y: Math.max(0, y - 80), animated: true });
+      }
+    }, 200);
+  }, [params.highlight]);
   const [roleModalUser, setRoleModalUser] = useState<AppUser | null>(null);
   const [showCreateStream, setShowCreateStream] = useState(false);
   const [showCreateTeam, setShowCreateTeam] = useState(false);

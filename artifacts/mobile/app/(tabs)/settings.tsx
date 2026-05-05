@@ -1,7 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   Alert,
   Platform,
@@ -75,6 +75,7 @@ export default function SettingsScreen() {
   const { currentUser, users, isProgrammeLead, logout } = useAuth();
   const { activityLogs, teams, streams, programme } = useData();
   const [showAddUser, setShowAddUser] = useState(false);
+  const pendingHighlightRef = useRef<{ email: string; type: "direct" | "invite" } | null>(null);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
@@ -228,7 +229,15 @@ export default function SettingsScreen() {
       {isProgrammeLead && (
         <AddUserModal
           visible={showAddUser}
-          onClose={() => setShowAddUser(false)}
+          onClose={() => {
+            const pending = pendingHighlightRef.current;
+            pendingHighlightRef.current = null;
+            setShowAddUser(false);
+            if (pending && pending.type === "direct") {
+              router.push(`/admin?tab=users&highlight=${encodeURIComponent(pending.email)}`);
+            }
+          }}
+          onSuccess={(info) => { pendingHighlightRef.current = info; }}
         />
       )}
     </View>
