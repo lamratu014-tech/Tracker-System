@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
+import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import React from "react";
+import React, { useState } from "react";
 import {
   Alert,
   Platform,
@@ -11,6 +12,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AddUserModal } from "@/components/AddUserModal";
 import { useAuth, type UserRole } from "@/context/AuthContext";
 import { useData } from "@/context/DataContext";
 import { useColors } from "@/hooks/useColors";
@@ -72,6 +74,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { currentUser, users, isProgrammeLead, logout } = useAuth();
   const { activityLogs, teams, streams, programme } = useData();
+  const [showAddUser, setShowAddUser] = useState(false);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
@@ -144,19 +147,29 @@ export default function SettingsScreen() {
         {isProgrammeLead && (
           <>
             <SectionHeader title="Programme Management" />
+
+            {/* Prominent Add User CTA */}
+            <TouchableOpacity
+              style={[styles.addUserCta, { backgroundColor: "#7C3AED" }]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowAddUser(true);
+              }}
+              activeOpacity={0.85}
+            >
+              <View style={styles.addUserCtaIcon}>
+                <Feather name="user-plus" size={20} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.addUserCtaTitle}>Add User</Text>
+                <Text style={styles.addUserCtaSub}>
+                  Create directly with a password, or send an invite link
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={20} color="rgba(255,255,255,0.85)" />
+            </TouchableOpacity>
+
             <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <SettingRow
-                icon="shield"
-                label="Programme Lead Panel"
-                value="Full access"
-                onPress={() => router.push("/admin")}
-              />
-              <SettingRow
-                icon="activity"
-                label="Activity Log"
-                value={`${activityLogs.length} entries`}
-                onPress={() => router.push("/admin")}
-              />
               <SettingRow
                 icon="users"
                 label="Manage Users"
@@ -167,6 +180,12 @@ export default function SettingsScreen() {
                 icon="grid"
                 label="Streams & Teams"
                 value={`${streams.length} streams · ${teams.length} teams`}
+                onPress={() => router.push("/admin")}
+              />
+              <SettingRow
+                icon="activity"
+                label="Activity Log"
+                value={`${activityLogs.length} entries`}
                 onPress={() => router.push("/admin")}
               />
             </View>
@@ -205,6 +224,13 @@ export default function SettingsScreen() {
           <SettingRow icon="log-out" label="Sign Out" onPress={handleLogout} danger />
         </View>
       </ScrollView>
+
+      {isProgrammeLead && (
+        <AddUserModal
+          visible={showAddUser}
+          onClose={() => setShowAddUser(false)}
+        />
+      )}
     </View>
   );
 }
@@ -238,4 +264,37 @@ const styles = StyleSheet.create({
   rowLabel: { flex: 1, fontSize: 14, fontFamily: "Inter_400Regular" },
   rowRight: { flexDirection: "row", alignItems: "center", gap: 4 },
   rowValue: { fontSize: 13, fontFamily: "Inter_400Regular" },
+  addUserCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginHorizontal: 16,
+    marginBottom: 8,
+    borderRadius: 14,
+    padding: 14,
+    shadowColor: "#7C3AED",
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 5,
+  },
+  addUserCtaIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addUserCtaTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontFamily: "Inter_700Bold",
+  },
+  addUserCtaSub: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    marginTop: 2,
+  },
 });

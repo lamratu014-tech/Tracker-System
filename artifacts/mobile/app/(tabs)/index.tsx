@@ -11,6 +11,7 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { AddUserModal } from "@/components/AddUserModal";
 import { EventCard } from "@/components/EventCard";
 import { ProjectCard } from "@/components/ProjectCard";
 import { TaskItem } from "@/components/TaskItem";
@@ -193,9 +194,11 @@ export default function DashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { currentUser, isProgrammeLead } = useAuth();
+  const { currentUser, isProgrammeLead, users } = useAuth();
+  const [showAddUser, setShowAddUser] = useState(false);
   if (!currentUser) return null;
   const { events, projects, tasks, milestones, updateTask } = useData();
+  const showTeamCta = isProgrammeLead && users.length > 0 && users.length < 3;
 
   function handleTaskToggle(task: { id: string; status: string }) {
     updateTask(task.id, { status: task.status });
@@ -279,14 +282,27 @@ export default function DashboardScreen() {
           </View>
           <View style={styles.headerRight}>
             {isProgrammeLead && (
-              <TouchableOpacity
-                style={styles.adminPill}
-                onPress={() => router.push("/admin")}
-                activeOpacity={0.7}
-              >
-                <Feather name="shield" size={12} color="#A78BFA" />
-                <Text style={styles.adminPillText}>Admin</Text>
-              </TouchableOpacity>
+              <>
+                <TouchableOpacity
+                  style={styles.addUserBtn}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setShowAddUser(true);
+                  }}
+                  activeOpacity={0.85}
+                >
+                  <Feather name="user-plus" size={14} color="#fff" />
+                  <Text style={styles.addUserBtnText}>Add User</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.adminLink}
+                  onPress={() => router.push("/admin")}
+                  activeOpacity={0.7}
+                  hitSlop={8}
+                >
+                  <Feather name="shield" size={14} color="rgba(255,255,255,0.75)" />
+                </TouchableOpacity>
+              </>
             )}
             <TouchableOpacity
               style={styles.headerBtn}
@@ -344,6 +360,29 @@ export default function DashboardScreen() {
       </View>
 
       <View style={styles.body}>
+        {/* Programme Lead empty-state CTA: build your team */}
+        {showTeamCta && (
+          <TouchableOpacity
+            style={[styles.teamCta, { backgroundColor: "#EDE9FE", borderColor: "#C4B5FD" }]}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              setShowAddUser(true);
+            }}
+            activeOpacity={0.85}
+          >
+            <View style={[styles.teamCtaIcon, { backgroundColor: "#7C3AED" }]}>
+              <Feather name="user-plus" size={20} color="#fff" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.teamCtaTitle}>Build your team</Text>
+              <Text style={styles.teamCtaSub}>
+                You have {users.length} user{users.length !== 1 ? "s" : ""}. Add your team leads now — set their password directly or send an invite link.
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={20} color="#7C3AED" />
+          </TouchableOpacity>
+        )}
+
         {/* Stats row */}
         <View style={styles.statsGrid}>
           <StatCard
@@ -547,6 +586,13 @@ export default function DashboardScreen() {
           </>
         )}
       </View>
+
+      {isProgrammeLead && (
+        <AddUserModal
+          visible={showAddUser}
+          onClose={() => setShowAddUser(false)}
+        />
+      )}
     </ScrollView>
   );
 }
@@ -586,16 +632,57 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   headerTitle: { color: "#fff", fontSize: 24, fontFamily: "Inter_700Bold" },
-  adminPill: {
+  addUserBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    backgroundColor: "rgba(167,139,250,0.18)",
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    gap: 6,
+    backgroundColor: "#7C3AED",
+    borderRadius: 22,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    shadowColor: "#7C3AED",
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 4,
   },
-  adminPillText: { color: "#A78BFA", fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  addUserBtnText: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  adminLink: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(255,255,255,0.10)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  teamCta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    padding: 14,
+    marginBottom: 16,
+  },
+  teamCtaIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  teamCtaTitle: {
+    color: "#5B21B6",
+    fontSize: 15,
+    fontFamily: "Inter_700Bold",
+  },
+  teamCtaSub: {
+    color: "#6D28D9",
+    fontSize: 12,
+    fontFamily: "Inter_400Regular",
+    marginTop: 2,
+    lineHeight: 16,
+  },
   headerBtn: {
     width: 36,
     height: 36,
