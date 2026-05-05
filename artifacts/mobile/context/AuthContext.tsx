@@ -61,8 +61,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const user = (await res.json()) as AppUser;
             setCurrentUser(user);
             setSessionToken(token);
-            const usersRes = await api.getUsers(token);
-            if (usersRes.ok) setUsers((await usersRes.json()) as AppUser[]);
+            if (user.role === "admin") {
+              const usersRes = await api.getUsers(token);
+              if (usersRes.ok) setUsers((await usersRes.json()) as AppUser[]);
+            }
           } else {
             await clearToken();
           }
@@ -87,8 +89,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await storeToken(token);
       setSessionToken(token);
       setCurrentUser(user);
-      const usersRes = await api.getUsers(token);
-      if (usersRes.ok) setUsers((await usersRes.json()) as AppUser[]);
+      if (user.role === "admin") {
+        const usersRes = await api.getUsers(token);
+        if (usersRes.ok) setUsers((await usersRes.json()) as AppUser[]);
+      } else {
+        setUsers([]);
+      }
     },
     []
   );
@@ -144,12 +150,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refreshUsers = useCallback(async () => {
-    if (!sessionToken) return;
+    if (!sessionToken || currentUser?.role !== "admin") return;
     try {
       const res = await api.getUsers(sessionToken);
       if (res.ok) setUsers((await res.json()) as AppUser[]);
     } catch {}
-  }, [sessionToken]);
+  }, [sessionToken, currentUser]);
 
   const inviteUser = useCallback(
     async (email: string, name: string, role: UserRole, department?: string): Promise<{ error?: string; acceptUrl?: string }> => {
