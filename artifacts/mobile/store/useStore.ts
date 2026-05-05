@@ -12,10 +12,12 @@ import type {
   NewProjectInput,
   NewStreamInput,
   NewTeamInput,
+  NewTeamNoteInput,
   NewUserInput,
   Project,
   Stream,
   Team,
+  TeamNote,
   User,
 } from "@/models/types";
 
@@ -54,6 +56,16 @@ function seed(): { users: User[]; members: Member[]; streams: Stream[]; events: 
     id: teamAId,
     name: "Brand & Creative",
     leaderId: leaderAId,
+    notes: [
+      {
+        id: uid("tn"),
+        teamId: teamAId,
+        body: "Kicked off the spring campaign. Concept locked, moving to production.",
+        authorId: leaderAId,
+        createdAt: new Date(Date.now() - 2 * 86400000).toISOString(),
+        updatedAt: null,
+      },
+    ],
     projects: [
       {
         id: uid("pr"),
@@ -87,6 +99,7 @@ function seed(): { users: User[]; members: Member[]; streams: Stream[]; events: 
     id: teamBId,
     name: "Data & Analytics",
     leaderId: leaderBId,
+    notes: [],
     projects: [
       {
         id: uid("pr"),
@@ -207,6 +220,10 @@ export interface AppState {
   updateMember: (memberId: string, patch: Partial<Pick<Member, "name" | "teamId">>) => void;
   deleteMember: (memberId: string) => void;
 
+  addTeamNote: (input: NewTeamNoteInput, authorId: string) => TeamNote | undefined;
+  updateTeamNote: (noteId: string, body: string) => void;
+  deleteTeamNote: (noteId: string) => void;
+
   resetSeed: () => void;
 }
 
@@ -317,6 +334,7 @@ export const useStore = create<AppState>()(
             name: input.name.trim(),
             leaderId: input.leaderId ?? null,
             projects: [],
+            notes: [],
           };
           if (!team.name) throw new Error("name required");
           set((s) => ({
@@ -703,6 +721,58 @@ export const useStore = create<AppState>()(
       deleteMember: (memberId) =>
         tryAct("deleteMember", () => {
           set((s) => ({ members: s.members.filter((m) => m.id !== memberId) }));
+        }),
+
+      addTeamNote: (input, authorId) =>
+        tryAct("addTeamNote", () => {
+          const body = input.body.trim();
+          if (!body) throw new Error("body required");
+          if (!authorId) throw new Error("author required");
+          const note: TeamNote = {
+            id: uid("tn"),
+            teamId: input.teamId,
+            body,
+            authorId,
+            createdAt: nowIso(),
+            updatedAt: null,
+          };
+          set((s) => ({
+            streams: s.streams.map((st) => ({
+              ...st,
+              teams: st.teams.map((t) =>
+                t.id === input.teamId ? { ...t, notes: [note, ...(t.notes ?? [])] } : t,
+              ),
+            })),
+          }));
+          return note;
+        }),
+      updateTeamNote: (noteId, body) =>
+        tryAct("updateTeamNote", () => {
+          const trimmed = body.trim();
+          if (!trimmed) throw new Error("body required");
+          set((s) => ({
+            streams: s.streams.map((st) => ({
+              ...st,
+              teams: st.teams.map((t) => ({
+                ...t,
+                notes: (t.notes ?? []).map((n) =>
+                  n.id === noteId ? { ...n, body: trimmed, updatedAt: nowIso() } : n,
+                ),
+              })),
+            })),
+          }));
+        }),
+      deleteTeamNote: (noteId) =>
+        tryAct("deleteTeamNote", () => {
+          set((s) => ({
+            streams: s.streams.map((st) => ({
+              ...st,
+              teams: st.teams.map((t) => ({
+                ...t,
+                notes: (t.notes ?? []).filter((n) => n.id !== noteId),
+              })),
+            })),
+          }));
         }),
 
       resetSeed: () => {

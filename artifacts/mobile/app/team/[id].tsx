@@ -29,6 +29,9 @@ export default function TeamDetailScreen() {
   const assignLeader = useStore((s) => s.assignTeamLeader);
   const addMember = useStore((s) => s.addMember);
   const deleteMember = useStore((s) => s.deleteMember);
+  const addTeamNote = useStore((s) => s.addTeamNote);
+  const updateTeamNote = useStore((s) => s.updateTeamNote);
+  const deleteTeamNote = useStore((s) => s.deleteTeamNote);
 
   const found = id ? findTeam(streams, id) : null;
   const canEdit = useCanManageTeam(found?.team.id ?? null);
@@ -36,6 +39,9 @@ export default function TeamDetailScreen() {
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(found?.team.name ?? "");
   const [newMember, setNewMember] = useState("");
+  const [newNote, setNewNote] = useState("");
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingNoteBody, setEditingNoteBody] = useState("");
 
   if (!found) {
     return (
@@ -49,6 +55,9 @@ export default function TeamDetailScreen() {
   const isAdmin = me?.role === "admin";
   const leader = team.leaderId ? users.find((u) => u.id === team.leaderId) : null;
   const teamMembers = members.filter((m) => m.teamId === team.id);
+  const notes = [...(team.notes ?? [])].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt),
+  );
 
   function saveName() {
     if (!draftName.trim()) return;
@@ -111,6 +120,53 @@ export default function TeamDetailScreen() {
     if (!newMember.trim()) return;
     addMember({ name: newMember.trim(), teamId: team.id });
     setNewMember("");
+  }
+
+  function postNote() {
+    if (!newNote.trim() || !me) return;
+    addTeamNote({ teamId: team.id, body: newNote.trim() }, me.id);
+    setNewNote("");
+  }
+
+  function startEditNote(noteId: string, body: string) {
+    setEditingNoteId(noteId);
+    setEditingNoteBody(body);
+  }
+
+  function saveEditNote() {
+    if (!editingNoteId || !editingNoteBody.trim()) {
+      setEditingNoteId(null);
+      return;
+    }
+    updateTeamNote(editingNoteId, editingNoteBody.trim());
+    setEditingNoteId(null);
+    setEditingNoteBody("");
+  }
+
+  function confirmDeleteNote(noteId: string) {
+    const msg = "Delete this note?";
+    if (Platform.OS === "web") {
+      if (window.confirm(msg)) deleteTeamNote(noteId);
+    } else {
+      Alert.alert("Delete note", msg, [
+        { text: "Cancel", style: "cancel" },
+        { text: "Delete", style: "destructive", onPress: () => deleteTeamNote(noteId) },
+      ]);
+    }
+  }
+
+  function formatNoteDate(iso: string): string {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const now = new Date();
+    const sameDay =
+      d.getFullYear() === now.getFullYear() &&
+      d.getMonth() === now.getMonth() &&
+      d.getDate() === now.getDate();
+    const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (sameDay) return `Today, ${time}`;
+    const date = d.toLocaleDateString([], { month: "short", day: "numeric" });
+    return `${date}, ${time}`;
   }
 
   function confirmDeleteMember(memberId: string, name: string) {
@@ -281,6 +337,151 @@ export default function TeamDetailScreen() {
         </View>
       ) : null}
 
+      <View style={styles.sectionRow}>
+        <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+          Notes timeline ({notes.length})
+        </Text>
+      </View>
+
+      {canEdit ? (
+        <View
+          style={[styles.noteComposer, { borderColor: colors.border, backgroundColor: colors.card }]}
+        >
+          <TextInput
+            value={newNote}
+            onChangeText={setNewNote}
+            placeholder="Share an update with the team…"
+            placeholderTextColor={colors.mutedForeground}
+            style={[styles.noteInput, { color: colors.foreground }]}
+            multiline
+          />
+          <View style={styles.noteComposerFooter}>
+            <Text style={[styles.noteHint, { color: colors.mutedForeground }]}>
+              Posted as {me?.name}
+            </Text>
+            <TouchableOpacity
+              onPress={postNote}
+              disabled={!newNote.trim()}
+              style={[
+                styles.postBtn,
+                { backgroundColor: newNote.trim() ? colors.primary : colors.border },
+              ]}
+            >
+              <Feather name="send" size={12} color="#fff" />
+              <Text style={styles.postBtnText}>Post</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : null}
+
+      {notes.length === 0 ? (
+        <View style={[styles.empty, { backgroundColor: colors.muted }]}>
+          <Text style={{ color: colors.mutedForeground }}>
+            {canEdit ? "No notes yet — post the first update above." : "No notes yet."}
+          </Text>
+        </View>
+      ) : (
+        <View style={styles.timeline}>
+          {notes.map((n, idx) => {
+            const author = users.find((u) => u.id === n.authorId);
+            const mine = me?.id === n.authorId;
+            const canEditNote = canEdit && (mine || isAdmin);
+            const isEditing = editingNoteId === n.id;
+            return (
+              <View key={n.id} style={styles.timelineRow}>
+                <View style={styles.timelineRail}>
+                  <View style={[styles.timelineDot, { backgroundColor: colors.primary }]} />
+                  {idx < notes.length - 1 ? (
+                    <View style={[styles.timelineLine, { backgroundColor: colors.border }]} />
+                  ) : null}
+                </View>
+                <View
+                  style={[
+                    styles.noteCard,
+                    { backgroundColor: colors.card, borderColor: colors.border },
+                  ]}
+                >
+                  <View style={styles.noteHeader}>
+                    <Text style={[styles.noteAuthor, { color: colors.foreground }]}>
+                      {author?.name ?? "Unknown"}
+                    </Text>
+                    <Text style={[styles.noteMeta, { color: colors.mutedForeground }]}>
+                      {formatNoteDate(n.createdAt)}
+                      {n.updatedAt ? " · edited" : ""}
+                    </Text>
+                  </View>
+                  {isEditing ? (
+                    <>
+                      <TextInput
+                        value={editingNoteBody}
+                        onChangeText={setEditingNoteBody}
+                        style={[
+                          styles.noteInput,
+                          {
+                            color: colors.foreground,
+                            borderColor: colors.border,
+                            borderWidth: 1,
+                            borderRadius: 8,
+                            padding: 8,
+                            marginTop: 6,
+                          },
+                        ]}
+                        multiline
+                        autoFocus
+                      />
+                      <View style={styles.noteActionsRow}>
+                        <TouchableOpacity
+                          onPress={() => { setEditingNoteId(null); setEditingNoteBody(""); }}
+                          style={[styles.noteActionBtn, { backgroundColor: colors.muted }]}
+                        >
+                          <Text style={[styles.noteActionText, { color: colors.mutedForeground }]}>
+                            Cancel
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={saveEditNote}
+                          disabled={!editingNoteBody.trim()}
+                          style={[
+                            styles.noteActionBtn,
+                            { backgroundColor: editingNoteBody.trim() ? colors.primary : colors.border },
+                          ]}
+                        >
+                          <Text style={[styles.noteActionText, { color: "#fff" }]}>Save</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </>
+                  ) : (
+                    <Text style={[styles.noteBody, { color: colors.foreground }]}>{n.body}</Text>
+                  )}
+                  {canEditNote && !isEditing ? (
+                    <View style={styles.noteActionsRow}>
+                      <TouchableOpacity
+                        onPress={() => startEditNote(n.id, n.body)}
+                        hitSlop={6}
+                        style={styles.noteIconBtn}
+                      >
+                        <Feather name="edit-2" size={12} color={colors.mutedForeground} />
+                        <Text style={[styles.noteActionText, { color: colors.mutedForeground }]}>
+                          Edit
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        onPress={() => confirmDeleteNote(n.id)}
+                        hitSlop={6}
+                        style={styles.noteIconBtn}
+                      >
+                        <Feather name="trash-2" size={12} color="#DC2626" />
+                        <Text style={[styles.noteActionText, { color: "#DC2626" }]}>Delete</Text>
+                      </TouchableOpacity>
+                    </View>
+                  ) : null}
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      )}
+
       <Text style={[styles.note, { color: colors.mutedForeground }]}>
         Members are roster entries inside the team — they do not log in. Use "Invite User" from the dashboard "+" hub to give someone a login account.
       </Text>
@@ -349,5 +550,46 @@ const styles = StyleSheet.create({
   note: {
     fontSize: 11, fontFamily: "Inter_400Regular", textAlign: "center",
     paddingTop: 12, paddingHorizontal: 8, lineHeight: 16,
+  },
+  noteComposer: {
+    borderWidth: 1, borderRadius: 10, padding: 10, gap: 8,
+  },
+  noteInput: {
+    fontSize: 14, fontFamily: "Inter_400Regular",
+    minHeight: 48, textAlignVertical: "top",
+  },
+  noteComposerFooter: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+  },
+  noteHint: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  postBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
+  },
+  postBtnText: { color: "#fff", fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  timeline: { gap: 0 },
+  timelineRow: { flexDirection: "row", gap: 10 },
+  timelineRail: { width: 14, alignItems: "center", paddingTop: 14 },
+  timelineDot: { width: 10, height: 10, borderRadius: 5 },
+  timelineLine: { width: 2, flex: 1, marginTop: 4, minHeight: 12 },
+  noteCard: {
+    flex: 1, borderWidth: 1, borderRadius: 10, padding: 12,
+    marginBottom: 10, gap: 4,
+  },
+  noteHeader: {
+    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
+    gap: 8,
+  },
+  noteAuthor: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  noteMeta: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  noteBody: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20, marginTop: 2 },
+  noteActionsRow: { flexDirection: "row", gap: 8, marginTop: 8 },
+  noteActionBtn: {
+    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
+  },
+  noteActionText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
+  noteIconBtn: {
+    flexDirection: "row", alignItems: "center", gap: 4,
+    paddingHorizontal: 6, paddingVertical: 4,
   },
 });

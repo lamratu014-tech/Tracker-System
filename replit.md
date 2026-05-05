@@ -31,6 +31,7 @@ The Express + PostgreSQL API server in `artifacts/api-server` is retained but no
 ```
 Streams → Teams → Projects → Milestones
 Members are top-level, scoped to a team
+Each Team has its own Notes timeline (TeamNote[] on Team)
 Events are separate, optionally linked to a stream OR team
 ```
 
@@ -68,6 +69,7 @@ artifacts/mobile/app/
 - Auth: `loginByEmail`, `loginById`, `logout`, `inviteUser`, `acceptInvite`, `clearLastInviteCode`
 - CRUD: streams, teams, projects, milestones, events, users
 - Members: `addMember`, `updateMember`, `deleteMember`
+- Team notes: `addTeamNote(input, authorId)`, `updateTeamNote(id, body)`, `deleteTeamNote(id)` — leaders/overseers/admins can post; authors (or admins) can edit/delete
 - `resetSeed()` — restores demo data
 
 ## User preferences

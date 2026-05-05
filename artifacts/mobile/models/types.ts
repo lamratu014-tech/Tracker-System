@@ -39,11 +39,21 @@ export interface Project {
   milestones: Milestone[];
 }
 
+export interface TeamNote {
+  id: string;
+  teamId: string;
+  body: string;
+  authorId: string;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
 export interface Team {
   id: string;
   name: string;
   leaderId: string | null;
   projects: Project[];
+  notes: TeamNote[];
 }
 
 export interface Stream {
@@ -89,6 +99,7 @@ export interface NewEventInput {
   linkedTeamId?: string | null;
 }
 export interface NewMemberInput { name: string; teamId: string }
+export interface NewTeamNoteInput { teamId: string; body: string }
 
 export function isOverdue(milestone: Milestone, now: Date = new Date()): boolean {
   if (milestone.status === "completed") return false;
