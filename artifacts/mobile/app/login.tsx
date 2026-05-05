@@ -1,5 +1,5 @@
 import { Feather } from "@expo/vector-icons";
-import { Link, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -88,12 +88,14 @@ export default function LoginScreen() {
             <View style={[styles.line, { backgroundColor: colors.border }]} />
           </View>
 
-          <Link href="/accept-invite" asChild>
-            <TouchableOpacity style={[styles.btnGhost, { borderColor: colors.border }]} activeOpacity={0.7}>
-              <Feather name="mail" size={14} color={colors.primary} />
-              <Text style={[styles.btnGhostText, { color: colors.primary }]}>I have an invite code</Text>
-            </TouchableOpacity>
-          </Link>
+          <TouchableOpacity
+            style={[styles.btnGhost, { borderColor: colors.border }]}
+            activeOpacity={0.7}
+            onPress={() => router.push("/accept-invite")}
+          >
+            <Feather name="mail" size={14} color={colors.primary} />
+            <Text style={[styles.btnGhostText, { color: colors.primary }]}>I have an invite code</Text>
+          </TouchableOpacity>
 
           <Text style={[styles.footnote, { color: colors.mutedForeground }]}>
             {userCount} account{userCount !== 1 ? "s" : ""} on this device.
