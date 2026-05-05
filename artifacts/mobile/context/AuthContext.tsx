@@ -35,6 +35,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<{ error?: string }>;
   logout: () => Promise<void>;
   setup: (email: string, name: string, password: string, department?: string, setupSecret?: string) => Promise<{ error?: string }>;
+  createUser: (email: string, name: string, password: string, role: UserRole, department?: string, teamId?: string | null) => Promise<{ error?: string }>;
   inviteUser: (email: string, name: string, role: UserRole, department?: string, teamId?: string | null) => Promise<{ error?: string; acceptUrl?: string }>;
   updateUserRole: (userId: string, role: UserRole, teamId?: string | null) => Promise<void>;
   deactivateUser: (userId: string) => Promise<void>;
@@ -156,6 +157,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, [sessionToken, currentUser]);
 
+  const createUser = useCallback(
+    async (email: string, name: string, password: string, role: UserRole, department?: string, teamId?: string | null): Promise<{ error?: string }> => {
+      if (!sessionToken) return { error: "Not authenticated" };
+      try {
+        const res = await api.createUser(sessionToken, { email, name, password, role, department, teamId });
+        if (res.ok) { await refreshUsers(); return {}; }
+        const body = (await res.json()) as { error?: string };
+        return { error: body.error ?? "Failed to create user" };
+      } catch {
+        return { error: "Could not connect to server" };
+      }
+    },
+    [sessionToken, refreshUsers]
+  );
+
   const inviteUser = useCallback(
     async (email: string, name: string, role: UserRole, department?: string, teamId?: string | null): Promise<{ error?: string; acceptUrl?: string }> => {
       if (!sessionToken) return { error: "Not authenticated" };
@@ -228,6 +244,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         logout,
         setup,
+        createUser,
         inviteUser,
         updateUserRole,
         deactivateUser,
@@ -256,6 +273,7 @@ export function useAuth(): AuthContextType {
       login: async () => ({}),
       logout: async () => {},
       setup: async () => ({}),
+      createUser: async () => ({}),
       inviteUser: async () => ({}),
       updateUserRole: async () => {},
       deactivateUser: async () => {},

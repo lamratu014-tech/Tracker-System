@@ -172,79 +172,29 @@ function RoleModal({
   );
 }
 
-// ─── Invite modal ─────────────────────────────────────────────────────────────
-function InviteModal({
-  teams,
-  onInvite,
-  onClose,
-  colors,
+// ─── Shared user form fields (name, email, dept, role, team) ─────────────────
+function UserFormFields({
+  name, setName, email, setEmail, department, setDepartment,
+  role, setRole, teamId, setTeamId, teams, colors, showEmail = true,
 }: {
-  teams: Team[];
-  onInvite: (email: string, name: string, role: UserRole, department?: string, teamId?: string | null) => Promise<{ error?: string; acceptUrl?: string }>;
-  onClose: () => void;
-  colors: any;
+  name: string; setName: (v: string) => void;
+  email: string; setEmail: (v: string) => void;
+  department: string; setDepartment: (v: string) => void;
+  role: UserRole; setRole: (r: UserRole) => void;
+  teamId: string | null; setTeamId: (id: string | null) => void;
+  teams: Team[]; colors: any; showEmail?: boolean;
 }) {
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [department, setDepartment] = useState("");
-  const [role, setRole] = useState<UserRole>("team_lead");
-  const [teamId, setTeamId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-  const [acceptUrl, setAcceptUrl] = useState("");
-
-  async function handleSubmit() {
-    if (!name.trim() || !email.trim()) { setError("Name and email are required."); return; }
-    setLoading(true); setError("");
-    const result = await onInvite(email.trim(), name.trim(), role, department.trim() || undefined, teamId);
-    setLoading(false);
-    if (result.error) { setError(result.error); }
-    else { setAcceptUrl(result.acceptUrl ?? ""); }
-  }
-
-  if (acceptUrl) {
-    return (
-      <FormModal visible title="Invite Sent!" onClose={onClose} colors={colors}>
-        <View style={{ padding: 20, alignItems: "center", gap: 12 }}>
-          <View style={[styles.successIcon, { backgroundColor: "#D1FAE5" }]}>
-            <Feather name="check" size={28} color="#059669" />
-          </View>
-          <Text style={[styles.successText, { color: colors.foreground }]}>
-            Invitation created for <Text style={{ fontFamily: "Inter_600SemiBold" }}>{name}</Text>
-          </Text>
-          <Text style={[styles.hintText, { color: colors.mutedForeground, textAlign: "center" }]}>
-            Share this accept link with them, or it was emailed if Resend is configured:
-          </Text>
-          <View style={[styles.urlBox, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-            <Text style={[styles.urlText, { color: colors.foreground }]} selectable>{acceptUrl}</Text>
-          </View>
-          <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary, alignSelf: "stretch" }]} onPress={onClose}>
-            <Text style={[styles.btnText, { color: "#fff" }]}>Done</Text>
-          </TouchableOpacity>
-        </View>
-      </FormModal>
-    );
-  }
-
   return (
-    <FormModal visible title="Invite User" onClose={onClose} colors={colors}>
-      <ScrollView contentContainerStyle={{ padding: 20, gap: 14 }} keyboardShouldPersistTaps="handled">
-        {!!error && (
-          <View style={[styles.errorBox, { backgroundColor: "#FEE2E2", borderColor: "#FECACA" }]}>
-            <Feather name="alert-circle" size={14} color="#DC2626" />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-
-        <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Full Name *</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
-            value={name} onChangeText={setName} placeholder="e.g. Jane Smith"
-            placeholderTextColor={colors.mutedForeground} autoFocus
-          />
-        </View>
-
+    <>
+      <View style={styles.field}>
+        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Full Name *</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+          value={name} onChangeText={setName} placeholder="e.g. Jane Smith"
+          placeholderTextColor={colors.mutedForeground} autoFocus
+        />
+      </View>
+      {showEmail && (
         <View style={styles.field}>
           <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Email Address *</Text>
           <TextInput
@@ -254,55 +204,225 @@ function InviteModal({
             autoCapitalize="none" keyboardType="email-address"
           />
         </View>
-
-        <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Department (optional)</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
-            value={department} onChangeText={setDepartment} placeholder="e.g. Marketing"
-            placeholderTextColor={colors.mutedForeground}
-          />
+      )}
+      <View style={styles.field}>
+        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Department (optional)</Text>
+        <TextInput
+          style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+          value={department} onChangeText={setDepartment} placeholder="e.g. Marketing"
+          placeholderTextColor={colors.mutedForeground}
+        />
+      </View>
+      <View style={styles.field}>
+        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Role *</Text>
+        <View style={{ gap: 8, marginTop: 6 }}>
+          {(["programme_lead", "team_lead"] as UserRole[]).map((r) => (
+            <TouchableOpacity
+              key={r}
+              style={[styles.roleOption, { backgroundColor: role === r ? ROLE_COLORS[r] : colors.muted, borderColor: role === r ? ROLE_COLORS[r] : colors.border }]}
+              onPress={() => setRole(r)}
+            >
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.roleOptionLabel, { color: role === r ? "#fff" : colors.foreground }]}>{ROLE_LABELS[r]}</Text>
+                <Text style={[styles.roleOptionDesc, { color: role === r ? "rgba(255,255,255,0.7)" : colors.mutedForeground }]}>
+                  {r === "programme_lead" ? "Full access across the programme" : "Manage own team's workspace"}
+                </Text>
+              </View>
+              {role === r && <Feather name="check-circle" size={16} color="#fff" />}
+            </TouchableOpacity>
+          ))}
         </View>
-
-        <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Role *</Text>
-          <View style={{ gap: 8, marginTop: 6 }}>
-            {(["programme_lead", "team_lead"] as UserRole[]).map((r) => (
-              <TouchableOpacity
-                key={r}
-                style={[styles.roleOption, { backgroundColor: role === r ? ROLE_COLORS[r] : colors.muted, borderColor: role === r ? ROLE_COLORS[r] : colors.border }]}
-                onPress={() => setRole(r)}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.roleOptionLabel, { color: role === r ? "#fff" : colors.foreground }]}>{ROLE_LABELS[r]}</Text>
-                  <Text style={[styles.roleOptionDesc, { color: role === r ? "rgba(255,255,255,0.7)" : colors.mutedForeground }]}>
-                    {r === "programme_lead" ? "Full access across the programme" : "Manage own team's workspace"}
-                  </Text>
-                </View>
-                {role === r && <Feather name="check-circle" size={16} color="#fff" />}
-              </TouchableOpacity>
-            ))}
-          </View>
+      </View>
+      <View style={styles.field}>
+        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
+          Assign to Team {role === "programme_lead" ? "(optional)" : "(select a team)"}
+        </Text>
+        <View style={{ marginTop: 6 }}>
+          <TeamPicker teams={teams} selectedId={teamId} onSelect={setTeamId} colors={colors} allowNone />
         </View>
-
-        <View style={styles.field}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>
-            Assign to Team {role === "programme_lead" ? "(optional)" : "(select a team)"}
+        {teams.length === 0 && (
+          <Text style={[styles.hintText, { color: colors.mutedForeground, marginTop: 4 }]}>
+            Create teams first in the Structure tab.
           </Text>
-          <View style={{ marginTop: 6 }}>
-            <TeamPicker teams={teams} selectedId={teamId} onSelect={setTeamId} colors={colors} allowNone />
+        )}
+      </View>
+    </>
+  );
+}
+
+// ─── Add User modal (two modes: direct create + invite link) ──────────────────
+function AddUserModal({
+  teams,
+  onCreateUser,
+  onInvite,
+  onClose,
+  colors,
+}: {
+  teams: Team[];
+  onCreateUser: (email: string, name: string, password: string, role: UserRole, department?: string, teamId?: string | null) => Promise<{ error?: string }>;
+  onInvite: (email: string, name: string, role: UserRole, department?: string, teamId?: string | null) => Promise<{ error?: string; acceptUrl?: string }>;
+  onClose: () => void;
+  colors: any;
+}) {
+  type Mode = "direct" | "invite";
+  const [mode, setMode] = useState<Mode>("direct");
+
+  // Shared fields
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [department, setDepartment] = useState("");
+  const [role, setRole] = useState<UserRole>("team_lead");
+  const [teamId, setTeamId] = useState<string | null>(null);
+
+  // Direct-add only
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState<{ type: "direct" | "invite"; userName: string; acceptUrl?: string } | null>(null);
+
+  function reset() {
+    setName(""); setEmail(""); setDepartment(""); setRole("team_lead");
+    setTeamId(null); setPassword(""); setError(""); setDone(null);
+  }
+
+  async function handleDirect() {
+    if (!name.trim() || !email.trim()) { setError("Name and email are required."); return; }
+    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
+    setLoading(true); setError("");
+    const result = await onCreateUser(email.trim(), name.trim(), password, role, department.trim() || undefined, teamId);
+    setLoading(false);
+    if (result.error) setError(result.error);
+    else setDone({ type: "direct", userName: name.trim() });
+  }
+
+  async function handleInvite() {
+    if (!name.trim() || !email.trim()) { setError("Name and email are required."); return; }
+    setLoading(true); setError("");
+    const result = await onInvite(email.trim(), name.trim(), role, department.trim() || undefined, teamId);
+    setLoading(false);
+    if (result.error) setError(result.error);
+    else setDone({ type: "invite", userName: name.trim(), acceptUrl: result.acceptUrl });
+  }
+
+  if (done) {
+    return (
+      <FormModal visible title={done.type === "direct" ? "User Added!" : "Invite Created!"} onClose={() => { reset(); onClose(); }} colors={colors}>
+        <View style={{ padding: 24, alignItems: "center", gap: 14 }}>
+          <View style={[styles.successIcon, { backgroundColor: "#D1FAE5" }]}>
+            <Feather name="check" size={28} color="#059669" />
+          </View>
+          <Text style={[styles.successText, { color: colors.foreground, textAlign: "center" }]}>
+            {done.type === "direct"
+              ? `${done.userName} has been added. They can now log in with their email and password.`
+              : `Invite created for ${done.userName}.`}
+          </Text>
+          {done.acceptUrl && (
+            <>
+              <Text style={[styles.hintText, { color: colors.mutedForeground, textAlign: "center" }]}>
+                Share this link — they'll set their own password when they open it:
+              </Text>
+              <View style={[styles.urlBox, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+                <Text style={[styles.urlText, { color: colors.foreground }]} selectable>{done.acceptUrl}</Text>
+              </View>
+            </>
+          )}
+          <View style={styles.rowBtns}>
+            <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted, flex: 1 }]} onPress={() => { reset(); }}>
+              <Feather name="user-plus" size={14} color={colors.primary} />
+              <Text style={[styles.btnText, { color: colors.primary }]}>Add Another</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary, flex: 1 }]} onPress={() => { reset(); onClose(); }}>
+              <Text style={[styles.btnText, { color: "#fff" }]}>Done</Text>
+            </TouchableOpacity>
           </View>
         </View>
+      </FormModal>
+    );
+  }
+
+  return (
+    <FormModal visible title="Add User" onClose={onClose} colors={colors}>
+      {/* Mode toggle */}
+      <View style={[styles.modeToggleRow, { borderBottomColor: colors.border }]}>
+        {([
+          { key: "direct", label: "Add Directly", icon: "user-check" },
+          { key: "invite", label: "Send Invite Link", icon: "link" },
+        ] as { key: Mode; label: string; icon: string }[]).map((m) => (
+          <TouchableOpacity
+            key={m.key}
+            style={[styles.modeTab, mode === m.key && { borderBottomColor: colors.primary, borderBottomWidth: 2 }]}
+            onPress={() => { setMode(m.key); setError(""); }}
+          >
+            <Feather name={m.icon as any} size={14} color={mode === m.key ? colors.primary : colors.mutedForeground} />
+            <Text style={[styles.modeTabText, { color: mode === m.key ? colors.primary : colors.mutedForeground }]}>{m.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      <ScrollView contentContainerStyle={{ padding: 20, gap: 14 }} keyboardShouldPersistTaps="handled">
+        {/* Mode description */}
+        <View style={[styles.modeHintBox, { backgroundColor: mode === "direct" ? "#EDE9FE" : "#DBEAFE", borderColor: mode === "direct" ? "#C4B5FD" : "#BFDBFE" }]}>
+          <Feather name={mode === "direct" ? "user-check" : "link"} size={14} color={mode === "direct" ? "#7C3AED" : "#2563EB"} />
+          <Text style={[styles.modeHintText, { color: mode === "direct" ? "#5B21B6" : "#1D4ED8" }]}>
+            {mode === "direct"
+              ? "You set the password — they can log in immediately. Share their credentials with them."
+              : "They receive a link to set their own password. The link is valid for 72 hours."}
+          </Text>
+        </View>
+
+        {!!error && (
+          <View style={[styles.errorBox, { backgroundColor: "#FEE2E2", borderColor: "#FECACA" }]}>
+            <Feather name="alert-circle" size={14} color="#DC2626" />
+            <Text style={styles.errorText}>{error}</Text>
+          </View>
+        )}
+
+        <UserFormFields
+          name={name} setName={setName}
+          email={email} setEmail={setEmail}
+          department={department} setDepartment={setDepartment}
+          role={role} setRole={setRole}
+          teamId={teamId} setTeamId={setTeamId}
+          teams={teams} colors={colors}
+        />
+
+        {mode === "direct" && (
+          <View style={styles.field}>
+            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Initial Password *</Text>
+            <View style={styles.passwordRow}>
+              <TextInput
+                style={[styles.input, { flex: 1, backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+                value={password} onChangeText={setPassword}
+                placeholder="Min. 6 characters"
+                placeholderTextColor={colors.mutedForeground}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+              />
+              <TouchableOpacity style={[styles.eyeBtn, { backgroundColor: colors.muted, borderColor: colors.border }]} onPress={() => setShowPassword(!showPassword)}>
+                <Feather name={showPassword ? "eye-off" : "eye"} size={16} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            </View>
+            <Text style={[styles.hintText, { color: colors.mutedForeground, marginTop: 4 }]}>
+              Share these credentials with the user privately.
+            </Text>
+          </View>
+        )}
 
         <View style={styles.rowBtns}>
           <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted }]} onPress={onClose}>
             <Text style={[styles.btnText, { color: colors.foreground }]}>Cancel</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.btn, { backgroundColor: colors.primary }]} onPress={handleSubmit} disabled={loading}>
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: colors.primary }]}
+            onPress={mode === "direct" ? handleDirect : handleInvite}
+            disabled={loading}
+          >
             {loading ? <ActivityIndicator color="#fff" size="small" /> : (
               <>
-                <Feather name="send" size={14} color="#fff" />
-                <Text style={[styles.btnText, { color: "#fff" }]}>Send Invite</Text>
+                <Feather name={mode === "direct" ? "user-plus" : "send"} size={14} color="#fff" />
+                <Text style={[styles.btnText, { color: "#fff" }]}>{mode === "direct" ? "Add User" : "Send Invite"}</Text>
               </>
             )}
           </TouchableOpacity>

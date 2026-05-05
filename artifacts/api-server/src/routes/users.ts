@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
 import { requireAuth, requireProgrammeLead } from "../middlewares/requireAuth";
+import { hashPassword } from "../lib/auth";
 
 const router = Router();
 
@@ -10,6 +11,55 @@ function safeUser(u: typeof usersTable.$inferSelect) {
   const { passwordHash: _, ...rest } = u;
   return rest;
 }
+
+const CreateUserBody = z.object({
+  email: z.string().email(),
+  name: z.string().min(1),
+  password: z.string().min(6),
+  role: z.enum(["programme_lead", "team_lead"]),
+  department: z.string().optional(),
+  teamId: z.string().optional().nullable(),
+});
+
+router.post("/users", requireProgrammeLead, async (req, res): Promise<void> => {
+  const parsed = CreateUserBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
+    return;
+  }
+  const { email, name, password, role, department, teamId } = parsed.data;
+
+  const [existing] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.email, email.toLowerCase()))
+    .limit(1);
+  if (existing) {
+    res.status(409).json({ error: "A user with this email already exists" });
+    return;
+  }
+
+  const initials = name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
+  const passwordHash = await hashPassword(password);
+
+  const [user] = await db
+    .insert(usersTable)
+    .values({
+      email: email.toLowerCase(),
+      name,
+      initials,
+      passwordHash,
+      role,
+      department: department ?? "",
+      teamId: teamId ?? null,
+      active: true,
+      invitedByName: req.authUser!.name,
+    })
+    .returning();
+
+  req.log.info({ userId: user!.id }, "User created directly by programme lead");
+  res.status(201).json(safeUser(user!));
+});
 
 router.get("/users", requireProgrammeLead, async (_req, res): Promise<void> => {
   const users = await db

@@ -77,6 +77,8 @@ export const api = {
     call("/auth/reset-password", { method: "POST", body: JSON.stringify({ token, password }) }),
 
   // ─── Users ──────────────────────────────────────────────
+  createUser: (token: string, body: { email: string; name: string; password: string; role: string; department?: string; teamId?: string | null }) =>
+    call("/users", { method: "POST", body: JSON.stringify(body) }, token),
   getUsers: (token: string) => call("/users", {}, token),
   updateRole: (token: string, userId: string, role: string, teamId?: string | null) =>
     call(`/users/${userId}/role`, { method: "PATCH", body: JSON.stringify({ role, teamId }) }, token),
