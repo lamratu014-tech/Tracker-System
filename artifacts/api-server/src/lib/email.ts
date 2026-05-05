@@ -9,6 +9,52 @@ function getResend(): Resend | null {
   return resend;
 }
 
+export async function sendPasswordResetEmail(opts: {
+  toEmail: string;
+  toName: string;
+  resetUrl: string;
+}): Promise<void> {
+  const client = getResend();
+
+  if (!client) {
+    logger.warn(
+      { resetUrl: opts.resetUrl },
+      "RESEND_API_KEY not set — password reset link logged instead of emailed"
+    );
+    return;
+  }
+
+  await client.emails.send({
+    from: "Ops & Planning <no-reply@resend.dev>",
+    to: opts.toEmail,
+    subject: "Reset your Ops & Planning password",
+    html: `
+      <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
+        <h2 style="margin-bottom:8px">Reset your password</h2>
+        <p style="color:#555">
+          Hi <strong>${opts.toName}</strong>, we received a request to reset your
+          <strong>Ops &amp; Planning</strong> password.
+        </p>
+        <p style="color:#555">
+          Click the button below to choose a new password. This link expires in
+          <strong>1&nbsp;hour</strong>.
+        </p>
+        <a href="${opts.resetUrl}"
+          style="display:inline-block;margin-top:16px;padding:12px 24px;
+                 background:#2563EB;color:#fff;border-radius:8px;
+                 text-decoration:none;font-weight:600">
+          Reset Password
+        </a>
+        <hr style="margin:32px 0;border:none;border-top:1px solid #eee"/>
+        <p style="font-size:12px;color:#999">
+          If you didn't request a password reset, you can safely ignore this email.
+          Your password will not change.
+        </p>
+      </div>
+    `,
+  });
+}
+
 export async function sendInviteEmail(opts: {
   toEmail: string;
   toName: string;

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { z } from "zod";
-import { db, usersTable, invitesTable } from "@workspace/db";
+import { db, usersTable, invitesTable, passwordResetsTable, sessionsTable } from "@workspace/db";
 import { eq, and, gt, isNull } from "drizzle-orm";
 import {
   hashPassword,
@@ -10,7 +10,7 @@ import {
   generateToken,
   countUsers,
 } from "../lib/auth";
-import { sendInviteEmail } from "../lib/email";
+import { sendInviteEmail, sendPasswordResetEmail } from "../lib/email";
 import { requireAuth, requireAdmin } from "../middlewares/requireAuth";
 
 const router = Router();
@@ -242,6 +242,92 @@ router.post("/auth/accept-invite", async (req, res): Promise<void> => {
   const sessionToken = await createSession(user.id);
   req.log.info({ userId: user.id }, "User accepted invite and created account");
   res.status(201).json({ token: sessionToken, user: safeUser(user) });
+});
+
+const ForgotPasswordBody = z.object({ email: z.string().email() });
+const ResetPasswordBody = z.object({
+  token: z.string().min(1),
+  password: z.string().min(8),
+});
+
+router.post("/auth/forgot-password", async (req, res): Promise<void> => {
+  const parsed = ForgotPasswordBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Please provide a valid email address." });
+    return;
+  }
+
+  const { email } = parsed.data;
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.email, email.toLowerCase()))
+    .limit(1);
+
+  // Always respond with 200 — don't leak whether the email exists
+  if (!user || !user.active) {
+    res.json({ message: "If that email is registered, a reset link has been sent." });
+    return;
+  }
+
+  const token = generateToken(32);
+  const expiresAt = new Date();
+  expiresAt.setHours(expiresAt.getHours() + 1);
+
+  await db.insert(passwordResetsTable).values({ userId: user.id, token, expiresAt });
+
+  const resetUrl = `${getAppDomain(req)}/reset-password?token=${token}`;
+  req.log.info({ userId: user.id, resetUrl }, "Password reset token created");
+
+  await sendPasswordResetEmail({ toEmail: user.email, toName: user.name, resetUrl });
+
+  res.json({ message: "If that email is registered, a reset link has been sent.", resetUrl });
+});
+
+router.post("/auth/reset-password", async (req, res): Promise<void> => {
+  const parsed = ResetPasswordBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { token, password } = parsed.data;
+  const now = new Date();
+
+  const [reset] = await db
+    .select()
+    .from(passwordResetsTable)
+    .where(
+      and(
+        eq(passwordResetsTable.token, token),
+        isNull(passwordResetsTable.usedAt),
+        gt(passwordResetsTable.expiresAt, now)
+      )
+    )
+    .limit(1);
+
+  if (!reset) {
+    res.status(400).json({ error: "This reset link is invalid or has expired. Please request a new one." });
+    return;
+  }
+
+  const passwordHash = await hashPassword(password);
+
+  await db
+    .update(usersTable)
+    .set({ passwordHash })
+    .where(eq(usersTable.id, reset.userId));
+
+  await db
+    .update(passwordResetsTable)
+    .set({ usedAt: now })
+    .where(eq(passwordResetsTable.id, reset.id));
+
+  // Invalidate all existing sessions so old devices are logged out
+  await db.delete(sessionsTable).where(eq(sessionsTable.userId, reset.userId));
+
+  req.log.info({ userId: reset.userId }, "Password reset successfully");
+  res.json({ message: "Password updated. Please sign in with your new password." });
 });
 
 router.get("/auth/invite/:token", async (req, res): Promise<void> => {

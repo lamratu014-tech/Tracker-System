@@ -93,4 +93,10 @@ export const api = {
 
   deleteUser: (token: string, userId: string) =>
     call(`/users/${userId}`, { method: "DELETE" }, token),
+
+  forgotPassword: (email: string) =>
+    call("/auth/forgot-password", { method: "POST", body: JSON.stringify({ email }) }),
+
+  resetPassword: (token: string, password: string) =>
+    call("/auth/reset-password", { method: "POST", body: JSON.stringify({ token, password }) }),
 };

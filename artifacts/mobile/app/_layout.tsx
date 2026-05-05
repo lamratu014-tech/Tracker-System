@@ -31,6 +31,8 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   const inPublic =
     segments[0] === "login" ||
     segments[0] === "accept-invite" ||
+    segments[0] === "forgot-password" ||
+    segments[0] === "reset-password" ||
     segments.length === 0;
 
   if (!isAuthenticated && !inPublic) {
@@ -46,6 +48,8 @@ function RootLayoutNav() {
       <Stack>
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="accept-invite" options={{ headerShown: false }} />
+        <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
+        <Stack.Screen name="reset-password" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="admin" options={{ headerShown: false }} />
         <Stack.Screen

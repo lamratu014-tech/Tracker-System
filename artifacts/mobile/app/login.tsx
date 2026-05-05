@@ -182,6 +182,12 @@ export default function LoginScreen() {
             </Pressable>
           </View>
 
+          {!isSetup && (
+            <Pressable style={styles.forgotLink} onPress={() => router.push("/forgot-password")}>
+              <Text style={[styles.forgotLinkText, { color: colors.primary }]}>Forgot your password?</Text>
+            </Pressable>
+          )}
+
           <Text style={[styles.footer, { color: colors.mutedForeground }]}>
             Ops & Planning · Secure & Encrypted
           </Text>
@@ -262,4 +268,6 @@ const styles = StyleSheet.create({
   },
   btnText: { color: "#fff", fontSize: 15, fontFamily: "Inter_600SemiBold" },
   footer: { textAlign: "center", fontSize: 11, fontFamily: "Inter_400Regular" },
+  forgotLink: { alignItems: "center", marginBottom: 16 },
+  forgotLinkText: { fontSize: 13, fontFamily: "Inter_500Medium" },
 });
