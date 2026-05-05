@@ -65,7 +65,7 @@ export const api = {
     call("/auth/login", { method: "POST", body: JSON.stringify({ email, password }) }),
   logout: (token: string) =>
     call("/auth/logout", { method: "POST" }, token),
-  invite: (token: string, body: { email: string; name: string; role: string; department?: string }) =>
+  invite: (token: string, body: { email: string; name: string; role: string; department?: string; teamId?: string | null }) =>
     call("/auth/invite", { method: "POST", body: JSON.stringify(body) }, token),
   getInvite: (inviteToken: string) =>
     call(`/auth/invite/${inviteToken}`),

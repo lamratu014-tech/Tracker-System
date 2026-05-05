@@ -35,7 +35,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<{ error?: string }>;
   logout: () => Promise<void>;
   setup: (email: string, name: string, password: string, department?: string, setupSecret?: string) => Promise<{ error?: string }>;
-  inviteUser: (email: string, name: string, role: UserRole, department?: string) => Promise<{ error?: string; acceptUrl?: string }>;
+  inviteUser: (email: string, name: string, role: UserRole, department?: string, teamId?: string | null) => Promise<{ error?: string; acceptUrl?: string }>;
   updateUserRole: (userId: string, role: UserRole, teamId?: string | null) => Promise<void>;
   deactivateUser: (userId: string) => Promise<void>;
   reactivateUser: (userId: string) => Promise<void>;
@@ -157,10 +157,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [sessionToken, currentUser]);
 
   const inviteUser = useCallback(
-    async (email: string, name: string, role: UserRole, department?: string): Promise<{ error?: string; acceptUrl?: string }> => {
+    async (email: string, name: string, role: UserRole, department?: string, teamId?: string | null): Promise<{ error?: string; acceptUrl?: string }> => {
       if (!sessionToken) return { error: "Not authenticated" };
       try {
-        const res = await api.invite(sessionToken, { email, name, role, department });
+        const res = await api.invite(sessionToken, { email, name, role, department, teamId });
         if (res.ok) {
           const body = (await res.json()) as { message: string; acceptUrl: string };
           return { acceptUrl: body.acceptUrl };

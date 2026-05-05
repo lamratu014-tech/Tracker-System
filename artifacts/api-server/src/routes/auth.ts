@@ -44,6 +44,7 @@ const InviteBody = z.object({
   name: z.string().min(1),
   role: z.enum(["programme_lead", "team_lead"]),
   department: z.string().optional(),
+  teamId: z.string().optional().nullable(),
 });
 
 function safeUser(u: typeof usersTable.$inferSelect) {
@@ -147,7 +148,7 @@ router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
     return;
   }
 
-  const { email, name, role, department } = parsed.data;
+  const { email, name, role, department, teamId } = parsed.data;
 
   const [existing] = await db
     .select()
@@ -169,6 +170,7 @@ router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
     token,
     role,
     department: department ?? "",
+    teamId: teamId ?? null,
     invitedByName: req.authUser!.name,
     expiresAt,
   });
@@ -240,6 +242,7 @@ router.post("/auth/accept-invite", async (req, res): Promise<void> => {
       initials,
       department: invite.department,
       role: invite.role,
+      teamId: invite.teamId ?? null,
       passwordHash,
       active: true,
       invitedByName: invite.invitedByName,

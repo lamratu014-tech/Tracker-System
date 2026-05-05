@@ -12,6 +12,7 @@ export const invitesTable = pgTable("invite_tokens", {
     .notNull()
     .default("team_lead"),
   department: text("department").notNull().default(""),
+  teamId: text("team_id"),
   invitedByName: text("invited_by_name").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   usedAt: timestamp("used_at", { withTimezone: true }),
