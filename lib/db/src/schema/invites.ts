@@ -1,4 +1,5 @@
 import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { userRoles, type UserRole } from "./users";
 
 export const invitesTable = pgTable("invite_tokens", {
   id: text("id")
@@ -8,10 +9,11 @@ export const invitesTable = pgTable("invite_tokens", {
   token: text("token").notNull().unique(),
   name: text("name").notNull().default(""),
   role: text("role")
-    .$type<"programme_lead" | "team_lead">()
+    .$type<UserRole>()
     .notNull()
-    .default("team_lead"),
+    .default("leader"),
   department: text("department").notNull().default(""),
+  streamId: text("stream_id"),
   teamId: text("team_id"),
   invitedByName: text("invited_by_name").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
@@ -21,4 +23,5 @@ export const invitesTable = pgTable("invite_tokens", {
     .defaultNow(),
 });
 
+export { userRoles };
 export type Invite = typeof invitesTable.$inferSelect;

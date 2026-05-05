@@ -1,6 +1,10 @@
 import { pgTable, text, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
+import { streamsTable } from "./streams";
+
+export const userRoles = ["admin", "stream_overseer", "leader"] as const;
+export type UserRole = (typeof userRoles)[number];
 
 export const usersTable = pgTable("users", {
   id: text("id")
@@ -11,9 +15,12 @@ export const usersTable = pgTable("users", {
   initials: text("initials").notNull(),
   department: text("department").notNull().default(""),
   role: text("role")
-    .$type<"programme_lead" | "team_lead">()
+    .$type<UserRole>()
     .notNull()
-    .default("team_lead"),
+    .default("leader"),
+  streamId: text("stream_id").references(() => streamsTable.id, {
+    onDelete: "set null",
+  }),
   teamId: text("team_id"),
   passwordHash: text("password_hash"),
   active: boolean("active").notNull().default(true),
@@ -34,4 +41,3 @@ export const insertUserSchema = createInsertSchema(usersTable).omit({
 });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof usersTable.$inferSelect;
-export type UserRole = "programme_lead" | "team_lead";

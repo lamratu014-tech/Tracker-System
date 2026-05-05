@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { db, programmesTable } from "@workspace/db";
-import { requireAuth, requireProgrammeLead } from "../middlewares/requireAuth";
+import { requireAuth, requireAdmin } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
 
 const router = Router();
@@ -23,7 +23,7 @@ const ProgrammeBody = z.object({
 });
 
 // PATCH /programmes/:id — programme_lead only
-router.patch("/programmes/:id", requireProgrammeLead, async (req, res): Promise<void> => {
+router.patch("/programmes/:id", requireAdmin, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const parsed = ProgrammeBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }

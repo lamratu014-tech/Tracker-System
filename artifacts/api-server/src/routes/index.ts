@@ -9,6 +9,7 @@ import projectsRouter from "./projects";
 import tasksRouter from "./tasks";
 import milestonesRouter from "./milestones";
 import eventsRouter from "./events";
+import teamNotesRouter from "./teamNotes";
 import activityRouter from "./activity";
 
 const router: IRouter = Router();
@@ -23,6 +24,7 @@ router.use(projectsRouter);
 router.use(tasksRouter);
 router.use(milestonesRouter);
 router.use(eventsRouter);
+router.use(teamNotesRouter);
 router.use(activityRouter);
 
 export default router;

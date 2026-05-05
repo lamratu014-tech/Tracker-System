@@ -3,7 +3,7 @@
 ## Overview
 Mobile Expo app (React Native) for organisations to manage a Stream → Team → Project → Milestone hierarchy plus a separate Events calendar. **Local-first**: all data lives in a Zustand global store persisted to AsyncStorage. The mobile app does not call the API server.
 
-The Express + PostgreSQL API server in `artifacts/api-server` is retained but not used by mobile.
+The Express + PostgreSQL API server in `artifacts/api-server` is retained but not used by mobile. Its contract (`lib/api-spec/openapi.yaml`) covers the Stream→Team→Project→Milestone hierarchy plus events/team-notes/members and the new 3-role auth model, ready for the mobile app to wire up later. Run `pnpm --filter @workspace/api-spec run codegen` after editing the spec; generated zod schemas live in `lib/api-zod` and React Query hooks in `lib/api-client-react`. DB schema sources of truth: `lib/db/src/schema/*` (push with `pnpm --filter @workspace/db run push`).
 
 ## Architecture
 

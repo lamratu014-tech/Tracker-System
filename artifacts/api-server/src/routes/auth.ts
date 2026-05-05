@@ -1,7 +1,15 @@
 import { Router } from "express";
-import { z } from "zod";
 import { db, usersTable, invitesTable, passwordResetsTable, sessionsTable } from "@workspace/db";
 import { eq, and, gt, isNull } from "drizzle-orm";
+import {
+  LoginBody,
+  SetupFirstAdminBody,
+  AcceptInviteBody,
+  CreateInviteBody,
+  RequestPasswordResetBody,
+  ResetPasswordBody,
+  GetInviteByTokenParams,
+} from "@workspace/api-zod";
 import {
   hashPassword,
   verifyPassword,
@@ -18,33 +26,6 @@ const router = Router();
 router.get("/auth/status", async (_req, res): Promise<void> => {
   const count = await countUsers();
   res.json({ needsSetup: count === 0 });
-});
-
-const LoginBody = z.object({
-  email: z.string().email(),
-  password: z.string().min(1),
-});
-
-const AcceptInviteBody = z.object({
-  token: z.string().min(1),
-  name: z.string().min(1),
-  password: z.string().min(8),
-});
-
-const SetupBody = z.object({
-  email: z.string().email(),
-  name: z.string().min(1),
-  password: z.string().min(8),
-  department: z.string().optional(),
-  setupSecret: z.string().min(1),
-});
-
-const InviteBody = z.object({
-  email: z.string().email(),
-  name: z.string().min(1),
-  role: z.enum(["programme_lead", "team_lead"]),
-  department: z.string().optional(),
-  teamId: z.string().optional().nullable(),
 });
 
 function safeUser(u: typeof usersTable.$inferSelect) {
@@ -75,7 +56,7 @@ router.post("/auth/setup", async (req, res): Promise<void> => {
     return;
   }
 
-  const parsed = SetupBody.safeParse(req.body);
+  const parsed = SetupFirstAdminBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
@@ -87,17 +68,12 @@ router.post("/auth/setup", async (req, res): Promise<void> => {
     res.status(403).json({ error: "Invalid setup secret." });
     return;
   }
-  const initials = name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
+  const initials = name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
 
   const passwordHash = await hashPassword(password);
   const [user] = await db
     .insert(usersTable)
-    .values({ email, name, initials, department: department ?? "", role: "programme_lead", passwordHash, active: true })
+    .values({ email, name, initials, department: department ?? "", role: "admin", passwordHash, active: true })
     .returning();
 
   const token = await createSession(user.id);
@@ -142,13 +118,13 @@ router.post("/auth/logout", requireAuth, async (req, res): Promise<void> => {
 });
 
 router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
-  const parsed = InviteBody.safeParse(req.body);
+  const parsed = CreateInviteBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
-  const { email, name, role, department, teamId } = parsed.data;
+  const { email, name, role, department, streamId, teamId } = parsed.data;
 
   const [existing] = await db
     .select()
@@ -170,6 +146,7 @@ router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
     token,
     role,
     department: department ?? "",
+    streamId: streamId ?? null,
     teamId: teamId ?? null,
     invitedByName: req.authUser!.name,
     expiresAt,
@@ -226,12 +203,7 @@ router.post("/auth/accept-invite", async (req, res): Promise<void> => {
     return;
   }
 
-  const initials = name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
+  const initials = name.split(" ").map((n) => n[0]).join("").toUpperCase().slice(0, 2);
   const passwordHash = await hashPassword(password);
 
   const [user] = await db
@@ -242,6 +214,7 @@ router.post("/auth/accept-invite", async (req, res): Promise<void> => {
       initials,
       department: invite.department,
       role: invite.role,
+      streamId: invite.streamId ?? null,
       teamId: invite.teamId ?? null,
       passwordHash,
       active: true,
@@ -259,14 +232,8 @@ router.post("/auth/accept-invite", async (req, res): Promise<void> => {
   res.status(201).json({ token: sessionToken, user: safeUser(user) });
 });
 
-const ForgotPasswordBody = z.object({ email: z.string().email() });
-const ResetPasswordBody = z.object({
-  token: z.string().min(1),
-  password: z.string().min(8),
-});
-
 router.post("/auth/forgot-password", async (req, res): Promise<void> => {
-  const parsed = ForgotPasswordBody.safeParse(req.body);
+  const parsed = RequestPasswordResetBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "Please provide a valid email address." });
     return;
@@ -346,7 +313,8 @@ router.post("/auth/reset-password", async (req, res): Promise<void> => {
 });
 
 router.get("/auth/invite/:token", async (req, res): Promise<void> => {
-  const token = Array.isArray(req.params.token) ? req.params.token[0] : req.params.token;
+  const params = GetInviteByTokenParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const now = new Date();
 
   const [invite] = await db
@@ -354,7 +322,7 @@ router.get("/auth/invite/:token", async (req, res): Promise<void> => {
     .from(invitesTable)
     .where(
       and(
-        eq(invitesTable.token, token),
+        eq(invitesTable.token, params.data.token),
         isNull(invitesTable.usedAt),
         gt(invitesTable.expiresAt, now)
       )

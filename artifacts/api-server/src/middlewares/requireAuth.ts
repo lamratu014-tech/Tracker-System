@@ -30,35 +30,38 @@ export async function requireAuth(
   next();
 }
 
-export async function requireProgrammeLead(
+export async function requireAdmin(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   await requireAuth(req, res, () => {
-    if (req.authUser?.role !== "programme_lead") {
-      res.status(403).json({ error: "Programme Lead access required" });
+    if (req.authUser?.role !== "admin") {
+      res.status(403).json({ error: "Admin access required" });
       return;
     }
     next();
   });
 }
 
-export async function requireTeamLead(
+// Allows admin, stream_overseer, or leader. Per-row scoping is enforced
+// in route handlers; refined permission checks land in a follow-up task.
+export async function requireManager(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   await requireAuth(req, res, () => {
     const role = req.authUser?.role;
-    if (role !== "programme_lead" && role !== "team_lead") {
-      res.status(403).json({ error: "Team Lead access required" });
+    if (role !== "admin" && role !== "stream_overseer" && role !== "leader") {
+      res.status(403).json({ error: "Manager access required" });
       return;
     }
     next();
   });
 }
 
-// Aliases for backward compat during migration
-export const requireAdmin = requireProgrammeLead;
-export const requireTeamLeader = requireTeamLead;
+// Backward-compat aliases used by older route imports during migration.
+export const requireProgrammeLead = requireAdmin;
+export const requireTeamLead = requireManager;
+export const requireTeamLeader = requireManager;

@@ -3,34 +3,1314 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Ops & Planning API specification
 servers:
   - url: /api
     description: Base API path
+
 tags:
   - name: health
-    description: Health operations
+  - name: auth
+  - name: users
+  - name: invites
+  - name: streams
+  - name: teams
+  - name: members
+  - name: projects
+  - name: milestones
+  - name: events
+  - name: teamNotes
+
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
       summary: Health check
-      description: Returns server health status
       responses:
         "200":
           description: Healthy
           content:
             application/json:
+              schema: { $ref: "#/components/schemas/HealthStatus" }
+
+  # ─── Auth ──────────────────────────────────────────────────────────────
+  /auth/status:
+    get:
+      operationId: getAuthStatus
+      tags: [auth]
+      summary: Whether the app needs first-time setup
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthStatus" }
+
+  /auth/setup:
+    post:
+      operationId: setupFirstAdmin
+      tags: [auth]
+      summary: Create the first admin account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetupBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "503": { $ref: "#/components/responses/Error" }
+
+  /auth/login:
+    post:
+      operationId: login
+      tags: [auth]
+      summary: Email + password login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/LoginBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/logout:
+    post:
+      operationId: logout
+      tags: [auth]
+      summary: Invalidate current session
+      security: [{ bearerAuth: [] }]
+      responses:
+        "204": { description: No content }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/me:
+    get:
+      operationId: getMe
+      tags: [auth]
+      summary: Current authenticated user
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /auth/forgot-password:
+    post:
+      operationId: requestPasswordReset
+      tags: [auth]
+      summary: Request a password-reset link
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ForgotPasswordBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/reset-password:
+    post:
+      operationId: resetPassword
+      tags: [auth]
+      summary: Complete a password reset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResetPasswordBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MessageResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  /auth/accept-invite:
+    post:
+      operationId: acceptInvite
+      tags: [auth]
+      summary: Activate an invited account
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AcceptInviteBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AuthSession" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /auth/invite:
+    post:
+      operationId: createInvite
+      tags: [auth, invites]
+      summary: Admin creates an invite
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateInviteBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CreateInviteResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /auth/invite/{token}:
+    get:
+      operationId: getInviteByToken
+      tags: [auth, invites]
+      summary: Look up an invite by its token
+      parameters:
+        - { in: path, name: token, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/InvitePreview" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+
+  # ─── Users ────────────────────────────────────────────────────────────
+  /users:
+    get:
+      operationId: listUsers
+      tags: [users]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
               schema:
-                $ref: "#/components/schemas/HealthStatus"
+                type: array
+                items: { $ref: "#/components/schemas/User" }
+    post:
+      operationId: createUser
+      tags: [users]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateUserBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /users/{id}/role:
+    patch:
+      operationId: updateUserRole
+      tags: [users]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateUserRoleBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /users/{id}/deactivate:
+    patch:
+      operationId: deactivateUser
+      tags: [users]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /users/{id}/reactivate:
+    patch:
+      operationId: reactivateUser
+      tags: [users]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /users/{id}:
+    get:
+      operationId: getUser
+      tags: [users]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/User" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteUser
+      tags: [users]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Streams ──────────────────────────────────────────────────────────
+  /streams:
+    get:
+      operationId: listStreams
+      tags: [streams]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Stream" }
+    post:
+      operationId: createStream
+      tags: [streams]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateStreamBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Stream" }
+
+  /streams/{id}:
+    get:
+      operationId: getStream
+      tags: [streams]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Stream" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateStream
+      tags: [streams]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateStreamBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Stream" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteStream
+      tags: [streams]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /streams/{id}/teams:
+    get:
+      operationId: listStreamTeams
+      tags: [streams, teams]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Team" }
+
+  # ─── Teams ────────────────────────────────────────────────────────────
+  /teams:
+    get:
+      operationId: listTeams
+      tags: [teams]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TeamWithStreamName" }
+    post:
+      operationId: createTeam
+      tags: [teams]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTeamBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+
+  /teams/{id}:
+    get:
+      operationId: getTeam
+      tags: [teams]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeamWithStreamName" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateTeam
+      tags: [teams]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateTeamBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteTeam
+      tags: [teams]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /teams/{id}/assign-leader:
+    post:
+      operationId: assignTeamLeader
+      tags: [teams]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssignLeaderBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Members ──────────────────────────────────────────────────────────
+  /teams/{id}/members:
+    get:
+      operationId: listTeamMembers
+      tags: [members]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Member" }
+    post:
+      operationId: createTeamMember
+      tags: [members]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateMemberBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Member" }
+
+  /members/{id}:
+    patch:
+      operationId: updateMember
+      tags: [members]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateMemberBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Member" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteMember
+      tags: [members]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Projects ─────────────────────────────────────────────────────────
+  /projects:
+    get:
+      operationId: listProjects
+      tags: [projects]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/ProjectWithTeamName" }
+    post:
+      operationId: createProject
+      tags: [projects]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateProjectBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+
+  /projects/{id}:
+    get:
+      operationId: getProject
+      tags: [projects]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProjectWithTeamName" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateProject
+      tags: [projects]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateProjectBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Project" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteProject
+      tags: [projects]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Milestones ───────────────────────────────────────────────────────
+  /projects/{projectId}/milestones:
+    get:
+      operationId: listProjectMilestones
+      tags: [milestones]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: projectId, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Milestone" }
+
+  /milestones:
+    post:
+      operationId: createMilestone
+      tags: [milestones]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateMilestoneBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Milestone" }
+
+  /milestones/{id}:
+    patch:
+      operationId: updateMilestone
+      tags: [milestones]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateMilestoneBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Milestone" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteMilestone
+      tags: [milestones]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /milestones/{id}/status:
+    patch:
+      operationId: setMilestoneStatus
+      tags: [milestones]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SetMilestoneStatusBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Milestone" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Events ───────────────────────────────────────────────────────────
+  /events:
+    get:
+      operationId: listEvents
+      tags: [events]
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/EventWithVisibility" }
+    post:
+      operationId: createEvent
+      tags: [events]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateEventBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Event" }
+
+  /events/{id}:
+    get:
+      operationId: getEvent
+      tags: [events]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EventWithVisibility" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    patch:
+      operationId: updateEvent
+      tags: [events]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateEventBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Event" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteEvent
+      tags: [events]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ─── Team Notes ───────────────────────────────────────────────────────
+  /teams/{id}/notes:
+    get:
+      operationId: listTeamNotes
+      tags: [teamNotes]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/TeamNote" }
+    post:
+      operationId: createTeamNote
+      tags: [teamNotes]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateTeamNoteBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeamNote" }
+
+  /team-notes/{id}:
+    patch:
+      operationId: updateTeamNote
+      tags: [teamNotes]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateTeamNoteBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TeamNote" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteTeamNote
+      tags: [teamNotes]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+# ────────────────────────────────────────────────────────────────────────
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  responses:
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Forbidden:
+      description: Forbidden
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotFound:
+      description: Not found
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Conflict:
+      description: Conflict
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
   schemas:
     HealthStatus:
       type: object
+      required: [status]
       properties:
-        status:
-          type: string
-      required:
-        - status
+        status: { type: string }
 
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
+
+    MessageResponse:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+
+    UserRole:
+      type: string
+      enum: [admin, stream_overseer, leader]
+
+    AuthStatus:
+      type: object
+      required: [needsSetup]
+      properties:
+        needsSetup: { type: boolean }
+
+    AuthSession:
+      type: object
+      required: [token, user]
+      properties:
+        token: { type: string }
+        user: { $ref: "#/components/schemas/User" }
+
+    User:
+      type: object
+      required: [id, email, name, initials, department, role, active, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        email: { type: string, format: email }
+        name: { type: string }
+        initials: { type: string }
+        department: { type: string }
+        role: { $ref: "#/components/schemas/UserRole" }
+        streamId: { type: string, nullable: true }
+        teamId: { type: string, nullable: true }
+        active: { type: boolean }
+        invitedByName: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    LoginBody:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, minLength: 1 }
+
+    SetupBody:
+      type: object
+      required: [email, name, password, setupSecret]
+      properties:
+        email: { type: string, format: email }
+        name: { type: string, minLength: 1 }
+        password: { type: string, minLength: 8 }
+        department: { type: string }
+        setupSecret: { type: string, minLength: 1 }
+
+    AcceptInviteBody:
+      type: object
+      required: [token, name, password]
+      properties:
+        token: { type: string, minLength: 1 }
+        name: { type: string, minLength: 1 }
+        password: { type: string, minLength: 8 }
+
+    ForgotPasswordBody:
+      type: object
+      required: [email]
+      properties:
+        email: { type: string, format: email }
+
+    ResetPasswordBody:
+      type: object
+      required: [token, password]
+      properties:
+        token: { type: string, minLength: 1 }
+        password: { type: string, minLength: 8 }
+
+    CreateInviteBody:
+      type: object
+      required: [email, name, role]
+      properties:
+        email: { type: string, format: email }
+        name: { type: string, minLength: 1 }
+        role: { $ref: "#/components/schemas/UserRole" }
+        department: { type: string }
+        streamId: { type: string, nullable: true }
+        teamId: { type: string, nullable: true }
+
+    CreateInviteResponse:
+      type: object
+      required: [message, acceptUrl]
+      properties:
+        message: { type: string }
+        acceptUrl: { type: string }
+
+    InvitePreview:
+      type: object
+      required: [email, name, role, department]
+      properties:
+        email: { type: string, format: email }
+        name: { type: string }
+        role: { $ref: "#/components/schemas/UserRole" }
+        department: { type: string }
+
+    CreateUserBody:
+      type: object
+      required: [email, name, password, role]
+      properties:
+        email: { type: string, format: email }
+        name: { type: string, minLength: 1 }
+        password: { type: string, minLength: 6 }
+        role: { $ref: "#/components/schemas/UserRole" }
+        department: { type: string }
+        streamId: { type: string, nullable: true }
+        teamId: { type: string, nullable: true }
+
+    UpdateUserRoleBody:
+      type: object
+      required: [role]
+      properties:
+        role: { $ref: "#/components/schemas/UserRole" }
+        streamId: { type: string, nullable: true }
+        teamId: { type: string, nullable: true }
+
+    Stream:
+      type: object
+      required: [id, name, description, programmeId, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        programmeId: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CreateStreamBody:
+      type: object
+      required: [name, programmeId]
+      properties:
+        name: { type: string, minLength: 1 }
+        description: { type: string }
+        programmeId: { type: string, minLength: 1 }
+
+    UpdateStreamBody:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        description: { type: string }
+
+    Team:
+      type: object
+      required: [id, name, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        streamId: { type: string, nullable: true }
+        leaderId: { type: string, nullable: true }
+        functionLabel: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    TeamWithStreamName:
+      allOf:
+        - $ref: "#/components/schemas/Team"
+        - type: object
+          properties:
+            streamName: { type: string, nullable: true }
+
+    CreateTeamBody:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+        streamId: { type: string, nullable: true }
+        leaderId: { type: string, nullable: true }
+        functionLabel: { type: string }
+
+    UpdateTeamBody:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        streamId: { type: string, nullable: true }
+        leaderId: { type: string, nullable: true }
+        functionLabel: { type: string }
+
+    AssignLeaderBody:
+      type: object
+      properties:
+        leaderId: { type: string, nullable: true }
+
+    Member:
+      type: object
+      required: [id, name, teamId, createdAt]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        roleLabel: { type: string, nullable: true }
+        teamId: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    CreateMemberBody:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+        roleLabel: { type: string }
+
+    UpdateMemberBody:
+      type: object
+      properties:
+        name: { type: string, minLength: 1 }
+        roleLabel: { type: string }
+        teamId: { type: string }
+
+    ProjectStatus:
+      type: string
+      enum: [not_started, in_progress, at_risk, completed]
+
+    Project:
+      type: object
+      required: [id, teamId, title, description, status, color, phase, notes, tags, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        teamId: { type: string }
+        title: { type: string }
+        description: { type: string }
+        status: { $ref: "#/components/schemas/ProjectStatus" }
+        color: { type: string }
+        phase: { type: string }
+        dueDate: { type: string, format: date-time, nullable: true }
+        notes: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    ProjectWithTeamName:
+      allOf:
+        - $ref: "#/components/schemas/Project"
+        - type: object
+          properties:
+            teamName: { type: string, nullable: true }
+
+    CreateProjectBody:
+      type: object
+      required: [teamId, title]
+      properties:
+        teamId: { type: string, minLength: 1 }
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        status: { $ref: "#/components/schemas/ProjectStatus" }
+        color: { type: string }
+        phase: { type: string }
+        dueDate: { type: string, format: date-time, nullable: true }
+        notes: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+
+    UpdateProjectBody:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        status: { $ref: "#/components/schemas/ProjectStatus" }
+        color: { type: string }
+        phase: { type: string }
+        dueDate: { type: string, format: date-time, nullable: true }
+        notes: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+
+    Milestone:
+      type: object
+      required: [id, projectId, title, date, completed, createdAt]
+      properties:
+        id: { type: string }
+        projectId: { type: string }
+        title: { type: string }
+        date: { type: string, format: date-time }
+        completed: { type: boolean }
+        createdAt: { type: string, format: date-time }
+
+    CreateMilestoneBody:
+      type: object
+      required: [projectId, title, date]
+      properties:
+        projectId: { type: string, minLength: 1 }
+        title: { type: string, minLength: 1 }
+        date: { type: string, format: date-time }
+        completed: { type: boolean }
+
+    UpdateMilestoneBody:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        date: { type: string, format: date-time }
+        completed: { type: boolean }
+
+    SetMilestoneStatusBody:
+      type: object
+      required: [completed]
+      properties:
+        completed: { type: boolean }
+
+    EventStatus:
+      type: string
+      enum: [pending, approved, rejected]
+
+    EventVisibility:
+      type: string
+      enum: [full, shared]
+
+    Event:
+      type: object
+      required:
+        - id
+        - title
+        - sharedDescription
+        - startDate
+        - endDate
+        - location
+        - color
+        - isAllDay
+        - status
+        - invitedTeamIds
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string }
+        title: { type: string }
+        internalDescription: { type: string, nullable: true }
+        sharedDescription: { type: string }
+        startDate: { type: string, format: date-time }
+        endDate: { type: string, format: date-time }
+        location: { type: string }
+        color: { type: string }
+        isAllDay: { type: boolean }
+        status: { $ref: "#/components/schemas/EventStatus" }
+        projectId: { type: string, nullable: true }
+        createdByTeamId: { type: string, nullable: true }
+        createdByUserId: { type: string, nullable: true }
+        invitedTeamIds:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    EventWithVisibility:
+      allOf:
+        - $ref: "#/components/schemas/Event"
+        - type: object
+          required: [visibility]
+          properties:
+            visibility: { $ref: "#/components/schemas/EventVisibility" }
+
+    CreateEventBody:
+      type: object
+      required: [title, startDate, endDate]
+      properties:
+        title: { type: string, minLength: 1 }
+        internalDescription: { type: string }
+        sharedDescription: { type: string }
+        startDate: { type: string, format: date-time }
+        endDate: { type: string, format: date-time }
+        location: { type: string }
+        color: { type: string }
+        isAllDay: { type: boolean }
+        status: { $ref: "#/components/schemas/EventStatus" }
+        projectId: { type: string, nullable: true }
+        invitedTeamIds:
+          type: array
+          items: { type: string }
+
+    UpdateEventBody:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        internalDescription: { type: string }
+        sharedDescription: { type: string }
+        startDate: { type: string, format: date-time }
+        endDate: { type: string, format: date-time }
+        location: { type: string }
+        color: { type: string }
+        isAllDay: { type: boolean }
+        status: { $ref: "#/components/schemas/EventStatus" }
+        projectId: { type: string, nullable: true }
+        invitedTeamIds:
+          type: array
+          items: { type: string }
+
+    TeamNote:
+      type: object
+      required: [id, teamId, authorId, body, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        teamId: { type: string }
+        authorId: { type: string }
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CreateTeamNoteBody:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1 }
+
+    UpdateTeamNoteBody:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1 }

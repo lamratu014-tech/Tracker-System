@@ -1,33 +1,34 @@
 import { Router } from "express";
-import { z } from "zod";
 import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { requireAuth, requireProgrammeLead } from "../middlewares/requireAuth";
+import {
+  CreateUserBody,
+  UpdateUserRoleBody,
+  UpdateUserRoleParams,
+  DeactivateUserParams,
+  ReactivateUserParams,
+  DeleteUserParams,
+} from "@workspace/api-zod";
+import { z } from "zod";
+import { requireAdmin } from "../middlewares/requireAuth";
 import { hashPassword } from "../lib/auth";
 
 const router = Router();
+
+const GetUserParams = z.object({ id: z.string() });
 
 function safeUser(u: typeof usersTable.$inferSelect) {
   const { passwordHash: _, ...rest } = u;
   return rest;
 }
 
-const CreateUserBody = z.object({
-  email: z.string().email(),
-  name: z.string().min(1),
-  password: z.string().min(6),
-  role: z.enum(["programme_lead", "team_lead"]),
-  department: z.string().optional(),
-  teamId: z.string().optional().nullable(),
-});
-
-router.post("/users", requireProgrammeLead, async (req, res): Promise<void> => {
+router.post("/users", requireAdmin, async (req, res): Promise<void> => {
   const parsed = CreateUserBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
     return;
   }
-  const { email, name, password, role, department, teamId } = parsed.data;
+  const { email, name, password, role, department, streamId, teamId } = parsed.data;
 
   const [existing] = await db
     .select({ id: usersTable.id })
@@ -51,17 +52,18 @@ router.post("/users", requireProgrammeLead, async (req, res): Promise<void> => {
       passwordHash,
       role,
       department: department ?? "",
+      streamId: streamId ?? null,
       teamId: teamId ?? null,
       active: true,
       invitedByName: req.authUser!.name,
     })
     .returning();
 
-  req.log.info({ userId: user!.id }, "User created directly by programme lead");
+  req.log.info({ userId: user!.id }, "User created directly by admin");
   res.status(201).json(safeUser(user!));
 });
 
-router.get("/users", requireProgrammeLead, async (_req, res): Promise<void> => {
+router.get("/users", requireAdmin, async (_req, res): Promise<void> => {
   const users = await db
     .select()
     .from(usersTable)
@@ -69,28 +71,39 @@ router.get("/users", requireProgrammeLead, async (_req, res): Promise<void> => {
   res.json(users.map(safeUser));
 });
 
-const UpdateRoleBody = z.object({
-  role: z.enum(["programme_lead", "team_lead"]),
-  teamId: z.string().optional().nullable(),
+router.get("/users/:id", requireAdmin, async (req, res): Promise<void> => {
+  const params = GetUserParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, params.data.id)).limit(1);
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  res.json(safeUser(user));
 });
 
-router.patch("/users/:id/role", requireProgrammeLead, async (req, res): Promise<void> => {
-  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+router.patch("/users/:id/role", requireAdmin, async (req, res): Promise<void> => {
+  const params = UpdateUserRoleParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const id = params.data.id;
 
   if (id === req.authUser!.id) {
     res.status(400).json({ error: "You cannot change your own role" });
     return;
   }
 
-  const parsed = UpdateRoleBody.safeParse(req.body);
+  const parsed = UpdateUserRoleBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
+  // Build patch so explicit `null` clears the FK while omitted keys leave
+  // the existing value untouched.
+  const patch: Partial<typeof usersTable.$inferInsert> = { role: parsed.data.role };
+  if ("streamId" in parsed.data) patch.streamId = parsed.data.streamId ?? null;
+  if ("teamId" in parsed.data) patch.teamId = parsed.data.teamId ?? null;
+
   const [user] = await db
     .update(usersTable)
-    .set({ role: parsed.data.role, teamId: parsed.data.teamId ?? undefined })
+    .set(patch)
     .where(eq(usersTable.id, id))
     .returning();
 
@@ -103,8 +116,10 @@ router.patch("/users/:id/role", requireProgrammeLead, async (req, res): Promise<
   res.json(safeUser(user));
 });
 
-router.patch("/users/:id/deactivate", requireProgrammeLead, async (req, res): Promise<void> => {
-  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+router.patch("/users/:id/deactivate", requireAdmin, async (req, res): Promise<void> => {
+  const params = DeactivateUserParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const id = params.data.id;
 
   if (id === req.authUser!.id) {
     res.status(400).json({ error: "You cannot deactivate your own account" });
@@ -117,17 +132,16 @@ router.patch("/users/:id/deactivate", requireProgrammeLead, async (req, res): Pr
     .where(eq(usersTable.id, id))
     .returning();
 
-  if (!user) {
-    res.status(404).json({ error: "User not found" });
-    return;
-  }
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
   req.log.info({ targetId: id }, "User deactivated");
   res.json(safeUser(user));
 });
 
-router.patch("/users/:id/reactivate", requireProgrammeLead, async (req, res): Promise<void> => {
-  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+router.patch("/users/:id/reactivate", requireAdmin, async (req, res): Promise<void> => {
+  const params = ReactivateUserParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const id = params.data.id;
 
   const [user] = await db
     .update(usersTable)
@@ -135,17 +149,16 @@ router.patch("/users/:id/reactivate", requireProgrammeLead, async (req, res): Pr
     .where(eq(usersTable.id, id))
     .returning();
 
-  if (!user) {
-    res.status(404).json({ error: "User not found" });
-    return;
-  }
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
   req.log.info({ targetId: id }, "User reactivated");
   res.json(safeUser(user));
 });
 
-router.delete("/users/:id", requireProgrammeLead, async (req, res): Promise<void> => {
-  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+router.delete("/users/:id", requireAdmin, async (req, res): Promise<void> => {
+  const params = DeleteUserParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const id = params.data.id;
 
   if (id === req.authUser!.id) {
     res.status(400).json({ error: "You cannot delete your own account" });
@@ -157,10 +170,7 @@ router.delete("/users/:id", requireProgrammeLead, async (req, res): Promise<void
     .where(eq(usersTable.id, id))
     .returning();
 
-  if (!user) {
-    res.status(404).json({ error: "User not found" });
-    return;
-  }
+  if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
   req.log.info({ targetId: id }, "User deleted");
   res.sendStatus(204);

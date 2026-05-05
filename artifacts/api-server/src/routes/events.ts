@@ -1,95 +1,74 @@
 import { Router } from "express";
-import { z } from "zod";
 import { db, eventsTable, eventInvitationsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { requireAuth, requireTeamLead } from "../middlewares/requireAuth";
+import {
+  CreateEventBody,
+  UpdateEventBody,
+  GetEventParams,
+  UpdateEventParams,
+  DeleteEventParams,
+} from "@workspace/api-zod";
+import { requireAuth, requireManager } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
+import { userCanAccessTeam } from "../lib/permissions";
 
 const router = Router();
 
-// GET /events — filtered by visibility rules
 router.get("/events", requireAuth, async (req, res): Promise<void> => {
   const user = req.authUser!;
 
   const allEvents = await db.select().from(eventsTable).orderBy(eventsTable.startDate);
   const allInvitations = await db.select().from(eventInvitationsTable);
 
-  const result = allEvents.flatMap((event) => {
-    const invitedTeamIds = allInvitations
-      .filter((inv) => inv.eventId === event.id)
-      .map((inv) => inv.teamId);
+  type EventOut = (typeof allEvents)[number] & {
+    invitedTeamIds: string[];
+    visibility: "full" | "shared";
+  };
 
-    if (user.role === "programme_lead") {
-      return [{ ...event, invitedTeamIds, visibility: "full" as const }];
+  const result: EventOut[] = [];
+  for (const event of allEvents) {
+    const invitedTeamIds = allInvitations.filter((i) => i.eventId === event.id).map((i) => i.teamId);
+
+    if (await userCanAccessTeam(user, event.createdByTeamId)) {
+      result.push({ ...event, invitedTeamIds, visibility: "full" });
+      continue;
     }
 
-    if (!user.teamId) return [];
-
-    if (event.createdByTeamId === user.teamId) {
-      return [{ ...event, invitedTeamIds, visibility: "full" as const }];
-    }
-
-    if (invitedTeamIds.includes(user.teamId)) {
-      return [{
-        id: event.id,
-        title: event.title,
-        sharedDescription: event.sharedDescription,
-        internalDescription: null,
-        startDate: event.startDate,
-        endDate: event.endDate,
-        location: event.location,
-        color: event.color,
-        isAllDay: event.isAllDay,
-        status: event.status,
+    if (user.teamId && invitedTeamIds.includes(user.teamId)) {
+      result.push({
+        ...event,
+        internalDescription: "",
         projectId: null,
-        createdByTeamId: event.createdByTeamId,
-        createdByUserId: event.createdByUserId,
-        createdAt: event.createdAt,
-        updatedAt: event.updatedAt,
         invitedTeamIds,
-        visibility: "shared" as const,
-      }];
+        visibility: "shared",
+      });
     }
-
-    return [];
-  });
+  }
 
   res.json(result);
 });
 
-// GET /events/:id
 router.get("/events/:id", requireAuth, async (req, res): Promise<void> => {
-  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+  const params = GetEventParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const user = req.authUser!;
 
-  const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, id)).limit(1);
+  const [event] = await db.select().from(eventsTable).where(eq(eventsTable.id, params.data.id)).limit(1);
   if (!event) { res.status(404).json({ error: "Event not found" }); return; }
 
-  const invitations = await db.select().from(eventInvitationsTable).where(eq(eventInvitationsTable.eventId, id));
+  const invitations = await db.select().from(eventInvitationsTable).where(eq(eventInvitationsTable.eventId, params.data.id));
   const invitedTeamIds = invitations.map((i) => i.teamId);
 
-  if (user.role === "programme_lead" || event.createdByTeamId === user.teamId) {
+  if (await userCanAccessTeam(user, event.createdByTeamId)) {
     res.json({ ...event, invitedTeamIds, visibility: "full" });
     return;
   }
 
   if (user.teamId && invitedTeamIds.includes(user.teamId)) {
     res.json({
-      id: event.id,
-      title: event.title,
-      sharedDescription: event.sharedDescription,
-      internalDescription: null,
-      startDate: event.startDate,
-      endDate: event.endDate,
-      location: event.location,
-      color: event.color,
-      isAllDay: event.isAllDay,
-      status: event.status,
+      ...event,
+      internalDescription: "",
       projectId: null,
-      createdByTeamId: event.createdByTeamId,
-      createdByUserId: event.createdByUserId,
-      createdAt: event.createdAt,
-      updatedAt: event.updatedAt,
       invitedTeamIds,
       visibility: "shared",
     });
@@ -99,30 +78,22 @@ router.get("/events/:id", requireAuth, async (req, res): Promise<void> => {
   res.status(403).json({ error: "Access denied" });
 });
 
-const EventBody = z.object({
-  title: z.string().min(1),
-  internalDescription: z.string().optional(),
-  sharedDescription: z.string().optional(),
-  startDate: z.string().datetime(),
-  endDate: z.string().datetime(),
-  location: z.string().optional(),
-  color: z.string().optional(),
-  isAllDay: z.boolean().optional(),
-  status: z.enum(["pending", "approved", "rejected"]).optional(),
-  projectId: z.string().optional().nullable(),
-  invitedTeamIds: z.array(z.string()).optional(),
-});
-
-// POST /events — team_lead or programme_lead
-router.post("/events", requireTeamLead, async (req, res): Promise<void> => {
+router.post("/events", requireManager, async (req, res): Promise<void> => {
   const user = req.authUser!;
-  const parsed = EventBody.safeParse(req.body);
+  const parsed = CreateEventBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   const { invitedTeamIds = [], ...eventData } = parsed.data;
 
   const [event] = await db.insert(eventsTable).values({
-    ...eventData,
+    title: eventData.title,
+    internalDescription: eventData.internalDescription,
+    sharedDescription: eventData.sharedDescription,
+    location: eventData.location,
+    color: eventData.color,
+    isAllDay: eventData.isAllDay,
+    status: eventData.status,
+    projectId: eventData.projectId,
     startDate: new Date(eventData.startDate),
     endDate: new Date(eventData.endDate),
     createdByTeamId: user.teamId,
@@ -139,59 +110,67 @@ router.post("/events", requireTeamLead, async (req, res): Promise<void> => {
   res.status(201).json({ ...event, invitedTeamIds });
 });
 
-// PATCH /events/:id
-router.patch("/events/:id", requireTeamLead, async (req, res): Promise<void> => {
-  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+router.patch("/events/:id", requireManager, async (req, res): Promise<void> => {
+  const params = UpdateEventParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const user = req.authUser!;
 
-  const [existing] = await db.select().from(eventsTable).where(eq(eventsTable.id, id)).limit(1);
+  const [existing] = await db.select().from(eventsTable).where(eq(eventsTable.id, params.data.id)).limit(1);
   if (!existing) { res.status(404).json({ error: "Event not found" }); return; }
 
-  if (user.role !== "programme_lead" && existing.createdByTeamId !== user.teamId) {
+  if (!(await userCanAccessTeam(user, existing.createdByTeamId))) {
     res.status(403).json({ error: "Access denied" });
     return;
   }
 
-  const parsed = EventBody.partial().safeParse(req.body);
+  const parsed = UpdateEventBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   const { invitedTeamIds, ...eventData } = parsed.data;
 
-  const [event] = await db.update(eventsTable).set({
-    ...eventData,
-    startDate: eventData.startDate ? new Date(eventData.startDate) : undefined,
-    endDate: eventData.endDate ? new Date(eventData.endDate) : undefined,
-  }).where(eq(eventsTable.id, id)).returning();
+  const patch: Partial<typeof eventsTable.$inferInsert> = {};
+  if ("title" in eventData) patch.title = eventData.title;
+  if ("internalDescription" in eventData) patch.internalDescription = eventData.internalDescription;
+  if ("sharedDescription" in eventData) patch.sharedDescription = eventData.sharedDescription;
+  if ("location" in eventData) patch.location = eventData.location;
+  if ("color" in eventData) patch.color = eventData.color;
+  if ("isAllDay" in eventData) patch.isAllDay = eventData.isAllDay;
+  if ("status" in eventData) patch.status = eventData.status;
+  if ("projectId" in eventData) patch.projectId = eventData.projectId ?? null;
+  if ("startDate" in eventData && eventData.startDate) patch.startDate = new Date(eventData.startDate);
+  if ("endDate" in eventData && eventData.endDate) patch.endDate = new Date(eventData.endDate);
+
+  const [event] = await db.update(eventsTable).set(patch).where(eq(eventsTable.id, params.data.id)).returning();
 
   if (invitedTeamIds !== undefined) {
-    await db.delete(eventInvitationsTable).where(eq(eventInvitationsTable.eventId, id));
+    await db.delete(eventInvitationsTable).where(eq(eventInvitationsTable.eventId, params.data.id));
     if (invitedTeamIds.length > 0) {
       await db.insert(eventInvitationsTable).values(
-        invitedTeamIds.map((teamId) => ({ eventId: id, teamId }))
+        invitedTeamIds.map((teamId) => ({ eventId: params.data.id, teamId }))
       );
     }
   }
 
-  const finalInvitations = await db.select().from(eventInvitationsTable).where(eq(eventInvitationsTable.eventId, id));
+  const finalInvitations = await db.select().from(eventInvitationsTable).where(eq(eventInvitationsTable.eventId, params.data.id));
   await logActivity({ user, actionType: "update", entityType: "event", entityId: event.id, entityTitle: event.title });
   res.json({ ...event, invitedTeamIds: finalInvitations.map((i) => i.teamId) });
 });
 
-// DELETE /events/:id
-router.delete("/events/:id", requireTeamLead, async (req, res): Promise<void> => {
-  const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+router.delete("/events/:id", requireManager, async (req, res): Promise<void> => {
+  const params = DeleteEventParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const user = req.authUser!;
 
-  const [existing] = await db.select().from(eventsTable).where(eq(eventsTable.id, id)).limit(1);
+  const [existing] = await db.select().from(eventsTable).where(eq(eventsTable.id, params.data.id)).limit(1);
   if (!existing) { res.status(404).json({ error: "Event not found" }); return; }
 
-  if (user.role !== "programme_lead" && existing.createdByTeamId !== user.teamId) {
+  if (!(await userCanAccessTeam(user, existing.createdByTeamId))) {
     res.status(403).json({ error: "Access denied" });
     return;
   }
 
-  await db.delete(eventsTable).where(eq(eventsTable.id, id));
-  await logActivity({ user, actionType: "delete", entityType: "event", entityId: id, entityTitle: existing.title });
+  await db.delete(eventsTable).where(eq(eventsTable.id, params.data.id));
+  await logActivity({ user, actionType: "delete", entityType: "event", entityId: params.data.id, entityTitle: existing.title });
   res.sendStatus(204);
 });
 
