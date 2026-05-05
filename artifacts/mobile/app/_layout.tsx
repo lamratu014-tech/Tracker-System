@@ -19,7 +19,7 @@ import { useStore } from "@/store/useStore";
 
 SplashScreen.preventAutoHideAsync();
 
-const PUBLIC_ROUTES = new Set(["login", "accept-invite", "create-admin"]);
+const PUBLIC_ROUTES = new Set(["login", "accept-invite"]);
 
 function AuthGate({ children }: { children: React.ReactNode }) {
   const colors = useColors();
@@ -49,7 +49,6 @@ function RootLayoutNav() {
       <Stack>
         <Stack.Screen name="login" options={{ headerShown: false }} />
         <Stack.Screen name="accept-invite" options={{ headerShown: false }} />
-        <Stack.Screen name="create-admin" options={{ headerShown: false }} />
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="admin" options={{ headerShown: false }} />
         <Stack.Screen name="stream/[id]" options={{ title: "Stream", headerBackTitle: "Back" }} />

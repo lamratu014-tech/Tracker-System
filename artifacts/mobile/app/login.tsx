@@ -97,15 +97,6 @@ export default function LoginScreen() {
             <Text style={[styles.btnGhostText, { color: colors.primary }]}>I have an invite code</Text>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={[styles.btnGhost, { borderColor: colors.border, marginTop: 8 }]}
-            activeOpacity={0.7}
-            onPress={() => router.push("/create-admin")}
-          >
-            <Feather name="shield" size={14} color={colors.primary} />
-            <Text style={[styles.btnGhostText, { color: colors.primary }]}>Create admin account</Text>
-          </TouchableOpacity>
-
           <Text style={[styles.footnote, { color: colors.mutedForeground }]}>
             {userCount} account{userCount !== 1 ? "s" : ""} on this device.
             {"\n"}Demo logins: admin@ops.test · pat@ops.test · jess@ops.test · morgan@ops.test
