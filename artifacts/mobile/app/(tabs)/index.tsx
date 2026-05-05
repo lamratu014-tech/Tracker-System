@@ -1,5 +1,12 @@
 import { Feather } from "@expo/vector-icons";
+import { useQueries } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
+import {
+  getListProjectMilestonesQueryOptions,
+  useListEvents,
+  useListProjects,
+} from "@workspace/api-client-react";
+import type { Milestone, ProjectWithTeamName } from "@workspace/api-client-react";
 import React, { useMemo, useState } from "react";
 import {
   ScrollView,
@@ -11,32 +18,15 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { CreateActionSheet } from "@/components/CreateActionSheet";
+import { ErrorBanner } from "@/components/ErrorBanner";
+import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
-import { isOverdue } from "@/models/types";
-import type { Milestone, Stream } from "@/models/types";
-import { useCurrentUser, useStore } from "@/store/useStore";
+import { useMe } from "@/lib/permissions";
+import { isDueToday, isOverdue } from "@/models/types";
 
-interface MilestoneRowData {
+interface Row {
   ms: Milestone;
-  streamId: string;
-  streamName: string;
-  teamId: string;
-  teamName: string;
-  projectId: string;
-  projectTitle: string;
-}
-
-function flatten(streams: Stream[]): MilestoneRowData[] {
-  const out: MilestoneRowData[] = [];
-  for (const s of streams) for (const t of s.teams) for (const p of t.projects) for (const m of p.milestones) {
-    out.push({
-      ms: m,
-      streamId: s.id, streamName: s.name,
-      teamId: t.id, teamName: t.name,
-      projectId: p.id, projectTitle: p.title,
-    });
-  }
-  return out;
+  project: ProjectWithTeamName;
 }
 
 function greeting(): string {
@@ -50,57 +40,57 @@ export default function DashboardScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const me = useCurrentUser();
-  const streams = useStore((s) => s.streams);
-  const events = useStore((s) => s.events);
+  const me = useMe();
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  const all = useMemo(() => flatten(streams), [streams]);
+  const projectsQ = useListProjects();
+  const eventsQ = useListEvents();
+  const projects = projectsQ.data ?? [];
 
-  const visible = useMemo(() => {
+  const visibleProjects = useMemo(() => {
     if (!me) return [];
-    if (me.role === "admin") return all;
-    if (me.role === "stream_overseer") return all.filter((x) => x.streamId === me.streamId);
-    if (me.role === "leader") return all.filter((x) => x.teamId === me.teamId);
-    return [];
-  }, [all, me]);
+    if (me.role === "admin") return projects;
+    if (me.role === "leader") return projects.filter((p) => p.teamId === me.teamId);
+    // stream_overseer needs team→stream mapping; server already filters projects by RBAC if applicable.
+    // Falling back to showing all projects; the server is the source of truth.
+    return projects;
+  }, [projects, me]);
 
-  const visibleEvents = useMemo(() => {
-    if (!me) return [];
-    if (me.role === "admin") return events;
-    if (me.role === "stream_overseer") {
-      return events.filter((e) => !e.linkedStreamId || e.linkedStreamId === me.streamId);
-    }
-    if (me.role === "leader") {
-      return events.filter((e) => !e.linkedTeamId || e.linkedTeamId === me.teamId);
-    }
-    return events;
-  }, [events, me]);
+  const milestoneQueries = useQueries({
+    queries: visibleProjects.map((p) => getListProjectMilestonesQueryOptions(p.id)),
+  });
+
+  const rows: Row[] = useMemo(() => {
+    const out: Row[] = [];
+    visibleProjects.forEach((p, i) => {
+      const ms = milestoneQueries[i]?.data ?? [];
+      for (const m of ms) out.push({ ms: m, project: p });
+    });
+    return out;
+  }, [visibleProjects, milestoneQueries]);
+
+  const events = eventsQ.data ?? [];
 
   const stats = useMemo(() => {
-    const total = visible.length;
-    const completed = visible.filter((x) => x.ms.status === "completed").length;
-    const overdue = visible.filter((x) => isOverdue(x.ms)).length;
-    const today = visible.filter((x) => {
-      const d = new Date(x.ms.deadline);
-      return d.toDateString() === new Date().toDateString() && x.ms.status !== "completed";
-    }).length;
+    const total = rows.length;
+    const completed = rows.filter((r) => r.ms.completed).length;
+    const overdue = rows.filter((r) => isOverdue(r.ms)).length;
+    const today = rows.filter((r) => isDueToday(r.ms)).length;
     return { total, completed, overdue, today };
-  }, [visible]);
+  }, [rows]);
 
   const upcomingEvents = useMemo(() => {
     const now = Date.now();
-    return [...visibleEvents]
-      .filter((e) => new Date(e.fullDateTime).getTime() >= now)
-      .sort((a, b) => +new Date(a.fullDateTime) - +new Date(b.fullDateTime))
+    return [...events]
+      .filter((e) => new Date(e.startDate).getTime() >= now)
+      .sort((a, b) => +new Date(a.startDate) - +new Date(b.startDate))
       .slice(0, 3);
-  }, [visibleEvents]);
+  }, [events]);
 
-  const overdueItems = visible.filter((x) => isOverdue(x.ms)).slice(0, 5);
-  const dueToday = visible.filter((x) => {
-    const d = new Date(x.ms.deadline);
-    return d.toDateString() === new Date().toDateString() && x.ms.status !== "completed";
-  });
+  const overdueItems = rows.filter((r) => isOverdue(r.ms)).slice(0, 5);
+  const dueToday = rows.filter((r) => isDueToday(r.ms));
+
+  const milestonesLoading = milestoneQueries.some((q) => q.isLoading);
 
   if (!me) return null;
 
@@ -113,6 +103,10 @@ export default function DashboardScreen() {
           {me.role.replace("_", " ").toUpperCase()}
         </Text>
 
+        {projectsQ.isError ? (
+          <ErrorBanner error={projectsQ.error} onRetry={() => projectsQ.refetch()} />
+        ) : null}
+
         <View style={styles.tiles}>
           <Tile label="Total" value={stats.total} color={colors.primary} icon="flag" />
           <Tile label="Today" value={stats.today} color="#F59E0B" icon="clock" />
@@ -120,16 +114,18 @@ export default function DashboardScreen() {
           <Tile label="Done" value={stats.completed} color="#059669" icon="check-circle" />
         </View>
 
+        {projectsQ.isLoading || milestonesLoading ? <LoadingRow /> : null}
+
         {overdueItems.length > 0 ? (
           <Section title="Overdue">
             {overdueItems.map((x) => (
               <Row
                 key={x.ms.id}
                 title={x.ms.title}
-                sub={`${x.streamName} · ${x.teamName} · ${x.projectTitle}`}
+                sub={`${x.project.teamName ?? "—"} · ${x.project.title}`}
                 badge="Overdue"
                 badgeColor="#DC2626"
-                onPress={() => router.push({ pathname: "/project/[id]", params: { id: x.projectId } })}
+                onPress={() => router.push({ pathname: "/project/[id]", params: { id: x.project.id } })}
               />
             ))}
           </Section>
@@ -141,29 +137,36 @@ export default function DashboardScreen() {
               <Row
                 key={x.ms.id}
                 title={x.ms.title}
-                sub={`${x.streamName} · ${x.teamName} · ${x.projectTitle}`}
+                sub={`${x.project.teamName ?? "—"} · ${x.project.title}`}
                 badge="Today"
                 badgeColor="#F59E0B"
-                onPress={() => router.push({ pathname: "/project/[id]", params: { id: x.projectId } })}
+                onPress={() => router.push({ pathname: "/project/[id]", params: { id: x.project.id } })}
               />
             ))}
           </Section>
         ) : null}
 
         <Section title="Upcoming Events">
-          {upcomingEvents.length === 0 ? (
+          {eventsQ.isLoading ? (
+            <LoadingRow inline />
+          ) : upcomingEvents.length === 0 ? (
             <Text style={[styles.empty, { color: colors.mutedForeground }]}>No upcoming events.</Text>
           ) : (
-            upcomingEvents.map((ev) => (
-              <Row
-                key={ev.id}
-                title={ev.title}
-                sub={`${new Date(ev.fullDateTime).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} · ${ev.time}`}
-                badge="Event"
-                badgeColor={colors.primary}
-                onPress={() => router.push({ pathname: "/event/[id]", params: { id: ev.id } })}
-              />
-            ))
+            upcomingEvents.map((ev) => {
+              const d = new Date(ev.startDate);
+              return (
+                <Row
+                  key={ev.id}
+                  title={ev.title}
+                  sub={`${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} · ${
+                    ev.isAllDay ? "All day" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                  }`}
+                  badge="Event"
+                  badgeColor={colors.primary}
+                  onPress={() => router.push({ pathname: "/event/[id]", params: { id: ev.id } })}
+                />
+              );
+            })
           )}
         </Section>
       </ScrollView>

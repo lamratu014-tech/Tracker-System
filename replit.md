@@ -1,95 +1,95 @@
 # Ops & Planning — Programme Operations & Planning Platform
 
 ## Overview
-Mobile Expo app (React Native) for organisations to manage a Stream → Team → Project → Milestone hierarchy plus a separate Events calendar. **Migrating from local-first to API-backed**: domain data (streams/teams/projects/milestones/events/members/team-notes) still lives in a Zustand global store persisted to AsyncStorage, but **auth/invites are server-backed** — login, invite creation, and invite acceptance go through the Express + PostgreSQL API in `artifacts/api-server`. Per-screen migration of the rest of the data layer is tracked in follow-up tasks.
+Mobile Expo app (React Native) for organisations to manage a Stream → Team → Project → Milestone hierarchy plus a separate Events calendar. **All data is API-backed** — every screen reads/writes through `@workspace/api-client-react` (generated Orval React Query hooks) against the Express + PostgreSQL API in `artifacts/api-server`. No more local Zustand/AsyncStorage store.
 
-API contract: `lib/api-spec/openapi.yaml` covers the Stream→Team→Project→Milestone hierarchy plus events/team-notes/members and the 3-role auth model. Run `pnpm --filter @workspace/api-spec run codegen` after editing the spec; generated zod schemas live in `lib/api-zod` and React Query hooks in `lib/api-client-react`. DB schema sources of truth: `lib/db/src/schema/*` (push with `pnpm --filter @workspace/db run push`).
+API contract: `lib/api-spec/openapi.yaml`. Run `pnpm --filter @workspace/api-spec run codegen` after editing. Generated zod schemas live in `lib/api-zod`, React Query hooks in `lib/api-client-react`. DB schema sources of truth: `lib/db/src/schema/*` (push with `pnpm --filter @workspace/db run push`).
 
 ## Architecture
 
 ### Stack
 - **Runtime**: Expo SDK 54, expo-router v6, React Native 0.81
-- **State**: Zustand global store with `persist` middleware (AsyncStorage); persist key `ops-planning-store-v2`
-- **Auth**: Real password auth via `/api/auth/login` (server bcrypt + 30-day session token). Token stored in `expo-secure-store` (native) / `localStorage` (web). `lib/auth/AuthContext.tsx` is the source of truth for the signed-in user; AuthGate in `_layout.tsx` waits on it. Generated client base URL + bearer header are configured at module load via `setBaseUrl`/`setAuthTokenGetter`.
+- **Data layer**: `@workspace/api-client-react` generated React Query hooks (Orval). `QueryClientProvider` is set up in `app/_layout.tsx` (defaults `retry: 1`, `refetchOnWindowFocus: false`). After mutations, screens call `queryClient.invalidateQueries({ queryKey: getXxxQueryKey(...) })`.
+- **Auth**: Real password auth via `/api/auth/login` (server bcrypt + 30-day session token). Token stored in `expo-secure-store` (native) / `localStorage` (web). `lib/auth/AuthContext.tsx` is the source of truth for the signed-in user. AuthGate in `app/_layout.tsx` waits on it. Generated client base URL + bearer header are configured at module load via `setBaseUrl` / `setAuthTokenGetter`.
 - **Fonts**: @expo-google-fonts/inter (400/500/600/700)
 - **Icons**: @expo/vector-icons (Feather)
+
+### Permissions (`lib/permissions/index.ts`)
+All screens use the API-backed helpers (no more legacy store helpers):
+- React hooks: `useMe()`, `useCanManageEverything()`, `useCanManageStream(streamId)`, `useCanManageTeam(team)`, `useCanCreateForTeam(team)`.
+- Pure functions: `canManageEverything/Stream/Team/CreateForTeam` accept a `Principal` (the User from `useGetMe`).
 
 ### Roles (3 login tiers + non-login members)
 - **admin** — Full access across the whole programme
 - **stream_overseer** — Full access to all teams within their assigned stream
 - **leader** — Manage their own team only
-- **(member)** — NOT a login role. Members are roster-only entries on a team (top-level `members[]`)
-
-### Permission helpers
-- New API-backed helpers live in `lib/permissions/index.ts` and read identity from `useGetMe()` (the React Query hook). They're the way forward for migrated screens.
-  - `useMe()`, `useCanManageEverything()`, `useCanManageStream(streamId)`, `useCanManageTeam(team)`, `useCanCreateForTeam(team)` (team is `{ id, streamId? }`).
-  - Pure helpers `canManageEverything/Stream/Team/CreateForTeam` accept a `Principal = Pick<User, "id" | "role" | "streamId" | "teamId">`.
-- Legacy store-based helpers in `store/useStore.ts` (`canManageStream`, `canManageTeam`, `canCreateForTeam`, `useCurrentUser`, `useCanManageStream`, `useCanManageTeam`) remain in place during the per-screen migration and will be removed once every screen reads from the API.
-
-### Shared loading/error UI
-- `components/LoadingRow.tsx` and `components/ErrorBanner.tsx` — small reusable building blocks for the React Query loading/error states screens will need as they migrate.
-
-### Data layer migration status
-- React Query is wired (`QueryClientProvider` in `app/_layout.tsx`, defaults `retry: 1`, `refetchOnWindowFocus: false`).
-- Domain data (streams/teams/projects/milestones/events/members/team notes) is **still served from the Zustand store**; per-screen migration to generated React Query hooks is tracked as a separate task. Once that completes, the server collections and `seed/resetSeed` will be stripped from the store.
+- **(member)** — NOT a login role. Members are roster-only entries on a team.
 
 ### Hierarchy
 ```
 Streams → Teams → Projects → Milestones
-Members are top-level, scoped to a team
-Each Team has its own Notes timeline (TeamNote[] on Team)
-Events are separate, optionally linked to a stream OR team
+Members are top-level (table) but always scoped to a team
+Each Team has its own Notes timeline (TeamNote rows)
+Events are separate, optionally linked to a stream OR team via invitedTeamIds
 ```
+
+### Key generated hooks used across screens
+- Streams: `useListStreams`, `useGetStream`, `useListStreamTeams`, `useCreateStream`, `useUpdateStream`, `useDeleteStream`
+- Teams: `useListTeams`, `useGetTeam`, `useCreateTeam`, `useUpdateTeam`, `useDeleteTeam`, `useAssignTeamLeader`, `useListTeamMembers`, `useCreateTeamMember`, `useDeleteMember`, `useListTeamNotes` + note CRUD
+- Projects/Milestones: `useListProjects`, `useGetProject`, `useCreateProject`, `useUpdateProject`, `useDeleteProject`, `useListProjectMilestones`, `useCreateMilestone`, `useSetMilestoneStatus`, `useDeleteMilestone`
+- Events: `useListEvents`, `useGetEvent`, `useCreateEvent`, `useDeleteEvent`
+- Users: `useListUsers`, `useGetMe`, `useUpdateUserRole`, `useDeleteUser`
+- Programme: `useGetProgramme` (used to discover `programmeId` when creating streams)
+
+When passing `query: { enabled }`, the orval-generated `UseQueryOptions` requires a `queryKey`, so screens pass `queryKey: getXxxQueryKey(id)` alongside `enabled`.
 
 ### Auth flow (server-backed)
 1. **First admin** is created via `POST /api/auth/setup` (only allowed when the
-   `users` table is empty AND `SETUP_SECRET` is set). Example:
-   `curl -X POST "$REPLIT_DEV_DOMAIN/api/auth/setup" -H "content-type: application/json" -d "{\"email\":\"...\",\"name\":\"...\",\"password\":\"...\",\"setupSecret\":\"$SETUP_SECRET\"}"`
+   `users` table is empty AND `SETUP_SECRET` is set).
 2. Admin (or in-scope stream overseer) invites a user via `/new-user` →
-   server creates an **inactive** user row (no passwordHash, active=false)
-   plus an invite row in a single transaction, and returns a 6-char code
-   (Crockford-ish alphabet, no I/O/0/1). The "Invite created" screen
-   displays the code with a Copy action.
-3. Invitee opens `/accept-invite`, enters the code + a password (display
-   name comes from the invite row) → server activates the pre-provisioned
-   user (sets passwordHash, flips active=true), consumes the invite, and
-   returns a session token; the mobile app immediately signs them in.
+   server creates an inactive user row plus an invite row in a single
+   transaction and returns a 6-char code (Crockford-ish alphabet, no I/O/0/1).
+3. Invitee opens `/accept-invite`, enters the code + a password → server
+   activates the pre-provisioned user, consumes the invite, and returns a
+   session token; the mobile app immediately signs them in.
 4. Subsequent logins use email + password at `/login`.
-5. Reusing or mistyping a code surfaces a clear server-side error.
 
 ### App Structure
 ```
 artifacts/mobile/app/
 ├── _layout.tsx              # AuthGate; PUBLIC_ROUTES: /login, /accept-invite
-├── login.tsx                # Email + password login (calls /api/auth/login)
-├── accept-invite.tsx        # 6-char code + password; name pulled from invite preview (calls /api/auth/accept-invite)
-├── new-user.tsx             # Admin invite → calls /api/auth/invite, shows returned code
+├── login.tsx                # Email + password login
+├── accept-invite.tsx        # 6-char code + password
+├── new-user.tsx             # Admin invite → /api/auth/invite, shows returned code
 ├── (tabs)/
 │   ├── index.tsx            # Dashboard: tiles, overdue, due today, upcoming events
 │   ├── programme.tsx        # Streams → teams view
-│   ├── calendar.tsx         # Monthly grid (prev/next/today, dot indicators, day list)
-│   └── settings.tsx         # Profile, role chip, admin shortcut, sign out, reset seed
-├── admin/index.tsx          # Tabs: Structure / Users / Members / Events; role cycle Admin→Overseer→Leader
-├── stream/[id].tsx          # Rename/delete stream, list teams (overseer/admin can manage)
-├── team/[id].tsx            # Members CRUD (top-level members[]), projects, leader
-├── project/[id].tsx         # Filter tabs: All/Today/Upcoming/Overdue/Completed
+│   ├── calendar.tsx         # Monthly grid + day list
+│   └── settings.tsx         # Profile, role chip, admin shortcut, sign out
+├── admin/index.tsx          # Tabs: Structure / Users / Members / Events
+├── stream/[id].tsx          # Rename/delete stream, list teams
+├── team/[id].tsx            # Members CRUD, projects, leader, notes timeline
+├── project/[id].tsx         # Milestones with All/Today/Upcoming/Overdue/Completed filters
 ├── event/[id].tsx           # Event detail
 ├── new-stream.tsx           # Admin only
 ├── new-team.tsx             # Admin/overseer; stream scoped
 ├── new-project.tsx          # Admin/overseer/leader (where allowed)
 ├── new-milestone.tsx        # Same scoping
-└── new-event.tsx            # Date YYYY-MM-DD + time HH:MM chips; overseer scope
+└── new-event.tsx            # Date offset chips + time chips; team-scoped
 ```
 
-### Store actions
-- Auth: `loginByEmail`, `loginById`, `logout`, `inviteUser`, `acceptInvite`, `clearLastInviteCode`
-- CRUD: streams, teams, projects, milestones, events, users
-- Members: `addMember`, `updateMember`, `deleteMember`
-- Team notes: `addTeamNote(input, authorId)`, `updateTeamNote(id, body)`, `deleteTeamNote(id)` — leaders/overseers/admins can post; authors (or admins) can edit/delete
-- `resetSeed()` — restores demo data
+### Shared building blocks
+- `components/LoadingRow.tsx`, `components/ErrorBanner.tsx` — query-state UI
+- `components/MilestoneRow.tsx` — checkbox toggles `completed` via `useSetMilestoneStatus`
+- `components/CreateActionSheet.tsx` — role-aware "+" hub
+- `models/types.ts` — thin shim re-exporting types from `@workspace/api-client-react` plus `isOverdue` / `isDueToday` helpers built on `Milestone.date` + `!completed`
 
 ## User preferences
-- Local-first, no backend dependency for the mobile app
 - Real email login (no profile picker)
 - Stream overseers must have full access across all teams in their stream
 - Members are roster entries, not login accounts
+
+## Gotchas
+- Don't pass `query: { enabled: x }` to a generated hook without also passing `queryKey: getXxxQueryKey(...)` — the strict `UseQueryOptions` requires it.
+- After any mutation, invalidate the relevant list/detail query keys so the UI refetches.
+- The `useListEvents` endpoint already applies server-side visibility filtering.

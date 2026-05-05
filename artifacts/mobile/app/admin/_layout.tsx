@@ -4,17 +4,17 @@ import React, { useEffect } from "react";
 import { TouchableOpacity } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
-import { useCurrentUser } from "@/store/useStore";
+import { useMe } from "@/lib/permissions";
 
 export default function AdminLayout() {
   const colors = useColors();
   const router = useRouter();
-  const me = useCurrentUser();
+  const me = useMe();
   const isAdmin = me?.role === "admin";
 
   useEffect(() => {
-    if (!isAdmin) router.replace("/(tabs)");
-  }, [isAdmin, router]);
+    if (me && !isAdmin) router.replace("/(tabs)");
+  }, [me, isAdmin, router]);
 
   if (!isAdmin) return null;
 

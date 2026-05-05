@@ -258,6 +258,13 @@ export const DeleteUserParams = zod.object({
   id: zod.coerce.string(),
 });
 
+export const GetProgrammeResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
 export const ListStreamsResponseItem = zod.object({
   id: zod.string(),
   name: zod.string(),

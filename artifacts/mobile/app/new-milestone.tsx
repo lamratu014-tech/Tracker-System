@@ -1,4 +1,11 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import {
+  getListProjectMilestonesQueryKey,
+  useCreateMilestone,
+  useListProjects,
+  useListTeams,
+} from "@workspace/api-client-react";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
@@ -10,22 +17,9 @@ import {
   View,
 } from "react-native";
 
+import { ErrorBanner } from "@/components/ErrorBanner";
 import { useColors } from "@/hooks/useColors";
-import type { MilestoneStatus, Project } from "@/models/types";
-import {
-  canCreateForTeam,
-  findProject,
-  useCurrentUser,
-  useStore,
-} from "@/store/useStore";
-
-const STATUSES: MilestoneStatus[] = ["pending", "in_progress", "blocked", "completed"];
-const STATUS_LABELS: Record<MilestoneStatus, string> = {
-  pending: "Pending",
-  in_progress: "In Progress",
-  blocked: "Blocked",
-  completed: "Completed",
-};
+import { canCreateForTeam, useMe } from "@/lib/permissions";
 
 const DAY_OFFSETS = [
   { label: "Today", days: 0 },
@@ -45,31 +39,43 @@ function isoFromDays(days: number): string {
 export default function NewMilestoneScreen() {
   const colors = useColors();
   const router = useRouter();
+  const qc = useQueryClient();
   const params = useLocalSearchParams<{ projectId?: string }>();
-  const me = useCurrentUser();
-  const streams = useStore((s) => s.streams);
-  const addMilestone = useStore((s) => s.addMilestone);
+  const me = useMe();
+
+  const projectsQ = useListProjects();
+  const teamsQ = useListTeams();
+  const projects = projectsQ.data ?? [];
+  const teams = teamsQ.data ?? [];
 
   const allowedProjects = useMemo(() => {
-    const flat: Array<{ project: Project; teamId: string; teamName: string; streamName: string }> = [];
-    for (const s of streams) for (const t of s.teams) for (const p of t.projects) {
-      if (canCreateForTeam(me, t.id, streams)) {
-        flat.push({ project: p, teamId: t.id, teamName: t.name, streamName: s.name });
-      }
-    }
-    return flat;
-  }, [streams, me]);
+    return projects.filter((p) => {
+      const team = teams.find((t) => t.id === p.teamId);
+      return canCreateForTeam(me, team ? { id: team.id, streamId: team.streamId } : null);
+    });
+  }, [projects, teams, me]);
 
-  const initialProjectId = params.projectId && allowedProjects.some((x) => x.project.id === params.projectId)
-    ? params.projectId
-    : (allowedProjects[0]?.project.id ?? "");
+  const initialProjectId =
+    params.projectId && allowedProjects.some((p) => p.id === params.projectId)
+      ? params.projectId
+      : allowedProjects[0]?.id ?? "";
 
   const [projectId, setProjectId] = useState<string>(initialProjectId);
   const [title, setTitle] = useState("");
-  const [status, setStatus] = useState<MilestoneStatus>("pending");
-  const [deadline, setDeadline] = useState<string>(isoFromDays(7));
+  const [date, setDate] = useState<string>(isoFromDays(7));
 
-  if (allowedProjects.length === 0) {
+  const createMilestone = useCreateMilestone({
+    mutation: {
+      onSuccess: (m) => {
+        if (m?.projectId) {
+          qc.invalidateQueries({ queryKey: getListProjectMilestonesQueryKey(m.projectId) });
+        }
+        router.back();
+      },
+    },
+  });
+
+  if (allowedProjects.length === 0 && !projectsQ.isLoading) {
     return (
       <View style={[styles.gate, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.mutedForeground }}>You don't have a project to add a milestone to.</Text>
@@ -80,16 +86,16 @@ export default function NewMilestoneScreen() {
   function save() {
     if (!title.trim()) return Alert.alert("Title required", "Please enter a milestone title.");
     if (!projectId) return Alert.alert("Project required", "Pick a project.");
-    if (!deadline) return Alert.alert("Deadline required", "Pick a deadline.");
-    const found = findProject(streams, projectId);
-    if (!found) return Alert.alert("Error", "Project not found.");
-    if (!canCreateForTeam(me, found.team.id, streams)) return Alert.alert("Not allowed", "You can't add a milestone to this team.");
-    const ms = addMilestone(projectId, { title: title.trim(), status, deadline, assignedTo: null });
-    if (ms) router.back();
-    else Alert.alert("Error", "Could not create milestone.");
+    if (!date) return Alert.alert("Date required", "Pick a date.");
+    const project = projects.find((p) => p.id === projectId);
+    const team = project ? teams.find((t) => t.id === project.teamId) : null;
+    if (!canCreateForTeam(me, team ? { id: team.id, streamId: team.streamId } : null)) {
+      return Alert.alert("Not allowed", "You can't add a milestone to this team.");
+    }
+    createMilestone.mutate({ data: { projectId, title: title.trim(), date } });
   }
 
-  const dl = new Date(deadline);
+  const dl = new Date(date);
   const dlLabel = isNaN(dl.getTime())
     ? "—"
     : dl.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" });
@@ -108,44 +114,33 @@ export default function NewMilestoneScreen() {
 
       <Text style={[styles.label, { color: colors.mutedForeground }]}>Project *</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-        {allowedProjects.map(({ project, teamName, streamName }) => (
+        {allowedProjects.map((p) => (
           <TouchableOpacity
-            key={project.id}
-            style={[styles.chip, { borderColor: colors.border, backgroundColor: projectId === project.id ? colors.primary : colors.muted }]}
-            onPress={() => setProjectId(project.id)}
+            key={p.id}
+            style={[styles.chip, { borderColor: colors.border, backgroundColor: projectId === p.id ? colors.primary : colors.muted }]}
+            onPress={() => setProjectId(p.id)}
           >
-            <Text style={[styles.chipText, { color: projectId === project.id ? "#fff" : colors.foreground }]}>
-              {streamName} · {teamName} · {project.title}
+            <Text style={[styles.chipText, { color: projectId === p.id ? "#fff" : colors.foreground }]}>
+              {p.teamName ? `${p.teamName} · ` : ""}{p.title}
             </Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
 
-      <Text style={[styles.label, { color: colors.mutedForeground }]}>Status</Text>
-      <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-        {STATUSES.map((s) => (
-          <TouchableOpacity
-            key={s}
-            style={[styles.chip, { borderColor: colors.border, backgroundColor: status === s ? colors.primary : colors.muted }]}
-            onPress={() => setStatus(s)}
-          >
-            <Text style={[styles.chipText, { color: status === s ? "#fff" : colors.foreground }]}>{STATUS_LABELS[s]}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <Text style={[styles.label, { color: colors.mutedForeground }]}>Deadline * — {dlLabel}</Text>
+      <Text style={[styles.label, { color: colors.mutedForeground }]}>Date * — {dlLabel}</Text>
       <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
         {DAY_OFFSETS.map((o) => (
           <TouchableOpacity
             key={o.label}
             style={[styles.chip, { borderColor: colors.border, backgroundColor: colors.muted }]}
-            onPress={() => setDeadline(isoFromDays(o.days))}
+            onPress={() => setDate(isoFromDays(o.days))}
           >
             <Text style={[styles.chipText, { color: colors.foreground }]}>{o.label}</Text>
           </TouchableOpacity>
         ))}
       </View>
+
+      {createMilestone.isError ? <ErrorBanner error={createMilestone.error} /> : null}
 
       <View style={styles.row}>
         <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted }]} onPress={() => router.back()}>
@@ -154,7 +149,7 @@ export default function NewMilestoneScreen() {
         <TouchableOpacity
           style={[styles.btn, { backgroundColor: title.trim() && projectId ? colors.primary : colors.border }]}
           onPress={save}
-          disabled={!title.trim() || !projectId}
+          disabled={!title.trim() || !projectId || createMilestone.isPending}
         >
           <Text style={[styles.btnText, { color: "#fff" }]}>Create</Text>
         </TouchableOpacity>

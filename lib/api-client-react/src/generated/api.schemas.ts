@@ -130,6 +130,13 @@ export interface UpdateUserRoleBody {
   teamId?: string | null;
 }
 
+export interface Programme {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Stream {
   id: string;
   name: string;

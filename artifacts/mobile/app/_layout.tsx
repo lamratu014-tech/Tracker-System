@@ -17,7 +17,6 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useColors } from "@/hooks/useColors";
 import { AuthProvider, useAuth } from "@/lib/auth/AuthContext";
-import { useStore } from "@/store/useStore";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -26,10 +25,9 @@ const PUBLIC_ROUTES = new Set(["login", "accept-invite"]);
 function AuthGate({ children }: { children: React.ReactNode }) {
   const colors = useColors();
   const { user, isLoading } = useAuth();
-  const hydrated = useStore((s) => s.hydrated);
   const segments = useSegments();
 
-  if (isLoading || !hydrated) {
+  if (isLoading) {
     return (
       <View style={{ flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: colors.background }}>
         <ActivityIndicator color={colors.primary} />

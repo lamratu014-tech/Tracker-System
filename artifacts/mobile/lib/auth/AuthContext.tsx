@@ -17,8 +17,6 @@ import React, {
   useState,
 } from "react";
 
-import { useStore } from "@/store/useStore";
-
 import { resolveApiBaseUrl } from "./apiBaseUrl";
 import { clearStoredToken, getStoredToken, setStoredToken } from "./storage";
 
@@ -28,15 +26,11 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
-  // Apply a session that was issued out-of-band (e.g. by the
-  // accept-invite flow which returns its own token + user).
   applySession: (session: { token: string; user: User }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-// Configure base URL + bearer-token getter once at module load so the
-// generated client works from the very first request.
 const baseUrl = resolveApiBaseUrl();
 if (baseUrl) setBaseUrl(baseUrl);
 
@@ -45,29 +39,9 @@ setAuthTokenGetter(() => tokenRef.current);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const qc = useQueryClient();
-  const syncAuthUser = useStore((s) => s.syncAuthUser);
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const bootedRef = useRef(false);
-
-  // Keep the local Zustand store's currentUserId in lockstep with the
-  // authenticated identity so legacy `useCurrentUser`-based screens see
-  // the signed-in user (and never a stale prior identity).
-  useEffect(() => {
-    syncAuthUser(
-      user
-        ? {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            role: user.role,
-            active: user.active,
-            streamId: user.streamId ?? null,
-            teamId: user.teamId ?? null,
-          }
-        : null,
-    );
-  }, [user, syncAuthUser]);
 
   const setToken = useCallback(async (token: string | null) => {
     tokenRef.current = token;
@@ -91,16 +65,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(null);
         qc.removeQueries({ queryKey: getGetMeQueryKey() });
       } else {
-        // Transient network/server error — keep token AND keep the
-        // currently-known user (if any) so the session persists
-        // through brief outages instead of bouncing to /login.
         // eslint-disable-next-line no-console
         console.warn("[auth] /me failed (keeping session)", err);
       }
     }
   }, [qc, setToken]);
 
-  // Bootstrap: read stored token, fetch /me.
   useEffect(() => {
     if (bootedRef.current) return;
     bootedRef.current = true;
@@ -130,7 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         await apiLogout();
       } catch {
-        /* ignore — we're clearing the local token anyway */
+        /* ignore */
       }
     }
     await setToken(null);

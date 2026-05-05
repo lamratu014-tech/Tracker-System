@@ -36,6 +36,7 @@ export * from "./member";
 export * from "./messageResponse";
 export * from "./milestone";
 export * from "./notFoundResponse";
+export * from "./programme";
 export * from "./project";
 export * from "./projectStatus";
 export * from "./projectWithTeamName";

@@ -3,43 +3,26 @@ import * as Haptics from "expo-haptics";
 import React from "react";
 import { Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
-import type { Milestone, MilestoneStatus } from "@/models/types";
+import type { Milestone } from "@/models/types";
 import { isOverdue } from "@/models/types";
 import { useColors } from "@/hooks/useColors";
-
-const STATUS_COLORS: Record<MilestoneStatus, string> = {
-  pending: "#94A3B8",
-  in_progress: "#2563EB",
-  blocked: "#DC2626",
-  completed: "#059669",
-};
-const STATUS_LABELS: Record<MilestoneStatus, string> = {
-  pending: "Pending",
-  in_progress: "In Progress",
-  blocked: "Blocked",
-  completed: "Completed",
-};
-
-const STATUS_CYCLE: MilestoneStatus[] = ["pending", "in_progress", "blocked", "completed"];
 
 interface Props {
   milestone: Milestone;
   canEdit: boolean;
-  assigneeName?: string;
-  onCycleStatus?: (next: MilestoneStatus) => void;
+  onToggleCompleted?: (next: boolean) => void;
   onDelete?: () => void;
 }
 
-export function MilestoneRow({ milestone, canEdit, assigneeName, onCycleStatus, onDelete }: Props) {
+export function MilestoneRow({ milestone, canEdit, onToggleCompleted, onDelete }: Props) {
   const colors = useColors();
   const overdue = isOverdue(milestone);
+  const completed = milestone.completed;
 
-  function cycle() {
-    if (!canEdit || !onCycleStatus) return;
+  function toggle() {
+    if (!canEdit || !onToggleCompleted) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    const i = STATUS_CYCLE.indexOf(milestone.status);
-    const next = STATUS_CYCLE[(i + 1) % STATUS_CYCLE.length];
-    onCycleStatus(next);
+    onToggleCompleted(!completed);
   }
 
   function confirmDelete() {
@@ -54,40 +37,53 @@ export function MilestoneRow({ milestone, canEdit, assigneeName, onCycleStatus, 
     }
   }
 
-  const dl = new Date(milestone.deadline);
+  const dl = new Date(milestone.date);
   const dlLabel = isNaN(dl.getTime())
     ? "—"
     : dl.toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" });
 
+  const tint = completed ? "#059669" : overdue ? "#DC2626" : "#2563EB";
+
   return (
     <View style={[styles.row, { borderColor: colors.border, backgroundColor: colors.card }]}>
       <TouchableOpacity
-        onPress={cycle}
+        onPress={toggle}
         disabled={!canEdit}
-        style={[styles.statusPill, { backgroundColor: STATUS_COLORS[milestone.status] + "22", borderColor: STATUS_COLORS[milestone.status] }]}
+        style={[styles.check, { borderColor: tint, backgroundColor: completed ? tint : "transparent" }]}
         hitSlop={6}
       >
-        <View style={[styles.statusDot, { backgroundColor: STATUS_COLORS[milestone.status] }]} />
-        <Text style={[styles.statusText, { color: STATUS_COLORS[milestone.status] }]}>
-          {STATUS_LABELS[milestone.status]}
-        </Text>
+        {completed ? <Feather name="check" size={12} color="#fff" /> : null}
       </TouchableOpacity>
 
       <View style={{ flex: 1 }}>
-        <Text style={[styles.title, { color: colors.foreground }]} numberOfLines={2}>
+        <Text
+          style={[
+            styles.title,
+            {
+              color: colors.foreground,
+              textDecorationLine: completed ? "line-through" : "none",
+              opacity: completed ? 0.65 : 1,
+            },
+          ]}
+          numberOfLines={2}
+        >
           {milestone.title}
         </Text>
         <View style={styles.metaRow}>
           <Feather name="calendar" size={11} color={overdue ? "#DC2626" : colors.mutedForeground} />
-          <Text style={[styles.meta, { color: overdue ? "#DC2626" : colors.mutedForeground, fontFamily: overdue ? "Inter_600SemiBold" : "Inter_400Regular" }]}>
-            {dlLabel}{overdue ? " · Overdue" : ""}
+          <Text
+            style={[
+              styles.meta,
+              {
+                color: overdue ? "#DC2626" : colors.mutedForeground,
+                fontFamily: overdue ? "Inter_600SemiBold" : "Inter_400Regular",
+              },
+            ]}
+          >
+            {dlLabel}
+            {overdue ? " · Overdue" : ""}
+            {completed ? " · Done" : ""}
           </Text>
-          {assigneeName ? (
-            <>
-              <Feather name="user" size={11} color={colors.mutedForeground} style={{ marginLeft: 8 }} />
-              <Text style={[styles.meta, { color: colors.mutedForeground }]}>{assigneeName}</Text>
-            </>
-          ) : null}
         </View>
       </View>
 
@@ -110,18 +106,15 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 8,
   },
-  statusPill: {
-    flexDirection: "row",
+  check: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 2,
     alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    borderWidth: 1,
-    alignSelf: "flex-start",
+    justifyContent: "center",
+    marginTop: 1,
   },
-  statusDot: { width: 6, height: 6, borderRadius: 3 },
-  statusText: { fontSize: 10, fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.3 },
   title: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   metaRow: { flexDirection: "row", alignItems: "center", gap: 4, marginTop: 4, flexWrap: "wrap" },
   meta: { fontSize: 11 },

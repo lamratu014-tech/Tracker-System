@@ -1,6 +1,23 @@
 import { Feather } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useMemo, useState } from "react";
+import {
+  getGetProjectQueryKey,
+  getGetStreamQueryKey,
+  getGetTeamQueryKey,
+  getListProjectMilestonesQueryKey,
+  getListProjectsQueryKey,
+  useDeleteMilestone,
+  useDeleteProject,
+  useGetProject,
+  useGetStream,
+  useGetTeam,
+  useListProjectMilestones,
+  useSetMilestoneStatus,
+  useUpdateProject,
+} from "@workspace/api-client-react";
+import type { Milestone } from "@workspace/api-client-react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Platform,
@@ -12,15 +29,12 @@ import {
   View,
 } from "react-native";
 
+import { ErrorBanner } from "@/components/ErrorBanner";
+import { LoadingRow } from "@/components/LoadingRow";
 import { MilestoneRow } from "@/components/MilestoneRow";
 import { useColors } from "@/hooks/useColors";
-import type { Milestone } from "@/models/types";
+import { useCanManageTeam } from "@/lib/permissions";
 import { isDueToday, isOverdue } from "@/models/types";
-import {
-  findProject,
-  useCanManageTeam,
-  useStore,
-} from "@/store/useStore";
 
 type FilterKey = "all" | "today" | "upcoming" | "overdue" | "completed";
 
@@ -33,94 +47,132 @@ const FILTERS: { key: FilterKey; label: string }[] = [
 ];
 
 function applyFilter(ms: Milestone[], key: FilterKey): Milestone[] {
-  const now = new Date();
   switch (key) {
-    case "all":
-      return ms;
-    case "today":
-      return ms.filter((m) => isDueToday(m, now));
-    case "upcoming":
-      return ms.filter((m) => {
-        if (m.status === "completed") return false;
-        if (isOverdue(m, now)) return false;
-        return true;
-      });
-    case "overdue":
-      return ms.filter((m) => isOverdue(m, now));
-    case "completed":
-      return ms.filter((m) => m.status === "completed");
+    case "all": return ms;
+    case "today": return ms.filter((m) => isDueToday(m));
+    case "upcoming": return ms.filter((m) => !m.completed && !isOverdue(m));
+    case "overdue": return ms.filter((m) => isOverdue(m));
+    case "completed": return ms.filter((m) => m.completed);
   }
 }
 
 export default function ProjectDetailScreen() {
   const colors = useColors();
   const router = useRouter();
+  const qc = useQueryClient();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const streams = useStore((s) => s.streams);
-  const users = useStore((s) => s.users);
-  const updateProject = useStore((s) => s.updateProject);
-  const deleteProject = useStore((s) => s.deleteProject);
-  const setStatus = useStore((s) => s.setMilestoneStatus);
-  const deleteMilestone = useStore((s) => s.deleteMilestone);
 
-  const found = id ? findProject(streams, id) : null;
-  const canEdit = useCanManageTeam(found?.team.id ?? null);
+  const projectQ = useGetProject(id ?? "", {
+    query: { enabled: !!id, queryKey: getGetProjectQueryKey(id ?? "") },
+  });
+  const project = projectQ.data ?? null;
+  const teamQ = useGetTeam(project?.teamId ?? "", {
+    query: { enabled: !!project?.teamId, queryKey: getGetTeamQueryKey(project?.teamId ?? "") },
+  });
+  const team = teamQ.data ?? null;
+  const streamQ = useGetStream(team?.streamId ?? "", {
+    query: { enabled: !!team?.streamId, queryKey: getGetStreamQueryKey(team?.streamId ?? "") },
+  });
+  const stream = streamQ.data ?? null;
+
+  const milestonesQ = useListProjectMilestones(id ?? "", {
+    query: { enabled: !!id, queryKey: getListProjectMilestonesQueryKey(id ?? "") },
+  });
+  const milestones = milestonesQ.data ?? [];
+
+  const canEdit = useCanManageTeam(team ? { id: team.id, streamId: team.streamId } : null);
 
   const [editing, setEditing] = useState(false);
-  const [draftTitle, setDraftTitle] = useState(found?.project.title ?? "");
-  const [draftDesc, setDraftDesc] = useState(found?.project.description ?? "");
+  const [draftTitle, setDraftTitle] = useState("");
+  const [draftDesc, setDraftDesc] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
 
-  const counts = useMemo(() => {
-    if (!found) return { all: 0, today: 0, upcoming: 0, overdue: 0, completed: 0 };
-    const ms = found.project.milestones;
-    return {
-      all: ms.length,
-      today: applyFilter(ms, "today").length,
-      upcoming: applyFilter(ms, "upcoming").length,
-      overdue: applyFilter(ms, "overdue").length,
-      completed: applyFilter(ms, "completed").length,
-    };
-  }, [found]);
+  useEffect(() => {
+    if (project && !editing) {
+      setDraftTitle(project.title);
+      setDraftDesc(project.description ?? "");
+    }
+  }, [project, editing]);
 
-  if (!found) {
+  const updateProject = useUpdateProject({
+    mutation: {
+      onSuccess: () => {
+        if (id) qc.invalidateQueries({ queryKey: getGetProjectQueryKey(id) });
+        qc.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+      },
+    },
+  });
+  const deleteProject = useDeleteProject({
+    mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListProjectsQueryKey() }) },
+  });
+  const setStatus = useSetMilestoneStatus({
+    mutation: {
+      onSuccess: () => {
+        if (id) qc.invalidateQueries({ queryKey: getListProjectMilestonesQueryKey(id) });
+      },
+    },
+  });
+  const deleteMilestone = useDeleteMilestone({
+    mutation: {
+      onSuccess: () => {
+        if (id) qc.invalidateQueries({ queryKey: getListProjectMilestonesQueryKey(id) });
+      },
+    },
+  });
+
+  const counts = useMemo(() => ({
+    all: milestones.length,
+    today: applyFilter(milestones, "today").length,
+    upcoming: applyFilter(milestones, "upcoming").length,
+    overdue: applyFilter(milestones, "overdue").length,
+    completed: applyFilter(milestones, "completed").length,
+  }), [milestones]);
+
+  if (projectQ.isLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <LoadingRow />
+      </View>
+    );
+  }
+  if (!project) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }]}>
         <Text style={{ color: colors.mutedForeground }}>Project not found.</Text>
       </View>
     );
   }
-  const { stream, team, project } = found;
 
   function save() {
     if (!draftTitle.trim()) return;
-    updateProject(project.id, { title: draftTitle.trim(), description: draftDesc.trim() });
-    setEditing(false);
+    updateProject.mutate(
+      { id: project!.id, data: { title: draftTitle.trim(), description: draftDesc.trim() } },
+      { onSuccess: () => setEditing(false) },
+    );
   }
 
   function confirmDelete() {
-    const msg = `Delete project "${project.title}"?`;
+    const msg = `Delete project "${project!.title}"?`;
+    const onYes = () =>
+      deleteProject.mutate({ id: project!.id }, { onSuccess: () => router.back() });
     if (Platform.OS === "web") {
-      if (window.confirm(msg)) {
-        deleteProject(project.id);
-        router.back();
-      }
+      if (window.confirm(msg)) onYes();
     } else {
       Alert.alert("Delete project", msg, [
         { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: () => { deleteProject(project.id); router.back(); } },
+        { text: "Delete", style: "destructive", onPress: onYes },
       ]);
     }
   }
 
-  const filtered = applyFilter(project.milestones, filter)
+  const filtered = applyFilter(milestones, filter)
     .slice()
-    .sort((a, b) => +new Date(a.deadline) - +new Date(b.deadline));
+    .sort((a, b) => +new Date(a.date) - +new Date(b.date));
 
   return (
     <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}>
       <Text style={[styles.crumb, { color: colors.mutedForeground }]}>
-        {stream.name} · {team.name}
+        {(stream?.name ?? "—")} · {(team?.name ?? "—")}
       </Text>
       {editing ? (
         <>
@@ -157,7 +209,7 @@ export default function ProjectDetailScreen() {
             style={[styles.actionBtn, { backgroundColor: colors.muted }]}
             onPress={() => {
               if (editing) save();
-              else { setDraftTitle(project.title); setDraftDesc(project.description); setEditing(true); }
+              else { setDraftTitle(project.title); setDraftDesc(project.description ?? ""); setEditing(true); }
             }}
           >
             <Feather name={editing ? "check" : "edit-2"} size={14} color={colors.primary} />
@@ -186,6 +238,10 @@ export default function ProjectDetailScreen() {
         ) : null}
       </View>
 
+      {milestonesQ.isError ? (
+        <ErrorBanner error={milestonesQ.error} onRetry={() => milestonesQ.refetch()} />
+      ) : null}
+
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabs}>
         {FILTERS.map((f) => {
           const c = counts[f.key];
@@ -207,10 +263,12 @@ export default function ProjectDetailScreen() {
         })}
       </ScrollView>
 
-      {filtered.length === 0 ? (
+      {milestonesQ.isLoading ? (
+        <LoadingRow />
+      ) : filtered.length === 0 ? (
         <View style={[styles.empty, { backgroundColor: colors.muted }]}>
           <Text style={{ color: colors.mutedForeground }}>
-            {project.milestones.length === 0 ? "No milestones yet." : "Nothing in this view."}
+            {milestones.length === 0 ? "No milestones yet." : "Nothing in this view."}
           </Text>
         </View>
       ) : (
@@ -219,11 +277,10 @@ export default function ProjectDetailScreen() {
             key={m.id}
             milestone={m}
             canEdit={canEdit}
-            assigneeName={
-              m.assignedTo ? users.find((u) => u.id === m.assignedTo)?.name : undefined
+            onToggleCompleted={(next) =>
+              setStatus.mutate({ id: m.id, data: { completed: next } })
             }
-            onCycleStatus={(next) => setStatus(m.id, next)}
-            onDelete={() => deleteMilestone(m.id)}
+            onDelete={() => deleteMilestone.mutate({ id: m.id })}
           />
         ))
       )}
@@ -233,33 +290,18 @@ export default function ProjectDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 20, gap: 10 },
-  crumb: {
-    fontSize: 12, fontFamily: "Inter_500Medium",
-    textTransform: "uppercase", letterSpacing: 0.5,
-  },
+  crumb: { fontSize: 12, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 },
   title: { fontSize: 24, fontFamily: "Inter_700Bold" },
-  titleInput: {
-    fontSize: 24, fontFamily: "Inter_700Bold",
-    borderBottomWidth: 1, paddingVertical: 4,
-  },
+  titleInput: { fontSize: 24, fontFamily: "Inter_700Bold", borderBottomWidth: 1, paddingVertical: 4 },
   desc: { fontSize: 14, fontFamily: "Inter_400Regular", marginTop: 4 },
   input: { padding: 12, borderRadius: 10, borderWidth: 1, fontSize: 14, fontFamily: "Inter_400Regular" },
   multi: { minHeight: 80, textAlignVertical: "top" },
   actions: { flexDirection: "row", gap: 8 },
-  actionBtn: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
-  },
+  actionBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
   actionText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  sectionRow: {
-    flexDirection: "row", alignItems: "center",
-    justifyContent: "space-between", marginTop: 12,
-  },
+  sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 12 },
   sectionTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
-  smallBtn: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6,
-  },
+  smallBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   smallBtnText: { color: "#fff", fontSize: 12, fontFamily: "Inter_600SemiBold" },
   tabs: { gap: 6, paddingVertical: 4 },
   tab: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1 },

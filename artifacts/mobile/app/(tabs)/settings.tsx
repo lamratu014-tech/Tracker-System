@@ -1,5 +1,11 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import {
+  getGetStreamQueryKey,
+  getGetTeamQueryKey,
+  useGetStream,
+  useGetTeam,
+} from "@workspace/api-client-react";
 import React from "react";
 import {
   Alert,
@@ -14,7 +20,6 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/lib/auth/AuthContext";
-import { useCurrentUser, useStore } from "@/store/useStore";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "Admin",
@@ -26,19 +31,20 @@ export default function SettingsScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user: authUser, signOut } = useAuth();
-  const localMe = useCurrentUser();
-  const me = authUser ?? localMe;
-  const streams = useStore((s) => s.streams);
-  const resetSeed = useStore((s) => s.resetSeed);
+  const { user: me, signOut } = useAuth();
   const [signingOut, setSigningOut] = React.useState(false);
 
-  if (!me) return null;
+  const teamQ = useGetTeam(me?.teamId ?? "", {
+    query: { enabled: !!me?.teamId, queryKey: getGetTeamQueryKey(me?.teamId ?? "") },
+  });
+  const team = teamQ.data ?? null;
+  const streamId = me?.streamId ?? team?.streamId ?? null;
+  const streamQ = useGetStream(streamId ?? "", {
+    query: { enabled: !!streamId, queryKey: getGetStreamQueryKey(streamId ?? "") },
+  });
+  const stream = streamQ.data ?? null;
 
-  const team = streams.flatMap((s) => s.teams).find((t) => t.id === me.teamId);
-  const stream = me.streamId
-    ? streams.find((s) => s.id === me.streamId)
-    : streams.find((s) => s.teams.some((t) => t.id === me.teamId));
+  if (!me) return null;
 
   let context = "Programme-wide";
   if (team && stream) context = `${stream.name} · ${team.name}`;
@@ -66,13 +72,6 @@ export default function SettingsScreen() {
         setSigningOut(false);
         router.replace("/login");
       }
-    });
-  }
-
-  function handleReset() {
-    confirm("Reset all data to seed values? This cannot be undone.", () => {
-      resetSeed();
-      router.replace("/login");
     });
   }
 
@@ -119,19 +118,7 @@ export default function SettingsScreen() {
         <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
       </TouchableOpacity>
 
-      {me.role === "admin" ? (
-        <TouchableOpacity
-          style={[styles.btn, { backgroundColor: "#FEE2E2", borderColor: "#FCA5A5" }]}
-          onPress={handleReset}
-        >
-          <Feather name="rotate-ccw" size={16} color="#DC2626" />
-          <Text style={[styles.btnText, { color: "#DC2626" }]}>Reset to seed data</Text>
-        </TouchableOpacity>
-      ) : null}
-
-      <Text style={[styles.footnote, { color: colors.mutedForeground }]}>
-        Ops & Planning · Local-first · Data lives on this device
-      </Text>
+      <Text style={[styles.footnote, { color: colors.mutedForeground }]}>Ops & Planning</Text>
     </ScrollView>
   );
 }

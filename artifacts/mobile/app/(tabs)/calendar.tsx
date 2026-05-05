@@ -1,5 +1,10 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
+import {
+  useListEvents,
+  useListStreams,
+  useListTeams,
+} from "@workspace/api-client-react";
 import React, { useMemo, useState } from "react";
 import {
   ScrollView,
@@ -10,8 +15,10 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ErrorBanner } from "@/components/ErrorBanner";
+import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
-import { useCurrentUser, useStore } from "@/store/useStore";
+import { useMe } from "@/lib/permissions";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 const MONTH_NAMES = [
@@ -37,70 +44,70 @@ function sameDay(a: Date, b: Date): boolean {
   );
 }
 
+function timeOf(iso: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
 export default function CalendarScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const me = useCurrentUser();
-  const events = useStore((s) => s.events);
-  const streams = useStore((s) => s.streams);
+  const me = useMe();
+
+  const eventsQ = useListEvents();
+  const streamsQ = useListStreams();
+  const teamsQ = useListTeams();
+
+  const events = eventsQ.data ?? [];
+  const streams = streamsQ.data ?? [];
+  const teams = teamsQ.data ?? [];
 
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
   const [viewMonth, setViewMonth] = useState(today.getMonth());
   const [selected, setSelected] = useState<Date>(today);
 
-  const visibleEvents = useMemo(() => {
-    if (!me) return [];
-    if (me.role === "admin") return events;
-    if (me.role === "stream_overseer") {
-      return events.filter((e) => !e.linkedStreamId || e.linkedStreamId === me.streamId);
-    }
-    if (me.role === "leader") {
-      return events.filter((e) => !e.linkedTeamId || e.linkedTeamId === me.teamId);
-    }
-    return events;
-  }, [events, me]);
-
   const cells = useMemo(() => buildMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
 
   const eventsByDay = useMemo(() => {
     const map = new Map<string, number>();
-    for (const ev of visibleEvents) {
-      const d = new Date(ev.fullDateTime);
+    for (const ev of events) {
+      const d = new Date(ev.startDate);
+      if (isNaN(d.getTime())) continue;
       const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
       map.set(key, (map.get(key) ?? 0) + 1);
     }
     return map;
-  }, [visibleEvents]);
+  }, [events]);
 
   const selectedEvents = useMemo(() => {
-    return visibleEvents
-      .filter((ev) => sameDay(new Date(ev.fullDateTime), selected))
-      .sort((a, b) => +new Date(a.fullDateTime) - +new Date(b.fullDateTime));
-  }, [visibleEvents, selected]);
+    return events
+      .filter((ev) => {
+        const d = new Date(ev.startDate);
+        return !isNaN(d.getTime()) && sameDay(d, selected);
+      })
+      .slice()
+      .sort((a, b) => +new Date(a.startDate) - +new Date(b.startDate));
+  }, [events, selected]);
 
-  function nameFor(streamId: string | null, teamId: string | null): string {
-    if (!streamId && !teamId) return "Programme-wide";
-    for (const st of streams) {
-      if (st.id === streamId && !teamId) return st.name;
-      const t = st.teams.find((x) => x.id === teamId);
-      if (t) return `${st.name} · ${t.name}`;
-    }
-    return "—";
+  function nameFor(ev: { invitedTeamIds: string[]; createdByTeamId?: string | null }): string {
+    const teamId = ev.invitedTeamIds[0] ?? ev.createdByTeamId ?? null;
+    if (!teamId) return "Programme-wide";
+    const t = teams.find((x) => x.id === teamId);
+    if (!t) return "—";
+    const s = streams.find((x) => x.id === t.streamId);
+    return s ? `${s.name} · ${t.name}` : t.name;
   }
 
   function prevMonth() {
-    if (viewMonth === 0) {
-      setViewMonth(11);
-      setViewYear((y) => y - 1);
-    } else setViewMonth((m) => m - 1);
+    if (viewMonth === 0) { setViewMonth(11); setViewYear((y) => y - 1); }
+    else setViewMonth((m) => m - 1);
   }
   function nextMonth() {
-    if (viewMonth === 11) {
-      setViewMonth(0);
-      setViewYear((y) => y + 1);
-    } else setViewMonth((m) => m + 1);
+    if (viewMonth === 11) { setViewMonth(0); setViewYear((y) => y + 1); }
+    else setViewMonth((m) => m + 1);
   }
   function goToday() {
     const t = new Date();
@@ -110,7 +117,6 @@ export default function CalendarScreen() {
   }
 
   if (!me) return null;
-  const canCreateEvent = true;
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -119,19 +125,21 @@ export default function CalendarScreen() {
           <View>
             <Text style={[styles.title, { color: colors.foreground }]}>Calendar</Text>
             <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-              {visibleEvents.length} event{visibleEvents.length !== 1 ? "s" : ""}
+              {events.length} event{events.length !== 1 ? "s" : ""}
             </Text>
           </View>
-          {canCreateEvent ? (
-            <TouchableOpacity
-              style={[styles.headerBtn, { backgroundColor: colors.primary }]}
-              onPress={() => router.push("/new-event")}
-            >
-              <Feather name="plus" size={14} color="#fff" />
-              <Text style={styles.headerBtnText}>Event</Text>
-            </TouchableOpacity>
-          ) : null}
+          <TouchableOpacity
+            style={[styles.headerBtn, { backgroundColor: colors.primary }]}
+            onPress={() => router.push("/new-event")}
+          >
+            <Feather name="plus" size={14} color="#fff" />
+            <Text style={styles.headerBtnText}>Event</Text>
+          </TouchableOpacity>
         </View>
+
+        {eventsQ.isError ? (
+          <ErrorBanner error={eventsQ.error} onRetry={() => eventsQ.refetch()} />
+        ) : null}
 
         <View style={[styles.monthBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <TouchableOpacity onPress={prevMonth} hitSlop={8} style={styles.navBtn}>
@@ -193,7 +201,9 @@ export default function CalendarScreen() {
           {selected.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" })}
         </Text>
 
-        {selectedEvents.length === 0 ? (
+        {eventsQ.isLoading ? (
+          <LoadingRow />
+        ) : selectedEvents.length === 0 ? (
           <View style={[styles.empty, { backgroundColor: colors.muted }]}>
             <Feather name="calendar" size={24} color={colors.mutedForeground} />
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
@@ -209,14 +219,16 @@ export default function CalendarScreen() {
               activeOpacity={0.8}
             >
               <View style={[styles.timeBox, { backgroundColor: colors.primary + "15" }]}>
-                <Text style={[styles.timeText, { color: colors.primary }]}>{ev.time}</Text>
+                <Text style={[styles.timeText, { color: colors.primary }]}>
+                  {ev.isAllDay ? "All day" : timeOf(ev.startDate)}
+                </Text>
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={[styles.evTitle, { color: colors.foreground }]} numberOfLines={1}>
                   {ev.title}
                 </Text>
                 <Text style={[styles.evMeta, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {nameFor(ev.linkedStreamId, ev.linkedTeamId)}
+                  {nameFor(ev)}
                 </Text>
               </View>
               <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
@@ -241,7 +253,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8,
   },
   headerBtnText: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
-
   monthBar: {
     flexDirection: "row", alignItems: "center", padding: 10,
     borderRadius: 10, borderWidth: 1, marginBottom: 8,
@@ -249,32 +260,24 @@ const styles = StyleSheet.create({
   navBtn: { padding: 6 },
   monthLabel: { fontSize: 16, fontFamily: "Inter_700Bold" },
   todayHint: { fontSize: 10, fontFamily: "Inter_500Medium", marginTop: 1 },
-
   weekRow: { flexDirection: "row", marginTop: 8, marginBottom: 4 },
   weekdayText: {
     flex: 1, textAlign: "center", fontSize: 11,
     fontFamily: "Inter_600SemiBold", textTransform: "uppercase", letterSpacing: 0.5,
   },
-
   grid: { flexDirection: "row", flexWrap: "wrap" },
   cell: {
-    width: `${100 / 7}%`,
-    aspectRatio: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 8,
+    width: `${100 / 7}%`, aspectRatio: 1, alignItems: "center",
+    justifyContent: "center", borderRadius: 8,
   },
   cellNum: { fontSize: 14, fontFamily: "Inter_500Medium" },
   dot: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
-
   sectionTitle: {
     fontSize: 14, fontFamily: "Inter_700Bold",
     marginTop: 16, marginBottom: 8, paddingHorizontal: 4,
   },
-
   empty: { padding: 24, alignItems: "center", borderRadius: 10, gap: 8 },
   emptyText: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center" },
-
   evCard: {
     flexDirection: "row", alignItems: "center", gap: 10,
     padding: 12, borderWidth: 1, borderRadius: 10, marginBottom: 6,

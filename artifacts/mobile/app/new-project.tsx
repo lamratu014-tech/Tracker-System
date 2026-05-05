@@ -1,4 +1,10 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import {
+  getListProjectsQueryKey,
+  useCreateProject,
+  useListTeams,
+} from "@workspace/api-client-react";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
@@ -10,38 +16,43 @@ import {
   View,
 } from "react-native";
 
+import { ErrorBanner } from "@/components/ErrorBanner";
 import { useColors } from "@/hooks/useColors";
-import {
-  canCreateForTeam,
-  canManageTeam,
-  useCurrentUser,
-  useStore,
-} from "@/store/useStore";
+import { canCreateForTeam, canManageTeam, useMe } from "@/lib/permissions";
 
 export default function NewProjectScreen() {
   const colors = useColors();
   const router = useRouter();
+  const qc = useQueryClient();
   const params = useLocalSearchParams<{ teamId?: string }>();
-  const me = useCurrentUser();
-  const streams = useStore((s) => s.streams);
-  const addProject = useStore((s) => s.addProject);
+  const me = useMe();
+  const teamsQ = useListTeams();
+  const teams = teamsQ.data ?? [];
 
-  const allowedTeams = useMemo(() => {
-    if (!me) return [];
-    const flat = streams.flatMap((s) => s.teams.map((t) => ({ team: t, streamName: s.name })));
-    return flat.filter((x) => canManageTeam(me, x.team.id, streams));
-  }, [streams, me]);
+  const allowedTeams = useMemo(
+    () => teams.filter((t) => canManageTeam(me, { id: t.id, streamId: t.streamId })),
+    [teams, me],
+  );
 
   const initialTeamId =
-    params.teamId && allowedTeams.some((x) => x.team.id === params.teamId)
+    params.teamId && allowedTeams.some((t) => t.id === params.teamId)
       ? params.teamId
-      : allowedTeams[0]?.team.id ?? "";
+      : allowedTeams[0]?.id ?? "";
 
   const [teamId, setTeamId] = useState<string>(initialTeamId);
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
 
-  if (allowedTeams.length === 0) {
+  const createProject = useCreateProject({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListProjectsQueryKey() });
+        router.back();
+      },
+    },
+  });
+
+  if (allowedTeams.length === 0 && !teamsQ.isLoading) {
     return (
       <View style={[styles.gate, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.mutedForeground }}>You don't have a team to add a project to.</Text>
@@ -52,12 +63,13 @@ export default function NewProjectScreen() {
   function save() {
     if (!title.trim()) return Alert.alert("Title required", "Please enter a project title.");
     if (!teamId) return Alert.alert("Team required", "Pick a team.");
-    if (!canCreateForTeam(me, teamId, streams)) {
+    const team = teams.find((t) => t.id === teamId);
+    if (!canCreateForTeam(me, team ? { id: team.id, streamId: team.streamId } : null)) {
       return Alert.alert("Not allowed", "You don't have permission to add a project to this team.");
     }
-    const created = addProject(teamId, { title: title.trim(), description: desc.trim() });
-    if (created) router.back();
-    else Alert.alert("Error", "Could not create project.");
+    createProject.mutate({
+      data: { teamId, title: title.trim(), description: desc.trim() },
+    });
   }
 
   return (
@@ -85,18 +97,20 @@ export default function NewProjectScreen() {
 
       <Text style={[styles.label, { color: colors.mutedForeground }]}>Team *</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-        {allowedTeams.map(({ team, streamName }) => (
+        {allowedTeams.map((team) => (
           <TouchableOpacity
             key={team.id}
             style={[styles.chip, { borderColor: colors.border, backgroundColor: teamId === team.id ? colors.primary : colors.muted }]}
             onPress={() => setTeamId(team.id)}
           >
             <Text style={[styles.chipText, { color: teamId === team.id ? "#fff" : colors.foreground }]}>
-              {streamName} · {team.name}
+              {team.name}
             </Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      {createProject.isError ? <ErrorBanner error={createProject.error} /> : null}
 
       <View style={styles.row}>
         <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted }]} onPress={() => router.back()}>
@@ -105,7 +119,7 @@ export default function NewProjectScreen() {
         <TouchableOpacity
           style={[styles.btn, { backgroundColor: title.trim() && teamId ? colors.primary : colors.border }]}
           onPress={save}
-          disabled={!title.trim() || !teamId}
+          disabled={!title.trim() || !teamId || createProject.isPending}
         >
           <Text style={[styles.btnText, { color: "#fff" }]}>Create Project</Text>
         </TouchableOpacity>

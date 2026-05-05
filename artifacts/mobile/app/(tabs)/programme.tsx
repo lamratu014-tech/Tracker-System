@@ -1,6 +1,11 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useEffect, useRef, useState } from "react";
+import {
+  useListProjects,
+  useListStreams,
+  useListTeams,
+} from "@workspace/api-client-react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -10,16 +15,23 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { ErrorBanner } from "@/components/ErrorBanner";
+import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
-import { isOverdue } from "@/models/types";
-import { canManageEverything, canManageStream, useCurrentUser, useStore } from "@/store/useStore";
+import { canManageEverything, canManageStream, useMe } from "@/lib/permissions";
 
 export default function ProgrammeScreen() {
   const colors = useColors();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const me = useCurrentUser();
-  const streams = useStore((s) => s.streams);
+  const me = useMe();
+
+  const streamsQ = useListStreams();
+  const teamsQ = useListTeams();
+  const projectsQ = useListProjects();
+  const streams = streamsQ.data ?? [];
+  const teams = teamsQ.data ?? [];
+  const projects = projectsQ.data ?? [];
 
   const [expandedStreamId, setExpandedStreamId] = useState<string | null>(null);
   const didInit = useRef(false);
@@ -32,11 +44,30 @@ export default function ProgrammeScreen() {
     }
   }, [streams, me]);
 
+  const teamsByStream = useMemo(() => {
+    const m = new Map<string, typeof teams>();
+    for (const t of teams) {
+      const k = t.streamId ?? "";
+      if (!k) continue;
+      const arr = m.get(k) ?? [];
+      arr.push(t);
+      m.set(k, arr);
+    }
+    return m;
+  }, [teams]);
+
+  const projectsByTeam = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const p of projects) m.set(p.teamId, (m.get(p.teamId) ?? 0) + 1);
+    return m;
+  }, [projects]);
+
   function toggle(id: string) {
     setExpandedStreamId((cur) => (cur === id ? null : id));
   }
 
   const isAdmin = canManageEverything(me);
+  const loading = streamsQ.isLoading || teamsQ.isLoading;
 
   return (
     <ScrollView
@@ -47,8 +78,7 @@ export default function ProgrammeScreen() {
         <View>
           <Text style={[styles.title, { color: colors.foreground }]}>Programme</Text>
           <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-            {streams.length} stream{streams.length !== 1 ? "s" : ""} ·{" "}
-            {streams.reduce((n, s) => n + s.teams.length, 0)} teams
+            {streams.length} stream{streams.length !== 1 ? "s" : ""} · {teams.length} teams
           </Text>
         </View>
         {isAdmin ? (
@@ -62,7 +92,13 @@ export default function ProgrammeScreen() {
         ) : null}
       </View>
 
-      {streams.length === 0 ? (
+      {streamsQ.isError ? (
+        <ErrorBanner error={streamsQ.error} onRetry={() => streamsQ.refetch()} />
+      ) : null}
+
+      {loading ? (
+        <LoadingRow />
+      ) : streams.length === 0 ? (
         <View style={[styles.empty, { backgroundColor: colors.muted }]}>
           <Feather name="layers" size={28} color={colors.mutedForeground} />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
@@ -72,11 +108,8 @@ export default function ProgrammeScreen() {
       ) : (
         streams.map((stream) => {
           const expanded = expandedStreamId === stream.id;
-          const allMs = stream.teams.flatMap((t) => t.projects.flatMap((p) => p.milestones));
-          const completed = allMs.filter((m) => m.status === "completed").length;
-          const overdue = allMs.filter((m) => isOverdue(m)).length;
+          const streamTeams = teamsByStream.get(stream.id) ?? [];
           const canAddTeamHere = canManageStream(me, stream.id);
-
           return (
             <View
               key={stream.id}
@@ -96,8 +129,7 @@ export default function ProgrammeScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.streamName, { color: colors.foreground }]}>{stream.name}</Text>
                   <Text style={[styles.streamMeta, { color: colors.mutedForeground }]}>
-                    {stream.teams.length} team{stream.teams.length !== 1 ? "s" : ""} ·{" "}
-                    {completed}/{allMs.length} done{overdue > 0 ? ` · ${overdue} overdue` : ""}
+                    {streamTeams.length} team{streamTeams.length !== 1 ? "s" : ""}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -111,15 +143,13 @@ export default function ProgrammeScreen() {
 
               {expanded ? (
                 <View style={styles.streamBody}>
-                  {stream.teams.length === 0 ? (
+                  {streamTeams.length === 0 ? (
                     <Text style={[styles.muted, { color: colors.mutedForeground }]}>
                       No teams in this stream yet.
                     </Text>
                   ) : (
-                    stream.teams.map((team) => {
-                      const teamMs = team.projects.flatMap((p) => p.milestones);
-                      const tDone = teamMs.filter((m) => m.status === "completed").length;
-                      const tOverdue = teamMs.filter((m) => isOverdue(m)).length;
+                    streamTeams.map((team) => {
+                      const pCount = projectsByTeam.get(team.id) ?? 0;
                       return (
                         <TouchableOpacity
                           key={team.id}
@@ -133,9 +163,7 @@ export default function ProgrammeScreen() {
                           <View style={{ flex: 1 }}>
                             <Text style={[styles.teamName, { color: colors.foreground }]}>{team.name}</Text>
                             <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
-                              {team.projects.length} project{team.projects.length !== 1 ? "s" : ""} ·{" "}
-                              {tDone}/{teamMs.length} done
-                              {tOverdue > 0 ? ` · ${tOverdue} overdue` : ""}
+                              {pCount} project{pCount !== 1 ? "s" : ""}
                             </Text>
                           </View>
                           <Feather name="chevron-right" size={16} color={colors.mutedForeground} />

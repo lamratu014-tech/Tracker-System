@@ -45,6 +45,7 @@ import type {
   MessageResponse,
   Milestone,
   NotFoundResponse,
+  Programme,
   Project,
   ProjectWithTeamName,
   ResetPasswordBody,
@@ -1523,6 +1524,74 @@ export const useDeleteUser = <
 > => {
   return useMutation(getDeleteUserMutationOptions(options));
 };
+
+export const getGetProgrammeUrl = () => {
+  return `/api/programmes`;
+};
+
+export const getProgramme = async (
+  options?: RequestInit,
+): Promise<Programme> => {
+  return customFetch<Programme>(getGetProgrammeUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetProgrammeQueryKey = () => {
+  return [`/api/programmes`] as const;
+};
+
+export const getGetProgrammeQueryOptions = <
+  TData = Awaited<ReturnType<typeof getProgramme>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getProgramme>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetProgrammeQueryKey();
+
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProgramme>>> = ({
+    signal,
+  }) => getProgramme({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getProgramme>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetProgrammeQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getProgramme>>
+>;
+export type GetProgrammeQueryError = ErrorType<unknown>;
+
+export function useGetProgramme<
+  TData = Awaited<ReturnType<typeof getProgramme>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getProgramme>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetProgrammeQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
 
 export const getListStreamsUrl = () => {
   return `/api/streams`;

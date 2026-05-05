@@ -1,4 +1,10 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
+import {
+  getListEventsQueryKey,
+  useCreateEvent,
+  useListTeams,
+} from "@workspace/api-client-react";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
@@ -10,8 +16,9 @@ import {
   View,
 } from "react-native";
 
+import { ErrorBanner } from "@/components/ErrorBanner";
 import { useColors } from "@/hooks/useColors";
-import { useCurrentUser, useStore } from "@/store/useStore";
+import { useMe } from "@/lib/permissions";
 
 const TIME_OPTIONS = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"];
 
@@ -29,29 +36,45 @@ function dateFromOffset(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function toIso(date: string, time: string, addHours = 0): string {
+  const d = new Date(`${date}T${time}:00`);
+  if (addHours) d.setHours(d.getHours() + addHours);
+  return d.toISOString();
+}
+
 export default function NewEventScreen() {
   const colors = useColors();
   const router = useRouter();
-  const me = useCurrentUser();
-  const streams = useStore((s) => s.streams);
-  const addEvent = useStore((s) => s.addEvent);
+  const qc = useQueryClient();
+  const me = useMe();
+
+  const teamsQ = useListTeams();
+  const teams = teamsQ.data ?? [];
 
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
   const [date, setDate] = useState<string>(dateFromOffset(1));
   const [time, setTime] = useState<string>("10:00");
   const [linkedTeamId, setLinkedTeamId] = useState<string | null>(
-    me?.role === "leader" ? me.teamId : null,
+    me?.role === "leader" && me.teamId ? me.teamId : null,
   );
 
   const allowedTeams = useMemo(() => {
     if (!me) return [];
-    const flat = streams.flatMap((s) => s.teams.map((t) => ({ team: t, streamName: s.name, streamId: s.id })));
-    if (me.role === "admin") return flat;
-    if (me.role === "stream_overseer") return flat.filter((x) => x.streamId === me.streamId);
-    if (me.role === "leader" && me.teamId) return flat.filter((x) => x.team.id === me.teamId);
+    if (me.role === "admin") return teams;
+    if (me.role === "stream_overseer") return teams.filter((t) => t.streamId === me.streamId);
+    if (me.role === "leader" && me.teamId) return teams.filter((t) => t.id === me.teamId);
     return [];
-  }, [streams, me]);
+  }, [teams, me]);
+
+  const createEvent = useCreateEvent({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListEventsQueryKey() });
+        router.back();
+      },
+    },
+  });
 
   if (!me) {
     return (
@@ -68,19 +91,17 @@ export default function NewEventScreen() {
     if (me!.role !== "admin" && !linkedTeamId) {
       return Alert.alert("Team required", "Pick a team for this event.");
     }
-
-    let linkedStreamId: string | null = null;
-    if (linkedTeamId) {
-      const stream = streams.find((s) => s.teams.some((t) => t.id === linkedTeamId));
-      linkedStreamId = stream?.id ?? null;
-    }
-
-    const created = addEvent(
-      { title: title.trim(), description: desc.trim(), date, time, linkedStreamId, linkedTeamId },
-      me!.id,
-    );
-    if (created) router.back();
-    else Alert.alert("Error", "Could not create event.");
+    const startDate = toIso(date, time, 0);
+    const endDate = toIso(date, time, 1);
+    createEvent.mutate({
+      data: {
+        title: title.trim(),
+        sharedDescription: desc.trim(),
+        startDate,
+        endDate,
+        invitedTeamIds: linkedTeamId ? [linkedTeamId] : [],
+      },
+    });
   }
 
   const dateLabel = new Date(`${date}T${time}:00`).toLocaleDateString([], {
@@ -152,18 +173,20 @@ export default function NewEventScreen() {
             <Text style={[styles.chipText, { color: linkedTeamId === null ? "#fff" : colors.foreground }]}>Programme-wide</Text>
           </TouchableOpacity>
         ) : null}
-        {allowedTeams.map(({ team, streamName }) => (
+        {allowedTeams.map((team) => (
           <TouchableOpacity
             key={team.id}
             style={[styles.chip, { borderColor: colors.border, backgroundColor: linkedTeamId === team.id ? colors.primary : colors.muted }]}
             onPress={() => setLinkedTeamId(team.id)}
           >
             <Text style={[styles.chipText, { color: linkedTeamId === team.id ? "#fff" : colors.foreground }]}>
-              {streamName} · {team.name}
+              {team.name}
             </Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      {createEvent.isError ? <ErrorBanner error={createEvent.error} /> : null}
 
       <View style={styles.row}>
         <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted }]} onPress={() => router.back()}>
@@ -172,7 +195,7 @@ export default function NewEventScreen() {
         <TouchableOpacity
           style={[styles.btn, { backgroundColor: title.trim() && date && time ? colors.primary : colors.border }]}
           onPress={save}
-          disabled={!title.trim() || !date || !time}
+          disabled={!title.trim() || !date || !time || createEvent.isPending}
         >
           <Text style={[styles.btnText, { color: "#fff" }]}>Create Event</Text>
         </TouchableOpacity>

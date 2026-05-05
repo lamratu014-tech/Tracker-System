@@ -1,4 +1,10 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
+import {
+  getListStreamsQueryKey,
+  useCreateStream,
+  useGetProgramme,
+} from "@workspace/api-client-react";
 import React, { useState } from "react";
 import {
   Alert,
@@ -10,15 +16,28 @@ import {
   View,
 } from "react-native";
 
+import { ErrorBanner } from "@/components/ErrorBanner";
+import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
-import { canManageEverything, useCurrentUser, useStore } from "@/store/useStore";
+import { canManageEverything, useMe } from "@/lib/permissions";
 
 export default function NewStreamScreen() {
   const colors = useColors();
   const router = useRouter();
-  const me = useCurrentUser();
-  const addStream = useStore((s) => s.addStream);
+  const qc = useQueryClient();
+  const me = useMe();
+  const programmeQ = useGetProgramme();
+  const programme = programmeQ.data ?? null;
   const [name, setName] = useState("");
+
+  const createStream = useCreateStream({
+    mutation: {
+      onSuccess: () => {
+        qc.invalidateQueries({ queryKey: getListStreamsQueryKey() });
+        router.back();
+      },
+    },
+  });
 
   if (!canManageEverything(me)) {
     return (
@@ -31,9 +50,8 @@ export default function NewStreamScreen() {
   function save() {
     const trimmed = name.trim();
     if (!trimmed) return Alert.alert("Name required", "Please enter a stream name.");
-    const created = addStream({ name: trimmed });
-    if (created) router.back();
-    else Alert.alert("Error", "Could not create stream.");
+    if (!programme) return Alert.alert("Loading", "Please wait for the programme to load.");
+    createStream.mutate({ data: { name: trimmed, programmeId: programme.id } });
   }
 
   return (
@@ -47,14 +65,16 @@ export default function NewStreamScreen() {
         placeholderTextColor={colors.mutedForeground}
         autoFocus
       />
+      {programmeQ.isLoading ? <LoadingRow inline label="Loading programme…" /> : null}
+      {createStream.isError ? <ErrorBanner error={createStream.error} /> : null}
       <View style={styles.row}>
         <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted }]} onPress={() => router.back()}>
           <Text style={[styles.btnText, { color: colors.foreground }]}>Cancel</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.btn, { backgroundColor: name.trim() ? colors.primary : colors.border }]}
+          style={[styles.btn, { backgroundColor: name.trim() && programme ? colors.primary : colors.border }]}
           onPress={save}
-          disabled={!name.trim()}
+          disabled={!name.trim() || !programme || createStream.isPending}
         >
           <Text style={[styles.btnText, { color: "#fff" }]}>Create</Text>
         </TouchableOpacity>

@@ -1,4 +1,12 @@
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import {
+  getListStreamTeamsQueryKey,
+  getListTeamsQueryKey,
+  useCreateTeam,
+  useListStreams,
+  useListUsers,
+} from "@workspace/api-client-react";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
@@ -10,17 +18,20 @@ import {
   View,
 } from "react-native";
 
+import { ErrorBanner } from "@/components/ErrorBanner";
 import { useColors } from "@/hooks/useColors";
-import { canManageStream, useCurrentUser, useStore } from "@/store/useStore";
+import { canManageStream, useMe } from "@/lib/permissions";
 
 export default function NewTeamScreen() {
   const colors = useColors();
   const router = useRouter();
+  const qc = useQueryClient();
   const params = useLocalSearchParams<{ streamId?: string }>();
-  const me = useCurrentUser();
-  const streams = useStore((s) => s.streams);
-  const users = useStore((s) => s.users);
-  const addTeam = useStore((s) => s.addTeam);
+  const me = useMe();
+  const streamsQ = useListStreams();
+  const usersQ = useListUsers();
+  const streams = streamsQ.data ?? [];
+  const users = usersQ.data ?? [];
 
   const allowedStreams = useMemo(
     () => streams.filter((s) => canManageStream(me, s.id)),
@@ -41,7 +52,19 @@ export default function NewTeamScreen() {
     [users],
   );
 
-  if (allowedStreams.length === 0) {
+  const createTeam = useCreateTeam({
+    mutation: {
+      onSuccess: (created) => {
+        qc.invalidateQueries({ queryKey: getListTeamsQueryKey() });
+        if (created?.streamId) {
+          qc.invalidateQueries({ queryKey: getListStreamTeamsQueryKey(created.streamId) });
+        }
+        router.back();
+      },
+    },
+  });
+
+  if (allowedStreams.length === 0 && !streamsQ.isLoading) {
     return (
       <View style={[styles.gate, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.mutedForeground }}>
@@ -57,9 +80,7 @@ export default function NewTeamScreen() {
     if (!canManageStream(me, streamId)) {
       return Alert.alert("Not allowed", "You can't add teams to that stream.");
     }
-    const created = addTeam(streamId, { name: name.trim(), leaderId });
-    if (created) router.back();
-    else Alert.alert("Error", "Could not create team.");
+    createTeam.mutate({ data: { name: name.trim(), streamId, leaderId: leaderId ?? null } });
   }
 
   return (
@@ -108,6 +129,8 @@ export default function NewTeamScreen() {
         ))}
       </ScrollView>
 
+      {createTeam.isError ? <ErrorBanner error={createTeam.error} /> : null}
+
       <View style={styles.row}>
         <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted }]} onPress={() => router.back()}>
           <Text style={[styles.btnText, { color: colors.foreground }]}>Cancel</Text>
@@ -115,7 +138,7 @@ export default function NewTeamScreen() {
         <TouchableOpacity
           style={[styles.btn, { backgroundColor: name.trim() && streamId ? colors.primary : colors.border }]}
           onPress={save}
-          disabled={!name.trim() || !streamId}
+          disabled={!name.trim() || !streamId || createTeam.isPending}
         >
           <Text style={[styles.btnText, { color: "#fff" }]}>Create Team</Text>
         </TouchableOpacity>

@@ -1,6 +1,29 @@
 import { Feather } from "@expo/vector-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import React, { useState } from "react";
+import {
+  getGetStreamQueryKey,
+  getGetTeamQueryKey,
+  getListStreamTeamsQueryKey,
+  getListTeamMembersQueryKey,
+  getListTeamNotesQueryKey,
+  getListTeamsQueryKey,
+  useAssignTeamLeader,
+  useCreateTeamMember,
+  useCreateTeamNote,
+  useDeleteMember,
+  useDeleteTeam,
+  useDeleteTeamNote,
+  useGetStream,
+  useGetTeam,
+  useListProjects,
+  useListTeamMembers,
+  useListTeamNotes,
+  useListUsers,
+  useUpdateTeam,
+  useUpdateTeamNote,
+} from "@workspace/api-client-react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Platform,
@@ -12,38 +35,116 @@ import {
   View,
 } from "react-native";
 
+import { ErrorBanner } from "@/components/ErrorBanner";
+import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
-import { isOverdue } from "@/models/types";
-import { findTeam, useCanManageTeam, useCurrentUser, useStore } from "@/store/useStore";
+import { useCanManageTeam, useMe } from "@/lib/permissions";
 
 export default function TeamDetailScreen() {
   const colors = useColors();
   const router = useRouter();
+  const qc = useQueryClient();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const me = useCurrentUser();
-  const streams = useStore((s) => s.streams);
-  const users = useStore((s) => s.users);
-  const members = useStore((s) => s.members);
-  const updateTeam = useStore((s) => s.updateTeam);
-  const deleteTeam = useStore((s) => s.deleteTeam);
-  const assignLeader = useStore((s) => s.assignTeamLeader);
-  const addMember = useStore((s) => s.addMember);
-  const deleteMember = useStore((s) => s.deleteMember);
-  const addTeamNote = useStore((s) => s.addTeamNote);
-  const updateTeamNote = useStore((s) => s.updateTeamNote);
-  const deleteTeamNote = useStore((s) => s.deleteTeamNote);
+  const me = useMe();
 
-  const found = id ? findTeam(streams, id) : null;
-  const canEdit = useCanManageTeam(found?.team.id ?? null);
+  const teamQ = useGetTeam(id ?? "", {
+    query: { enabled: !!id, queryKey: getGetTeamQueryKey(id ?? "") },
+  });
+  const team = teamQ.data ?? null;
+  const streamQ = useGetStream(team?.streamId ?? "", {
+    query: { enabled: !!team?.streamId, queryKey: getGetStreamQueryKey(team?.streamId ?? "") },
+  });
+  const stream = streamQ.data ?? null;
+
+  const usersQ = useListUsers();
+  const users = usersQ.data ?? [];
+
+  const membersQ = useListTeamMembers(id ?? "", {
+    query: { enabled: !!id, queryKey: getListTeamMembersQueryKey(id ?? "") },
+  });
+  const members = membersQ.data ?? [];
+
+  const notesQ = useListTeamNotes(id ?? "", {
+    query: { enabled: !!id, queryKey: getListTeamNotesQueryKey(id ?? "") },
+  });
+  const notes = useMemo(
+    () => [...(notesQ.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    [notesQ.data],
+  );
+
+  const projectsQ = useListProjects();
+  const teamProjects = useMemo(
+    () => (projectsQ.data ?? []).filter((p) => p.teamId === id),
+    [projectsQ.data, id],
+  );
+
+  const canEdit = useCanManageTeam(team ? { id: team.id, streamId: team.streamId } : null);
+  const isAdmin = me?.role === "admin";
 
   const [editing, setEditing] = useState(false);
-  const [draftName, setDraftName] = useState(found?.team.name ?? "");
+  const [draftName, setDraftName] = useState("");
   const [newMember, setNewMember] = useState("");
   const [newNote, setNewNote] = useState("");
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingNoteBody, setEditingNoteBody] = useState("");
 
-  if (!found) {
+  useEffect(() => {
+    if (team && !editing) setDraftName(team.name);
+  }, [team, editing]);
+
+  const invalidateTeam = () => {
+    if (id) qc.invalidateQueries({ queryKey: getGetTeamQueryKey(id) });
+    qc.invalidateQueries({ queryKey: getListTeamsQueryKey() });
+    if (team?.streamId) qc.invalidateQueries({ queryKey: getListStreamTeamsQueryKey(team.streamId) });
+  };
+
+  const updateTeam = useUpdateTeam({ mutation: { onSuccess: invalidateTeam } });
+  const deleteTeam = useDeleteTeam({ mutation: { onSuccess: invalidateTeam } });
+  const assignLeader = useAssignTeamLeader({ mutation: { onSuccess: invalidateTeam } });
+  const createMember = useCreateTeamMember({
+    mutation: {
+      onSuccess: () => {
+        if (id) qc.invalidateQueries({ queryKey: getListTeamMembersQueryKey(id) });
+      },
+    },
+  });
+  const deleteMember = useDeleteMember({
+    mutation: {
+      onSuccess: () => {
+        if (id) qc.invalidateQueries({ queryKey: getListTeamMembersQueryKey(id) });
+      },
+    },
+  });
+  const createNote = useCreateTeamNote({
+    mutation: {
+      onSuccess: () => {
+        if (id) qc.invalidateQueries({ queryKey: getListTeamNotesQueryKey(id) });
+      },
+    },
+  });
+  const updateNote = useUpdateTeamNote({
+    mutation: {
+      onSuccess: () => {
+        if (id) qc.invalidateQueries({ queryKey: getListTeamNotesQueryKey(id) });
+      },
+    },
+  });
+  const deleteNote = useDeleteTeamNote({
+    mutation: {
+      onSuccess: () => {
+        if (id) qc.invalidateQueries({ queryKey: getListTeamNotesQueryKey(id) });
+      },
+    },
+  });
+
+  if (teamQ.isLoading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <LoadingRow />
+      </View>
+    );
+  }
+  if (!team) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }]}>
         <Text style={{ color: colors.mutedForeground }}>Team not found.</Text>
@@ -51,35 +152,25 @@ export default function TeamDetailScreen() {
     );
   }
 
-  const { stream, team } = found;
-  const isAdmin = me?.role === "admin";
   const leader = team.leaderId ? users.find((u) => u.id === team.leaderId) : null;
-  const teamMembers = members.filter((m) => m.teamId === team.id);
-  const notes = [...(team.notes ?? [])].sort((a, b) =>
-    b.createdAt.localeCompare(a.createdAt),
-  );
 
   function saveName() {
     if (!draftName.trim()) return;
-    updateTeam(team.id, { name: draftName.trim() });
-    setEditing(false);
+    updateTeam.mutate(
+      { id: team!.id, data: { name: draftName.trim() } },
+      { onSuccess: () => setEditing(false) },
+    );
   }
 
   function confirmDelete() {
-    const msg = `Delete team "${team.name}" and all its projects/members?`;
+    const msg = `Delete team "${team!.name}" and all its projects/members?`;
+    const onYes = () => deleteTeam.mutate({ id: team!.id }, { onSuccess: () => router.back() });
     if (Platform.OS === "web") {
-      if (window.confirm(msg)) {
-        deleteTeam(team.id);
-        router.back();
-      }
+      if (window.confirm(msg)) onYes();
     } else {
       Alert.alert("Delete team", msg, [
         { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => { deleteTeam(team.id); router.back(); },
-        },
+        { text: "Delete", style: "destructive", onPress: onYes },
       ]);
     }
   }
@@ -91,26 +182,24 @@ export default function TeamDetailScreen() {
       Alert.alert("No candidates", "Invite a leader user first.");
       return;
     }
+    const apply = (leaderId: string | null) =>
+      assignLeader.mutate({ id: team!.id, data: { leaderId } });
     if (Platform.OS === "web") {
       const list = candidates.map((u, i) => `${i + 1}. ${u.name}`).join("\n");
       const choice = window.prompt(
         `Choose new leader (1-${candidates.length}):\n${list}\n\nLeave blank to clear.`,
       );
       if (choice === null) return;
-      if (choice.trim() === "") {
-        assignLeader(team.id, null);
-      } else {
+      if (choice.trim() === "") apply(null);
+      else {
         const idx = parseInt(choice, 10) - 1;
-        if (idx >= 0 && idx < candidates.length) assignLeader(team.id, candidates[idx].id);
+        if (idx >= 0 && idx < candidates.length) apply(candidates[idx].id);
       }
     } else {
-      const buttons = candidates.map((u) => ({
-        text: u.name,
-        onPress: () => assignLeader(team.id, u.id),
-      }));
+      const buttons = candidates.map((u) => ({ text: u.name, onPress: () => apply(u.id) }));
       Alert.alert("Assign leader", "", [
         ...buttons,
-        { text: "Clear", style: "destructive", onPress: () => assignLeader(team.id, null) },
+        { text: "Clear", style: "destructive", onPress: () => apply(null) },
         { text: "Cancel", style: "cancel" },
       ]);
     }
@@ -118,14 +207,18 @@ export default function TeamDetailScreen() {
 
   function addNewMember() {
     if (!newMember.trim()) return;
-    addMember({ name: newMember.trim(), teamId: team.id });
-    setNewMember("");
+    createMember.mutate(
+      { id: team!.id, data: { name: newMember.trim() } },
+      { onSuccess: () => setNewMember("") },
+    );
   }
 
   function postNote() {
-    if (!newNote.trim() || !me) return;
-    addTeamNote({ teamId: team.id, body: newNote.trim() }, me.id);
-    setNewNote("");
+    if (!newNote.trim()) return;
+    createNote.mutate(
+      { id: team!.id, data: { body: newNote.trim() } },
+      { onSuccess: () => setNewNote("") },
+    );
   }
 
   function startEditNote(noteId: string, body: string) {
@@ -138,19 +231,26 @@ export default function TeamDetailScreen() {
       setEditingNoteId(null);
       return;
     }
-    updateTeamNote(editingNoteId, editingNoteBody.trim());
-    setEditingNoteId(null);
-    setEditingNoteBody("");
+    updateNote.mutate(
+      { id: editingNoteId, data: { body: editingNoteBody.trim() } },
+      {
+        onSuccess: () => {
+          setEditingNoteId(null);
+          setEditingNoteBody("");
+        },
+      },
+    );
   }
 
   function confirmDeleteNote(noteId: string) {
     const msg = "Delete this note?";
+    const onYes = () => deleteNote.mutate({ id: noteId });
     if (Platform.OS === "web") {
-      if (window.confirm(msg)) deleteTeamNote(noteId);
+      if (window.confirm(msg)) onYes();
     } else {
       Alert.alert("Delete note", msg, [
         { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: () => deleteTeamNote(noteId) },
+        { text: "Delete", style: "destructive", onPress: onYes },
       ]);
     }
   }
@@ -171,19 +271,22 @@ export default function TeamDetailScreen() {
 
   function confirmDeleteMember(memberId: string, name: string) {
     const msg = `Remove "${name}" from this team?`;
+    const onYes = () => deleteMember.mutate({ id: memberId });
     if (Platform.OS === "web") {
-      if (window.confirm(msg)) deleteMember(memberId);
+      if (window.confirm(msg)) onYes();
     } else {
       Alert.alert("Remove member", msg, [
         { text: "Cancel", style: "cancel" },
-        { text: "Remove", style: "destructive", onPress: () => deleteMember(memberId) },
+        { text: "Remove", style: "destructive", onPress: onYes },
       ]);
     }
   }
 
   return (
     <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}>
-      <Text style={[styles.crumb, { color: colors.mutedForeground }]}>{stream.name} · Team</Text>
+      <Text style={[styles.crumb, { color: colors.mutedForeground }]}>
+        {stream?.name ?? "—"} · Team
+      </Text>
       {editing ? (
         <TextInput
           value={draftName}
@@ -213,7 +316,10 @@ export default function TeamDetailScreen() {
         <View style={styles.actions}>
           <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: colors.muted }]}
-            onPress={() => { setDraftName(team.name); setEditing((v) => !v); }}
+            onPress={() => {
+              if (editing) saveName();
+              else { setDraftName(team.name); setEditing(true); }
+            }}
           >
             <Feather name={editing ? "check" : "edit-2"} size={14} color={colors.primary} />
             <Text style={[styles.actionText, { color: colors.primary }]}>
@@ -245,49 +351,52 @@ export default function TeamDetailScreen() {
         ) : null}
       </View>
 
-      {team.projects.length === 0 ? (
+      {projectsQ.isError ? (
+        <ErrorBanner error={projectsQ.error} onRetry={() => projectsQ.refetch()} />
+      ) : null}
+      {projectsQ.isLoading ? <LoadingRow /> : null}
+
+      {teamProjects.length === 0 ? (
         <View style={[styles.empty, { backgroundColor: colors.muted }]}>
           <Text style={{ color: colors.mutedForeground }}>No projects yet.</Text>
         </View>
       ) : (
-        team.projects.map((p) => {
-          const done = p.milestones.filter((m) => m.status === "completed").length;
-          const overdue = p.milestones.filter((m) => isOverdue(m)).length;
-          return (
-            <TouchableOpacity
-              key={p.id}
-              style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => router.push({ pathname: "/project/[id]", params: { id: p.id } })}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.iconBox, { backgroundColor: colors.primary + "15" }]}>
-                <Feather name="folder" size={16} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.rowTitle, { color: colors.foreground }]}>{p.title}</Text>
+        teamProjects.map((p) => (
+          <TouchableOpacity
+            key={p.id}
+            style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => router.push({ pathname: "/project/[id]", params: { id: p.id } })}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.iconBox, { backgroundColor: colors.primary + "15" }]}>
+              <Feather name="folder" size={16} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.rowTitle, { color: colors.foreground }]}>{p.title}</Text>
+              {p.description ? (
                 <Text style={[styles.rowMeta, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {done}/{p.milestones.length} milestones done
-                  {overdue > 0 ? ` · ${overdue} overdue` : ""}
+                  {p.description}
                 </Text>
-              </View>
-              <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          );
-        })
+              ) : null}
+            </View>
+            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        ))
       )}
 
       <View style={styles.sectionRow}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-          Members ({teamMembers.length})
+          Members ({members.length})
         </Text>
       </View>
 
-      {teamMembers.length === 0 ? (
+      {membersQ.isLoading ? <LoadingRow /> : null}
+      {members.length === 0 ? (
         <View style={[styles.empty, { backgroundColor: colors.muted }]}>
           <Text style={{ color: colors.mutedForeground }}>No members yet.</Text>
         </View>
       ) : (
-        teamMembers.map((mb) => (
+        members.map((mb) => (
           <View
             key={mb.id}
             style={[styles.memberRow, { backgroundColor: colors.card, borderColor: colors.border }]}
@@ -299,7 +408,9 @@ export default function TeamDetailScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.rowTitle, { color: colors.foreground }]}>{mb.name}</Text>
-              <Text style={[styles.rowMeta, { color: colors.mutedForeground }]}>Member</Text>
+              <Text style={[styles.rowMeta, { color: colors.mutedForeground }]}>
+                {mb.roleLabel ?? "Member"}
+              </Text>
             </View>
             {canEdit ? (
               <TouchableOpacity
@@ -315,9 +426,7 @@ export default function TeamDetailScreen() {
       )}
 
       {canEdit ? (
-        <View
-          style={[styles.addMemberRow, { borderColor: colors.border, backgroundColor: colors.card }]}
-        >
+        <View style={[styles.addMemberRow, { borderColor: colors.border, backgroundColor: colors.card }]}>
           <TextInput
             value={newMember}
             onChangeText={setNewMember}
@@ -329,7 +438,7 @@ export default function TeamDetailScreen() {
           />
           <TouchableOpacity
             onPress={addNewMember}
-            disabled={!newMember.trim()}
+            disabled={!newMember.trim() || createMember.isPending}
             style={[styles.addMemberBtn, { backgroundColor: newMember.trim() ? colors.primary : colors.border }]}
           >
             <Feather name="plus" size={16} color="#fff" />
@@ -344,9 +453,7 @@ export default function TeamDetailScreen() {
       </View>
 
       {canEdit ? (
-        <View
-          style={[styles.noteComposer, { borderColor: colors.border, backgroundColor: colors.card }]}
-        >
+        <View style={[styles.noteComposer, { borderColor: colors.border, backgroundColor: colors.card }]}>
           <TextInput
             value={newNote}
             onChangeText={setNewNote}
@@ -361,11 +468,8 @@ export default function TeamDetailScreen() {
             </Text>
             <TouchableOpacity
               onPress={postNote}
-              disabled={!newNote.trim()}
-              style={[
-                styles.postBtn,
-                { backgroundColor: newNote.trim() ? colors.primary : colors.border },
-              ]}
+              disabled={!newNote.trim() || createNote.isPending}
+              style={[styles.postBtn, { backgroundColor: newNote.trim() ? colors.primary : colors.border }]}
             >
               <Feather name="send" size={12} color="#fff" />
               <Text style={styles.postBtnText}>Post</Text>
@@ -374,6 +478,7 @@ export default function TeamDetailScreen() {
         </View>
       ) : null}
 
+      {notesQ.isLoading ? <LoadingRow /> : null}
       {notes.length === 0 ? (
         <View style={[styles.empty, { backgroundColor: colors.muted }]}>
           <Text style={{ color: colors.mutedForeground }}>
@@ -387,6 +492,7 @@ export default function TeamDetailScreen() {
             const mine = me?.id === n.authorId;
             const canEditNote = canEdit && (mine || isAdmin);
             const isEditing = editingNoteId === n.id;
+            const wasEdited = n.updatedAt && n.updatedAt !== n.createdAt;
             return (
               <View key={n.id} style={styles.timelineRow}>
                 <View style={styles.timelineRail}>
@@ -396,18 +502,14 @@ export default function TeamDetailScreen() {
                   ) : null}
                 </View>
                 <View
-                  style={[
-                    styles.noteCard,
-                    { backgroundColor: colors.card, borderColor: colors.border },
-                  ]}
+                  style={[styles.noteCard, { backgroundColor: colors.card, borderColor: colors.border }]}
                 >
                   <View style={styles.noteHeader}>
                     <Text style={[styles.noteAuthor, { color: colors.foreground }]}>
                       {author?.name ?? "Unknown"}
                     </Text>
                     <Text style={[styles.noteMeta, { color: colors.mutedForeground }]}>
-                      {formatNoteDate(n.createdAt)}
-                      {n.updatedAt ? " · edited" : ""}
+                      {formatNoteDate(n.createdAt)}{wasEdited ? " · edited" : ""}
                     </Text>
                   </View>
                   {isEditing ? (
@@ -434,17 +536,12 @@ export default function TeamDetailScreen() {
                           onPress={() => { setEditingNoteId(null); setEditingNoteBody(""); }}
                           style={[styles.noteActionBtn, { backgroundColor: colors.muted }]}
                         >
-                          <Text style={[styles.noteActionText, { color: colors.mutedForeground }]}>
-                            Cancel
-                          </Text>
+                          <Text style={[styles.noteActionText, { color: colors.mutedForeground }]}>Cancel</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={saveEditNote}
-                          disabled={!editingNoteBody.trim()}
-                          style={[
-                            styles.noteActionBtn,
-                            { backgroundColor: editingNoteBody.trim() ? colors.primary : colors.border },
-                          ]}
+                          disabled={!editingNoteBody.trim() || updateNote.isPending}
+                          style={[styles.noteActionBtn, { backgroundColor: editingNoteBody.trim() ? colors.primary : colors.border }]}
                         >
                           <Text style={[styles.noteActionText, { color: "#fff" }]}>Save</Text>
                         </TouchableOpacity>
@@ -461,9 +558,7 @@ export default function TeamDetailScreen() {
                         style={styles.noteIconBtn}
                       >
                         <Feather name="edit-2" size={12} color={colors.mutedForeground} />
-                        <Text style={[styles.noteActionText, { color: colors.mutedForeground }]}>
-                          Edit
-                        </Text>
+                        <Text style={[styles.noteActionText, { color: colors.mutedForeground }]}>Edit</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         onPress={() => confirmDeleteNote(n.id)}
@@ -491,105 +586,48 @@ export default function TeamDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 20, gap: 10 },
-  crumb: {
-    fontSize: 12, fontFamily: "Inter_500Medium",
-    textTransform: "uppercase", letterSpacing: 0.5,
-  },
+  crumb: { fontSize: 12, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 },
   title: { fontSize: 24, fontFamily: "Inter_700Bold" },
-  titleInput: {
-    fontSize: 24, fontFamily: "Inter_700Bold",
-    borderBottomWidth: 1, paddingVertical: 4,
-  },
-  leaderBox: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    padding: 12, borderRadius: 10, borderWidth: 1,
-  },
+  titleInput: { fontSize: 24, fontFamily: "Inter_700Bold", borderBottomWidth: 1, paddingVertical: 4 },
+  leaderBox: { flexDirection: "row", alignItems: "center", gap: 8, padding: 12, borderRadius: 10, borderWidth: 1 },
   leaderText: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular" },
   actions: { flexDirection: "row", gap: 8 },
-  actionBtn: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
-  },
+  actionBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
   actionText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  sectionRow: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    marginTop: 12,
-  },
+  sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 12 },
   sectionTitle: { fontSize: 16, fontFamily: "Inter_700Bold" },
-  smallBtn: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6,
-  },
+  smallBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
   smallBtnText: { color: "#fff", fontSize: 12, fontFamily: "Inter_600SemiBold" },
   empty: { padding: 16, borderRadius: 10, alignItems: "center" },
-  row: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    padding: 12, borderWidth: 1, borderRadius: 10,
-  },
+  row: { flexDirection: "row", alignItems: "center", gap: 10, padding: 12, borderWidth: 1, borderRadius: 10 },
   iconBox: { width: 36, height: 36, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   rowTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   rowMeta: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
-  memberRow: {
-    flexDirection: "row", alignItems: "center", gap: 10,
-    padding: 10, borderWidth: 1, borderRadius: 10,
-  },
+  memberRow: { flexDirection: "row", alignItems: "center", gap: 10, padding: 10, borderWidth: 1, borderRadius: 10 },
   avatar: { width: 32, height: 32, borderRadius: 16, alignItems: "center", justifyContent: "center" },
   avatarText: { fontSize: 11, fontFamily: "Inter_700Bold" },
-  addMemberRow: {
-    flexDirection: "row", alignItems: "center", gap: 8,
-    padding: 8, borderWidth: 1, borderRadius: 10, borderStyle: "dashed",
-  },
-  addMemberInput: {
-    flex: 1, paddingHorizontal: 8, paddingVertical: 8,
-    fontSize: 14, fontFamily: "Inter_400Regular",
-  },
-  addMemberBtn: {
-    width: 36, height: 36, borderRadius: 8,
-    alignItems: "center", justifyContent: "center",
-  },
-  note: {
-    fontSize: 11, fontFamily: "Inter_400Regular", textAlign: "center",
-    paddingTop: 12, paddingHorizontal: 8, lineHeight: 16,
-  },
-  noteComposer: {
-    borderWidth: 1, borderRadius: 10, padding: 10, gap: 8,
-  },
-  noteInput: {
-    fontSize: 14, fontFamily: "Inter_400Regular",
-    minHeight: 48, textAlignVertical: "top",
-  },
-  noteComposerFooter: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-  },
+  addMemberRow: { flexDirection: "row", alignItems: "center", gap: 8, padding: 8, borderWidth: 1, borderRadius: 10, borderStyle: "dashed" },
+  addMemberInput: { flex: 1, paddingHorizontal: 8, paddingVertical: 8, fontSize: 14, fontFamily: "Inter_400Regular" },
+  addMemberBtn: { width: 36, height: 36, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  note: { fontSize: 11, fontFamily: "Inter_400Regular", textAlign: "center", paddingTop: 12, paddingHorizontal: 8, lineHeight: 16 },
+  noteComposer: { borderWidth: 1, borderRadius: 10, padding: 10, gap: 8 },
+  noteInput: { fontSize: 14, fontFamily: "Inter_400Regular", minHeight: 48, textAlignVertical: "top" },
+  noteComposerFooter: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
   noteHint: { fontSize: 11, fontFamily: "Inter_400Regular" },
-  postBtn: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
-  },
+  postBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
   postBtnText: { color: "#fff", fontSize: 12, fontFamily: "Inter_600SemiBold" },
   timeline: { gap: 0 },
   timelineRow: { flexDirection: "row", gap: 10 },
   timelineRail: { width: 14, alignItems: "center", paddingTop: 14 },
   timelineDot: { width: 10, height: 10, borderRadius: 5 },
   timelineLine: { width: 2, flex: 1, marginTop: 4, minHeight: 12 },
-  noteCard: {
-    flex: 1, borderWidth: 1, borderRadius: 10, padding: 12,
-    marginBottom: 10, gap: 4,
-  },
-  noteHeader: {
-    flexDirection: "row", alignItems: "center", justifyContent: "space-between",
-    gap: 8,
-  },
+  noteCard: { flex: 1, borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 10, gap: 4 },
+  noteHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
   noteAuthor: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   noteMeta: { fontSize: 11, fontFamily: "Inter_400Regular" },
   noteBody: { fontSize: 14, fontFamily: "Inter_400Regular", lineHeight: 20, marginTop: 2 },
   noteActionsRow: { flexDirection: "row", gap: 8, marginTop: 8 },
-  noteActionBtn: {
-    paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6,
-  },
+  noteActionBtn: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
   noteActionText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  noteIconBtn: {
-    flexDirection: "row", alignItems: "center", gap: 4,
-    paddingHorizontal: 6, paddingVertical: 4,
-  },
+  noteIconBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 6, paddingVertical: 4 },
 });
