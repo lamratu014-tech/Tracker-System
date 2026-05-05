@@ -36,6 +36,7 @@ const SetupBody = z.object({
   name: z.string().min(1),
   password: z.string().min(8),
   department: z.string().optional(),
+  setupSecret: z.string().min(1),
 });
 
 const InviteBody = z.object({
@@ -61,6 +62,12 @@ router.get("/auth/me", requireAuth, async (req, res): Promise<void> => {
 });
 
 router.post("/auth/setup", async (req, res): Promise<void> => {
+  const configuredSecret = process.env["SETUP_SECRET"];
+  if (!configuredSecret) {
+    res.status(503).json({ error: "Setup is not available. SETUP_SECRET is not configured." });
+    return;
+  }
+
   const existing = await countUsers();
   if (existing > 0) {
     res.status(409).json({ error: "App is already set up" });
@@ -73,7 +80,12 @@ router.post("/auth/setup", async (req, res): Promise<void> => {
     return;
   }
 
-  const { email, name, password, department } = parsed.data;
+  const { email, name, password, department, setupSecret } = parsed.data;
+
+  if (setupSecret !== configuredSecret) {
+    res.status(403).json({ error: "Invalid setup secret." });
+    return;
+  }
   const initials = name
     .split(" ")
     .map((n) => n[0])
@@ -162,7 +174,7 @@ router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
   });
 
   const acceptUrl = `${getAppDomain(req)}/accept-invite?token=${token}`;
-  req.log.info({ email, acceptUrl }, "Invite created");
+  req.log.info({ email }, "Invite created");
 
   await sendInviteEmail({
     toEmail: email,
@@ -277,11 +289,11 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
   await db.insert(passwordResetsTable).values({ userId: user.id, token, expiresAt });
 
   const resetUrl = `${getAppDomain(req)}/reset-password?token=${token}`;
-  req.log.info({ userId: user.id, resetUrl }, "Password reset token created");
+  req.log.info({ userId: user.id }, "Password reset token created");
 
   await sendPasswordResetEmail({ toEmail: user.email, toName: user.name, resetUrl });
 
-  res.json({ message: "If that email is registered, a reset link has been sent.", resetUrl });
+  res.json({ message: "If that email is registered, a reset link has been sent." });
 });
 
 router.post("/auth/reset-password", async (req, res): Promise<void> => {

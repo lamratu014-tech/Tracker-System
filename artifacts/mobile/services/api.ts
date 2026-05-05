@@ -60,7 +60,7 @@ export const api = {
 
   me: (token: string) => call("/auth/me", {}, token),
 
-  setup: (body: { email: string; name: string; password: string; department?: string }) =>
+  setup: (body: { email: string; name: string; password: string; department?: string; setupSecret: string }) =>
     call("/auth/setup", { method: "POST", body: JSON.stringify(body) }),
 
   login: (email: string, password: string) =>

@@ -33,7 +33,7 @@ interface AuthContextType {
 
   login: (email: string, password: string) => Promise<{ error?: string }>;
   logout: () => Promise<void>;
-  setup: (email: string, name: string, password: string, department?: string) => Promise<{ error?: string }>;
+  setup: (email: string, name: string, password: string, department?: string, setupSecret?: string) => Promise<{ error?: string }>;
   inviteUser: (email: string, name: string, role: UserRole, department?: string) => Promise<{ error?: string; acceptUrl?: string }>;
   updateUserRole: (userId: string, role: UserRole) => Promise<void>;
   deactivateUser: (userId: string) => Promise<void>;
@@ -124,9 +124,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [sessionToken]);
 
   const setup = useCallback(
-    async (email: string, name: string, password: string, department?: string): Promise<{ error?: string }> => {
+    async (email: string, name: string, password: string, department?: string, setupSecret?: string): Promise<{ error?: string }> => {
+      if (!setupSecret) return { error: "Setup secret is required." };
       try {
-        const res = await api.setup({ email, name, password, department });
+        const res = await api.setup({ email, name, password, department, setupSecret });
         if (res.ok) {
           const { token, user } = (await res.json()) as { token: string; user: AppUser };
           setNeedsSetup(false);
@@ -249,7 +250,7 @@ export function useAuth(): AuthContextType {
       sessionToken: null,
       login: async () => ({}),
       logout: async () => {},
-      setup: async () => ({}),
+      setup: async (_e, _n, _p, _d, _s) => ({}),
       inviteUser: async () => ({}),
       updateUserRole: async () => {},
       deactivateUser: async () => {},

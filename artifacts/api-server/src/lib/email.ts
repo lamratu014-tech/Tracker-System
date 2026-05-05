@@ -18,8 +18,7 @@ export async function sendPasswordResetEmail(opts: {
 
   if (!client) {
     logger.warn(
-      { resetUrl: opts.resetUrl },
-      "RESEND_API_KEY not set — password reset link logged instead of emailed"
+      "RESEND_API_KEY not set — password reset email not sent"
     );
     return;
   }
@@ -66,8 +65,7 @@ export async function sendInviteEmail(opts: {
 
   if (!client) {
     logger.warn(
-      { acceptUrl: opts.acceptUrl },
-      "RESEND_API_KEY not set — invite link logged instead of emailed"
+      "RESEND_API_KEY not set — invite email not sent"
     );
     return;
   }

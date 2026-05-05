@@ -28,6 +28,7 @@ export default function LoginScreen() {
   const [department, setDepartment] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [setupSecret, setSetupSecret] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -48,6 +49,7 @@ export default function LoginScreen() {
     }
     if (mode === "setup") {
       if (!name.trim()) { setError("Please enter your name."); return; }
+      if (!setupSecret.trim()) { setError("Please enter the setup secret."); return; }
       if (password !== confirmPassword) { setError("Passwords do not match."); return; }
       if (password.length < 8) { setError("Password must be at least 8 characters."); return; }
     }
@@ -55,7 +57,7 @@ export default function LoginScreen() {
     setLoading(true);
     const result =
       mode === "setup"
-        ? await setup(email.trim(), name.trim(), password, department.trim() || undefined)
+        ? await setup(email.trim(), name.trim(), password, department.trim() || undefined, setupSecret.trim())
         : await login(email.trim(), password);
     setLoading(false);
 
@@ -115,6 +117,14 @@ export default function LoginScreen() {
                   value={department}
                   onChange={setDepartment}
                   placeholder="e.g. Operations"
+                  colors={colors}
+                />
+                <Field
+                  label="Setup Secret"
+                  value={setupSecret}
+                  onChange={setSetupSecret}
+                  placeholder="Deployment setup secret"
+                  secureTextEntry
                   colors={colors}
                 />
               </>

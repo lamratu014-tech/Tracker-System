@@ -24,7 +24,6 @@ export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
-  const [resetUrl, setResetUrl] = useState("");
   const [error, setError] = useState("");
 
   async function handleRequest() {
@@ -35,9 +34,8 @@ export default function ForgotPasswordScreen() {
     setLoading(true);
     try {
       const res = await api.forgotPassword(trimmed);
-      const body = await res.json() as { message?: string; resetUrl?: string; error?: string };
+      const body = await res.json() as { message?: string; error?: string };
       if (res.ok) {
-        setResetUrl(body.resetUrl ?? "");
         setSent(true);
       } else {
         setError(body.error ?? "Something went wrong. Please try again.");
@@ -76,20 +74,6 @@ export default function ForgotPasswordScreen() {
                   If <Text style={{ fontFamily: "Inter_600SemiBold", color: colors.foreground }}>{email.trim()}</Text> is
                   registered, a reset link has been sent. It expires in 1 hour.
                 </Text>
-
-                {resetUrl ? (
-                  <>
-                    <View style={[styles.devBox, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-                      <Feather name="info" size={13} color={colors.primary} />
-                      <Text style={[styles.devLabel, { color: colors.mutedForeground }]}>
-                        Email not yet arriving? Use this link directly:
-                      </Text>
-                      <Text style={[styles.devUrl, { color: colors.primary }]} numberOfLines={2} selectable>
-                        {resetUrl}
-                      </Text>
-                    </View>
-                  </>
-                ) : null}
 
                 <Pressable
                   style={[styles.btn, { backgroundColor: colors.primary, marginTop: 8 }]}
@@ -172,7 +156,4 @@ const styles = StyleSheet.create({
   backLink: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 16 },
   backLinkText: { fontSize: 13, fontFamily: "Inter_500Medium" },
   successCircle: { width: 72, height: 72, borderRadius: 36, alignItems: "center", justifyContent: "center" },
-  devBox: { borderWidth: 1, borderRadius: 10, padding: 12, marginTop: 16, marginBottom: 8, gap: 6, width: "100%" },
-  devLabel: { fontSize: 11, fontFamily: "Inter_400Regular" },
-  devUrl: { fontSize: 11, fontFamily: "Inter_500Medium" },
 });
