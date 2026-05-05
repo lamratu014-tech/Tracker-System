@@ -34,7 +34,7 @@ export default function ProjectDetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { isAdmin, isTeamLeader, isOwner, currentUser } = useAuth();
+  const { isProgrammeLead, isTeamLead, currentUser } = useAuth();
   const { projects, tasks, milestones, events, updateProject, deleteProject, updateTask, createTask, updateMilestone } = useData();
 
   const project = projects.find(p => p.id === id);
@@ -60,9 +60,9 @@ export default function ProjectDetailScreen() {
   }
 
   // Permissions
-  const canEdit = isAdmin || (isTeamLeader && currentUser?.teamId === project.teamId);
-  const canEditHighLevel = canEdit || (isOwner && currentUser?.teamId === project.teamId);
-  const canDelete = isAdmin || (isTeamLeader && currentUser?.teamId === project.teamId);
+  const canEdit = isProgrammeLead || (isTeamLead && currentUser?.teamId === project.teamId);
+  const canEditHighLevel = canEdit;
+  const canDelete = isProgrammeLead || (isTeamLead && currentUser?.teamId === project.teamId);
 
   const total = projectTasks.length;
   const done = projectTasks.filter(t => t.status === "done").length;
@@ -79,17 +79,13 @@ export default function ProjectDetailScreen() {
 
   async function save() {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    if (isOwner && !isTeamLeader) {
-      await updateProject(id!, { phase: draftPhase, notes: draftNotes });
-    } else {
-      await updateProject(id!, {
-        title: draftTitle,
-        description: draftDescription,
-        phase: draftPhase,
-        notes: draftNotes,
-        status: draftStatus,
-      });
-    }
+    await updateProject(id!, {
+      title: draftTitle,
+      description: draftDescription,
+      phase: draftPhase,
+      notes: draftNotes,
+      status: draftStatus,
+    });
     setEditing(false);
   }
 
@@ -131,7 +127,7 @@ export default function ProjectDetailScreen() {
     { key: "events", label: "Events", count: projectEvents.length },
   ];
 
-  const displayTitle = editing && !isOwner ? draftTitle : project.title;
+  const displayTitle = editing ? draftTitle : project.title;
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -279,7 +275,6 @@ export default function ProjectDetailScreen() {
             <View style={styles.fieldBlock}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 4 }}>
                 <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Notes</Text>
-                {isOwner && !canEdit && <View style={[styles.ownerBadge, { backgroundColor: "#DBEAFE" }]}><Text style={styles.ownerBadgeText}>Owner can edit</Text></View>}
               </View>
               {editing ? (
                 <TextInput
@@ -469,6 +464,4 @@ const styles = StyleSheet.create({
   eventInfo: { flex: 1 },
   eventTitle: { fontSize: 14, fontFamily: "Inter_500Medium" },
   eventDate: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
-  ownerBadge: { borderRadius: 6, paddingHorizontal: 6, paddingVertical: 2 },
-  ownerBadgeText: { fontSize: 10, fontFamily: "Inter_600SemiBold", color: "#2563EB" },
 });

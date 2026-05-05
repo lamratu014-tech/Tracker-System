@@ -1,50 +1,57 @@
 import { Router } from "express";
 import { z } from "zod";
-import { db, teamsTable, personnelTable, usersTable } from "@workspace/db";
+import { db, teamsTable, personnelTable, usersTable, streamsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { requireAuth, requireAdmin, requireTeamLeader } from "../middlewares/requireAuth";
+import { requireAuth, requireProgrammeLead, requireTeamLead } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
 
 const router = Router();
 
-// GET /teams — all authenticated users get public metadata; team_leaders/owners get only names+ids
-router.get("/teams", requireAuth, async (req, res): Promise<void> => {
+// GET /teams — all authenticated users see all teams (name/id/stream)
+router.get("/teams", requireAuth, async (_req, res): Promise<void> => {
   const teams = await db
     .select({
       id: teamsTable.id,
       name: teamsTable.name,
+      streamId: teamsTable.streamId,
       functionLabel: teamsTable.functionLabel,
       createdAt: teamsTable.createdAt,
+      streamName: streamsTable.name,
     })
     .from(teamsTable)
+    .leftJoin(streamsTable, eq(teamsTable.streamId, streamsTable.id))
     .orderBy(teamsTable.name);
   res.json(teams);
 });
 
-// GET /teams/:id — admin only for full detail; others get public metadata
+// GET /teams/:id
 router.get("/teams/:id", requireAuth, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const user = req.authUser!;
-
-  const [team] = await db.select().from(teamsTable).where(eq(teamsTable.id, id)).limit(1);
+  const [team] = await db
+    .select({
+      id: teamsTable.id,
+      name: teamsTable.name,
+      streamId: teamsTable.streamId,
+      functionLabel: teamsTable.functionLabel,
+      createdAt: teamsTable.createdAt,
+      streamName: streamsTable.name,
+    })
+    .from(teamsTable)
+    .leftJoin(streamsTable, eq(teamsTable.streamId, streamsTable.id))
+    .where(eq(teamsTable.id, id))
+    .limit(1);
   if (!team) { res.status(404).json({ error: "Team not found" }); return; }
-
-  // Non-admins outside this team only see public metadata
-  if (user.role !== "admin" && user.teamId !== id) {
-    res.json({ id: team.id, name: team.name, functionLabel: team.functionLabel });
-    return;
-  }
-
   res.json(team);
 });
 
 const TeamBody = z.object({
   name: z.string().min(1),
+  streamId: z.string().optional().nullable(),
   functionLabel: z.string().optional(),
 });
 
-// POST /teams — admin only
-router.post("/teams", requireAdmin, async (req, res): Promise<void> => {
+// POST /teams — programme_lead only
+router.post("/teams", requireProgrammeLead, async (req, res): Promise<void> => {
   const parsed = TeamBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
@@ -53,8 +60,8 @@ router.post("/teams", requireAdmin, async (req, res): Promise<void> => {
   res.status(201).json(team);
 });
 
-// PATCH /teams/:id — admin only
-router.patch("/teams/:id", requireAdmin, async (req, res): Promise<void> => {
+// PATCH /teams/:id — programme_lead only
+router.patch("/teams/:id", requireProgrammeLead, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const parsed = TeamBody.partial().safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
@@ -66,8 +73,8 @@ router.patch("/teams/:id", requireAdmin, async (req, res): Promise<void> => {
   res.json(team);
 });
 
-// DELETE /teams/:id — admin only
-router.delete("/teams/:id", requireAdmin, async (req, res): Promise<void> => {
+// DELETE /teams/:id — programme_lead only
+router.delete("/teams/:id", requireProgrammeLead, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const [team] = await db.delete(teamsTable).where(eq(teamsTable.id, id)).returning();
   if (!team) { res.status(404).json({ error: "Team not found" }); return; }
@@ -76,44 +83,28 @@ router.delete("/teams/:id", requireAdmin, async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
-// POST /teams/:id/assign-leader — admin assigns a team_leader to a team
-router.post("/teams/:id/assign-leader", requireAdmin, async (req, res): Promise<void> => {
+// POST /teams/:id/assign-lead — programme_lead assigns a team_lead to a team
+router.post("/teams/:id/assign-lead", requireProgrammeLead, async (req, res): Promise<void> => {
   const teamId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const { userId } = z.object({ userId: z.string() }).parse(req.body);
 
   const [user] = await db
     .update(usersTable)
-    .set({ teamId, role: "team_leader" })
+    .set({ teamId, role: "team_lead" })
     .where(eq(usersTable.id, userId))
     .returning();
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
-
-  res.json(user);
-});
-
-// POST /teams/:id/assign-owner — admin assigns an owner to a team
-router.post("/teams/:id/assign-owner", requireAdmin, async (req, res): Promise<void> => {
-  const teamId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
-  const { userId } = z.object({ userId: z.string() }).parse(req.body);
-
-  const [user] = await db
-    .update(usersTable)
-    .set({ teamId, role: "owner" })
-    .where(eq(usersTable.id, userId))
-    .returning();
-  if (!user) { res.status(404).json({ error: "User not found" }); return; }
-
   res.json(user);
 });
 
 // ─── Personnel ────────────────────────────────────────────────────────────────
 
-// GET /teams/:id/personnel — admin or members of that team
+// GET /teams/:id/personnel — programme_lead or team_lead of that team
 router.get("/teams/:id/personnel", requireAuth, async (req, res): Promise<void> => {
   const teamId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const user = req.authUser!;
 
-  if (user.role !== "admin" && user.teamId !== teamId) {
+  if (user.role !== "programme_lead" && user.teamId !== teamId) {
     res.status(403).json({ error: "Access denied" });
     return;
   }
@@ -131,12 +122,12 @@ const PersonnelBody = z.object({
   roleLabel: z.string().optional(),
 });
 
-// POST /teams/:id/personnel — admin or team_leader of that team
-router.post("/teams/:id/personnel", requireTeamLeader, async (req, res): Promise<void> => {
+// POST /teams/:id/personnel — programme_lead or team_lead of that team
+router.post("/teams/:id/personnel", requireTeamLead, async (req, res): Promise<void> => {
   const teamId = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const user = req.authUser!;
 
-  if (user.role !== "admin" && user.teamId !== teamId) {
+  if (user.role !== "programme_lead" && user.teamId !== teamId) {
     res.status(403).json({ error: "Access denied" });
     return;
   }
@@ -149,14 +140,14 @@ router.post("/teams/:id/personnel", requireTeamLeader, async (req, res): Promise
   res.status(201).json(member);
 });
 
-// PATCH /personnel/:id — admin or team_leader of that team
-router.patch("/personnel/:id", requireTeamLeader, async (req, res): Promise<void> => {
+// PATCH /personnel/:id — programme_lead or team_lead of that team
+router.patch("/personnel/:id", requireTeamLead, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const user = req.authUser!;
 
   const [existing] = await db.select().from(personnelTable).where(eq(personnelTable.id, id)).limit(1);
   if (!existing) { res.status(404).json({ error: "Not found" }); return; }
-  if (user.role !== "admin" && user.teamId !== existing.teamId) { res.status(403).json({ error: "Access denied" }); return; }
+  if (user.role !== "programme_lead" && user.teamId !== existing.teamId) { res.status(403).json({ error: "Access denied" }); return; }
 
   const parsed = PersonnelBody.partial().safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
@@ -165,14 +156,14 @@ router.patch("/personnel/:id", requireTeamLeader, async (req, res): Promise<void
   res.json(member);
 });
 
-// DELETE /personnel/:id — admin or team_leader of that team
-router.delete("/personnel/:id", requireTeamLeader, async (req, res): Promise<void> => {
+// DELETE /personnel/:id — programme_lead or team_lead of that team
+router.delete("/personnel/:id", requireTeamLead, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const user = req.authUser!;
 
   const [existing] = await db.select().from(personnelTable).where(eq(personnelTable.id, id)).limit(1);
   if (!existing) { res.status(404).json({ error: "Not found" }); return; }
-  if (user.role !== "admin" && user.teamId !== existing.teamId) { res.status(403).json({ error: "Access denied" }); return; }
+  if (user.role !== "programme_lead" && user.teamId !== existing.teamId) { res.status(403).json({ error: "Access denied" }); return; }
 
   await db.delete(personnelTable).where(eq(personnelTable.id, id));
   await logActivity({ user, actionType: "delete", entityType: "personnel", entityId: id, entityTitle: existing.name });

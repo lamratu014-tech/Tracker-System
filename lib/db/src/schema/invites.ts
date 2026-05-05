@@ -8,9 +8,9 @@ export const invitesTable = pgTable("invite_tokens", {
   token: text("token").notNull().unique(),
   name: text("name").notNull().default(""),
   role: text("role")
-    .$type<"admin" | "manager" | "viewer">()
+    .$type<"programme_lead" | "team_lead">()
     .notNull()
-    .default("viewer"),
+    .default("team_lead"),
   department: text("department").notNull().default(""),
   invitedByName: text("invited_by_name").notNull(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

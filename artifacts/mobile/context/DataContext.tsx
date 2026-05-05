@@ -3,7 +3,6 @@ import React, {
   useCallback,
   useContext,
   useEffect,
-  useRef,
   useState,
 } from "react";
 import { api } from "@/services/api";
@@ -14,9 +13,27 @@ export type ProjectStatus = "not_started" | "in_progress" | "at_risk" | "complet
 export type TaskStatus = "todo" | "in_progress" | "at_risk" | "done";
 export type TaskPriority = "low" | "medium" | "high";
 
+export interface Programme {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Stream {
+  id: string;
+  name: string;
+  description: string;
+  programmeId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Team {
   id: string;
   name: string;
+  streamId: string | null;
+  streamName: string | null;
   functionLabel?: string | null;
   createdAt: string;
 }
@@ -105,6 +122,8 @@ export interface ActivityLog {
 }
 
 interface DataContextType {
+  programme: Programme | null;
+  streams: Stream[];
   teams: Team[];
   personnel: Personnel[];
   projects: Project[];
@@ -114,9 +133,18 @@ interface DataContextType {
   activityLogs: ActivityLog[];
   isLoading: boolean;
 
+  // Programme
+  updateProgramme: (id: string, body: { name: string }) => Promise<void>;
+
+  // Streams
+  createStream: (body: { name: string; description?: string; programmeId: string }) => Promise<void>;
+  updateStream: (id: string, body: { name?: string; description?: string }) => Promise<void>;
+  deleteStream: (id: string) => Promise<void>;
+  refreshStreams: () => Promise<void>;
+
   // Teams
-  createTeam: (body: { name: string; functionLabel?: string }) => Promise<void>;
-  updateTeam: (id: string, body: { name?: string; functionLabel?: string }) => Promise<void>;
+  createTeam: (body: { name: string; streamId?: string | null; functionLabel?: string }) => Promise<void>;
+  updateTeam: (id: string, body: { name?: string; streamId?: string | null; functionLabel?: string }) => Promise<void>;
   deleteTeam: (id: string) => Promise<void>;
   refreshTeams: () => Promise<void>;
 
@@ -154,7 +182,12 @@ interface DataContextType {
   refreshActivity: () => Promise<void>;
 
   // Helpers
+  getProgrammeById: (id: string) => Programme | undefined;
+  getStreamById: (id: string) => Stream | undefined;
+  getTeamById: (id: string) => Team | undefined;
+  getTeamsByStream: (streamId: string) => Team[];
   getProjectById: (id: string) => Project | undefined;
+  getProjectsByTeam: (teamId: string) => Project[];
   getTasksByProject: (projectId: string) => Task[];
   getMilestonesByProject: (projectId: string) => Milestone[];
   getEventsByDate: (dateStr: string) => CalendarEvent[];
@@ -166,6 +199,8 @@ const DataContext = createContext<DataContextType | null>(null);
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const { sessionToken, currentUser, isAuthenticated } = useAuth();
 
+  const [programme, setProgramme] = useState<Programme | null>(null);
+  const [streams, setStreams] = useState<Stream[]>([]);
   const [teams, setTeams] = useState<Team[]>([]);
   const [personnel, setPersonnel] = useState<Personnel[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
@@ -176,6 +211,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(false);
 
   const token = sessionToken;
+
+  const refreshProgramme = useCallback(async () => {
+    if (!token) return;
+    const res = await api.getProgramme(token);
+    if (res.ok) setProgramme((await res.json()) as Programme);
+  }, [token]);
+
+  const refreshStreams = useCallback(async () => {
+    if (!token) return;
+    const res = await api.getStreams(token);
+    if (res.ok) setStreams((await res.json()) as Stream[]);
+  }, [token]);
 
   const refreshTeams = useCallback(async () => {
     if (!token) return;
@@ -242,6 +289,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     if (!isAuthenticated || !token) return;
     setIsLoading(true);
     Promise.all([
+      refreshProgramme(),
+      refreshStreams(),
       refreshTeams(),
       refreshProjects(),
       refreshEvents(),
@@ -265,14 +314,40 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     });
   }, [projects.length, token]);
 
+  // Programme
+  const updateProgramme = useCallback(async (id: string, body: { name: string }) => {
+    if (!token) return;
+    const res = await api.updateProgramme(token, id, body);
+    if (res.ok) setProgramme((await res.json()) as Programme);
+  }, [token]);
+
+  // Streams
+  const createStream = useCallback(async (body: { name: string; description?: string; programmeId: string }) => {
+    if (!token) return;
+    const res = await api.createStream(token, body);
+    if (res.ok) await refreshStreams();
+  }, [token, refreshStreams]);
+
+  const updateStream = useCallback(async (id: string, body: { name?: string; description?: string }) => {
+    if (!token) return;
+    const res = await api.updateStream(token, id, body);
+    if (res.ok) await refreshStreams();
+  }, [token, refreshStreams]);
+
+  const deleteStream = useCallback(async (id: string) => {
+    if (!token) return;
+    const res = await api.deleteStream(token, id);
+    if (res.ok || res.status === 204) await refreshStreams();
+  }, [token, refreshStreams]);
+
   // Teams
-  const createTeam = useCallback(async (body: { name: string; functionLabel?: string }) => {
+  const createTeam = useCallback(async (body: { name: string; streamId?: string | null; functionLabel?: string }) => {
     if (!token) return;
     const res = await api.createTeam(token, body);
     if (res.ok) await refreshTeams();
   }, [token, refreshTeams]);
 
-  const updateTeam = useCallback(async (id: string, body: { name?: string; functionLabel?: string }) => {
+  const updateTeam = useCallback(async (id: string, body: { name?: string; streamId?: string | null; functionLabel?: string }) => {
     if (!token) return;
     const res = await api.updateTeam(token, id, body);
     if (res.ok) await refreshTeams();
@@ -412,7 +487,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   }, [token]);
 
   // Helpers
+  const getProgrammeById = useCallback((id: string) => programme?.id === id ? programme : undefined, [programme]);
+  const getStreamById = useCallback((id: string) => streams.find((s) => s.id === id), [streams]);
+  const getTeamById = useCallback((id: string) => teams.find((t) => t.id === id), [teams]);
+  const getTeamsByStream = useCallback((streamId: string) => teams.filter((t) => t.streamId === streamId), [teams]);
   const getProjectById = useCallback((id: string) => projects.find((p) => p.id === id), [projects]);
+  const getProjectsByTeam = useCallback((teamId: string) => projects.filter((p) => p.teamId === teamId), [projects]);
   const getTasksByProject = useCallback((projectId: string) => tasks.filter((t) => t.projectId === projectId), [tasks]);
   const getMilestonesByProject = useCallback((projectId: string) => milestones.filter((m) => m.projectId === projectId), [milestones]);
   const getPersonnelByTeam = useCallback((teamId: string) => personnel.filter((p) => p.teamId === teamId), [personnel]);
@@ -430,7 +510,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <DataContext.Provider value={{
-      teams, personnel, projects, tasks, milestones, events, activityLogs, isLoading,
+      programme, streams, teams, personnel, projects, tasks, milestones, events, activityLogs, isLoading,
+      updateProgramme,
+      createStream, updateStream, deleteStream, refreshStreams,
       createTeam, updateTeam, deleteTeam, refreshTeams,
       createPersonnel, updatePersonnel, deletePersonnel, refreshPersonnel,
       createProject, updateProject, deleteProject, refreshProjects,
@@ -438,7 +520,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       createMilestone, updateMilestone, deleteMilestone, refreshMilestones,
       createEvent, updateEvent, deleteEvent, refreshEvents,
       refreshActivity,
-      getProjectById, getTasksByProject, getMilestonesByProject, getEventsByDate, getPersonnelByTeam,
+      getProgrammeById, getStreamById, getTeamById, getTeamsByStream,
+      getProjectById, getProjectsByTeam, getTasksByProject, getMilestonesByProject,
+      getEventsByDate, getPersonnelByTeam,
     }}>
       {children}
     </DataContext.Provider>
@@ -446,7 +530,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 }
 
 const DATA_DEFAULTS: DataContextType = {
-  teams: [], personnel: [], projects: [], tasks: [], milestones: [], events: [], activityLogs: [], isLoading: false,
+  programme: null, streams: [], teams: [], personnel: [], projects: [], tasks: [], milestones: [], events: [], activityLogs: [], isLoading: false,
+  updateProgramme: async () => {},
+  createStream: async () => {}, updateStream: async () => {}, deleteStream: async () => {}, refreshStreams: async () => {},
   createTeam: async () => {}, updateTeam: async () => {}, deleteTeam: async () => {}, refreshTeams: async () => {},
   createPersonnel: async () => {}, updatePersonnel: async () => {}, deletePersonnel: async () => {}, refreshPersonnel: async () => {},
   createProject: async () => null, updateProject: async () => {}, deleteProject: async () => {}, refreshProjects: async () => {},
@@ -454,7 +540,9 @@ const DATA_DEFAULTS: DataContextType = {
   createMilestone: async () => {}, updateMilestone: async () => {}, deleteMilestone: async () => {}, refreshMilestones: async () => {},
   createEvent: async () => {}, updateEvent: async () => {}, deleteEvent: async () => {}, refreshEvents: async () => {},
   refreshActivity: async () => {},
-  getProjectById: () => undefined, getTasksByProject: () => [], getMilestonesByProject: () => [],
+  getProgrammeById: () => undefined, getStreamById: () => undefined, getTeamById: () => undefined,
+  getTeamsByStream: () => [], getProjectById: () => undefined, getProjectsByTeam: () => [],
+  getTasksByProject: () => [], getMilestonesByProject: () => [],
   getEventsByDate: () => [], getPersonnelByTeam: () => [],
 };
 

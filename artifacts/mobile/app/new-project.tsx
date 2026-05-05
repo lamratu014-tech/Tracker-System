@@ -34,7 +34,7 @@ export default function NewProjectScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { createProject, teams } = useData();
-  const { currentUser, isAdmin } = useAuth();
+  const { currentUser, isProgrammeLead } = useAuth();
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -42,7 +42,7 @@ export default function NewProjectScreen() {
   const [color, setColor] = useState(PROJECT_COLORS[0]);
   const [status, setStatus] = useState<ProjectStatus>("not_started");
   const [selectedTeamId, setSelectedTeamId] = useState<string>(
-    isAdmin ? "" : (currentUser?.teamId ?? "")
+    isProgrammeLead ? "" : (currentUser?.teamId ?? "")
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -81,8 +81,8 @@ export default function NewProjectScreen() {
       <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: botPad }} showsVerticalScrollIndicator={false}>
         <Text style={[styles.heading, { color: colors.foreground }]}>New Project</Text>
 
-        {/* Team selector — admin picks any team; team_leader defaults to their own */}
-        {isAdmin && (
+        {/* Team selector — programme_lead picks any team; team_lead defaults to their own */}
+        {isProgrammeLead && (
           <FormField label="Team">
             {teams.length === 0 ? (
               <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>No teams yet. Create a team in Admin first.</Text>
@@ -109,7 +109,7 @@ export default function NewProjectScreen() {
           </FormField>
         )}
 
-        {!isAdmin && currentUser?.teamId && (
+        {!isProgrammeLead && currentUser?.teamId && (
           <FormField label="Team">
             <View style={[styles.teamFixed, { backgroundColor: colors.muted }]}>
               <Feather name="users" size={14} color={colors.primary} />

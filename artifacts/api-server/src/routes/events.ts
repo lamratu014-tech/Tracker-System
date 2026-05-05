@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
-import { db, eventsTable, eventInvitationsTable, teamsTable } from "@workspace/db";
-import { eq, inArray } from "drizzle-orm";
-import { requireAuth, requireTeamLeader } from "../middlewares/requireAuth";
+import { db, eventsTable, eventInvitationsTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { requireAuth, requireTeamLead } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
 
 const router = Router();
@@ -19,18 +19,16 @@ router.get("/events", requireAuth, async (req, res): Promise<void> => {
       .filter((inv) => inv.eventId === event.id)
       .map((inv) => inv.teamId);
 
-    if (user.role === "admin") {
+    if (user.role === "programme_lead") {
       return [{ ...event, invitedTeamIds, visibility: "full" as const }];
     }
 
     if (!user.teamId) return [];
 
-    // Creator's team sees full event
     if (event.createdByTeamId === user.teamId) {
       return [{ ...event, invitedTeamIds, visibility: "full" as const }];
     }
 
-    // Invited team sees only public fields
     if (invitedTeamIds.includes(user.teamId)) {
       return [{
         id: event.id,
@@ -70,7 +68,7 @@ router.get("/events/:id", requireAuth, async (req, res): Promise<void> => {
   const invitations = await db.select().from(eventInvitationsTable).where(eq(eventInvitationsTable.eventId, id));
   const invitedTeamIds = invitations.map((i) => i.teamId);
 
-  if (user.role === "admin" || event.createdByTeamId === user.teamId) {
+  if (user.role === "programme_lead" || event.createdByTeamId === user.teamId) {
     res.json({ ...event, invitedTeamIds, visibility: "full" });
     return;
   }
@@ -115,15 +113,9 @@ const EventBody = z.object({
   invitedTeamIds: z.array(z.string()).optional(),
 });
 
-// POST /events — auth required; team assigned from user
-router.post("/events", requireAuth, async (req, res): Promise<void> => {
+// POST /events — team_lead or programme_lead
+router.post("/events", requireTeamLead, async (req, res): Promise<void> => {
   const user = req.authUser!;
-
-  if (user.role === "owner") {
-    res.status(403).json({ error: "Owners cannot create events" });
-    return;
-  }
-
   const parsed = EventBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
@@ -148,14 +140,14 @@ router.post("/events", requireAuth, async (req, res): Promise<void> => {
 });
 
 // PATCH /events/:id
-router.patch("/events/:id", requireAuth, async (req, res): Promise<void> => {
+router.patch("/events/:id", requireTeamLead, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const user = req.authUser!;
 
   const [existing] = await db.select().from(eventsTable).where(eq(eventsTable.id, id)).limit(1);
   if (!existing) { res.status(404).json({ error: "Event not found" }); return; }
 
-  if (user.role !== "admin" && existing.createdByTeamId !== user.teamId) {
+  if (user.role !== "programme_lead" && existing.createdByTeamId !== user.teamId) {
     res.status(403).json({ error: "Access denied" });
     return;
   }
@@ -186,14 +178,14 @@ router.patch("/events/:id", requireAuth, async (req, res): Promise<void> => {
 });
 
 // DELETE /events/:id
-router.delete("/events/:id", requireTeamLeader, async (req, res): Promise<void> => {
+router.delete("/events/:id", requireTeamLead, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const user = req.authUser!;
 
   const [existing] = await db.select().from(eventsTable).where(eq(eventsTable.id, id)).limit(1);
   if (!existing) { res.status(404).json({ error: "Event not found" }); return; }
 
-  if (user.role !== "admin" && existing.createdByTeamId !== user.teamId) {
+  if (user.role !== "programme_lead" && existing.createdByTeamId !== user.teamId) {
     res.status(403).json({ error: "Access denied" });
     return;
   }

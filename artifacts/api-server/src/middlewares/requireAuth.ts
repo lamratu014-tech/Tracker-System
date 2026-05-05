@@ -30,31 +30,35 @@ export async function requireAuth(
   next();
 }
 
-export async function requireAdmin(
+export async function requireProgrammeLead(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   await requireAuth(req, res, () => {
-    if (req.authUser?.role !== "admin") {
-      res.status(403).json({ error: "Admin access required" });
+    if (req.authUser?.role !== "programme_lead") {
+      res.status(403).json({ error: "Programme Lead access required" });
       return;
     }
     next();
   });
 }
 
-export async function requireTeamLeader(
+export async function requireTeamLead(
   req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> {
   await requireAuth(req, res, () => {
     const role = req.authUser?.role;
-    if (role !== "admin" && role !== "team_leader") {
-      res.status(403).json({ error: "Team leader access required" });
+    if (role !== "programme_lead" && role !== "team_lead") {
+      res.status(403).json({ error: "Team Lead access required" });
       return;
     }
     next();
   });
 }
+
+// Aliases for backward compat during migration
+export const requireAdmin = requireProgrammeLead;
+export const requireTeamLeader = requireTeamLead;

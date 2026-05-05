@@ -7,7 +7,7 @@ import React, {
 } from "react";
 import { api, getStoredToken, storeToken, clearToken } from "@/services/api";
 
-export type UserRole = "admin" | "team_leader" | "owner";
+export type UserRole = "programme_lead" | "team_lead";
 
 export interface AppUser {
   id: string;
@@ -25,9 +25,8 @@ export interface AppUser {
 interface AuthContextType {
   currentUser: AppUser | null;
   users: AppUser[];
-  isAdmin: boolean;
-  isTeamLeader: boolean;
-  isOwner: boolean;
+  isProgrammeLead: boolean;
+  isTeamLead: boolean;
   isLoading: boolean;
   isAuthenticated: boolean;
   needsSetup: boolean;
@@ -63,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const user = (await res.json()) as AppUser;
             setCurrentUser(user);
             setSessionToken(token);
-            if (user.role === "admin") {
+            if (user.role === "programme_lead") {
               const usersRes = await api.getUsers(token);
               if (usersRes.ok) setUsers((await usersRes.json()) as AppUser[]);
             }
@@ -91,7 +90,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       await storeToken(token);
       setSessionToken(token);
       setCurrentUser(user);
-      if (user.role === "admin") {
+      if (user.role === "programme_lead") {
         const usersRes = await api.getUsers(token);
         if (usersRes.ok) setUsers((await usersRes.json()) as AppUser[]);
       } else {
@@ -150,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refreshUsers = useCallback(async () => {
-    if (!sessionToken || currentUser?.role !== "admin") return;
+    if (!sessionToken || currentUser?.role !== "programme_lead") return;
     try {
       const res = await api.getUsers(sessionToken);
       if (res.ok) setUsers((await res.json()) as AppUser[]);
@@ -211,19 +210,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     [sessionToken, refreshUsers]
   );
 
+  const isProgrammeLead = currentUser?.role === "programme_lead";
+  const isTeamLead = isProgrammeLead || currentUser?.role === "team_lead";
   const isAuthenticated = !!currentUser;
-  const isAdmin = currentUser?.role === "admin";
-  const isTeamLeader = isAdmin || currentUser?.role === "team_leader";
-  const isOwner = currentUser?.role === "owner";
 
   return (
     <AuthContext.Provider
       value={{
         currentUser,
         users,
-        isAdmin,
-        isTeamLeader,
-        isOwner,
+        isProgrammeLead,
+        isTeamLead,
         isLoading,
         isAuthenticated,
         needsSetup,
@@ -250,9 +247,8 @@ export function useAuth(): AuthContextType {
     return {
       currentUser: null,
       users: [],
-      isAdmin: false,
-      isTeamLeader: false,
-      isOwner: false,
+      isProgrammeLead: false,
+      isTeamLead: false,
       isLoading: true,
       isAuthenticated: false,
       needsSetup: false,

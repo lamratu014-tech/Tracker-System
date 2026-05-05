@@ -1,13 +1,15 @@
 import { pgTable, text, timestamp } from "drizzle-orm/pg-core";
-import { streamsTable } from "./streams";
+import { programmesTable } from "./programmes";
 
-export const teamsTable = pgTable("teams", {
+export const streamsTable = pgTable("streams", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
   name: text("name").notNull(),
-  streamId: text("stream_id").references(() => streamsTable.id, { onDelete: "set null" }),
-  functionLabel: text("function_label"),
+  description: text("description").notNull().default(""),
+  programmeId: text("programme_id")
+    .notNull()
+    .references(() => programmesTable.id, { onDelete: "cascade" }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -17,4 +19,4 @@ export const teamsTable = pgTable("teams", {
     .$onUpdate(() => new Date()),
 });
 
-export type Team = typeof teamsTable.$inferSelect;
+export type Stream = typeof streamsTable.$inferSelect;

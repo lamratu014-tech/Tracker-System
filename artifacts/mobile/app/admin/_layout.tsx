@@ -8,13 +8,13 @@ import { useEffect } from "react";
 export default function AdminLayout() {
   const colors = useColors();
   const router = useRouter();
-  const { isAdmin } = useAuth();
+  const { isProgrammeLead } = useAuth();
 
   useEffect(() => {
-    if (!isAdmin) router.replace("/(tabs)");
-  }, [isAdmin]);
+    if (!isProgrammeLead) router.replace("/(tabs)");
+  }, [isProgrammeLead]);
 
-  if (!isAdmin) return null;
+  if (!isProgrammeLead) return null;
 
   return (
     <Stack
@@ -27,7 +27,7 @@ export default function AdminLayout() {
       <Stack.Screen
         name="index"
         options={{
-          title: "Admin Panel",
+          title: "Programme Lead Panel",
           headerLeft: () => (
             <TouchableOpacity onPress={() => router.back()} style={{ marginLeft: -4, padding: 8 }}>
               <Feather name="x" size={20} color="rgba(255,255,255,0.7)" />

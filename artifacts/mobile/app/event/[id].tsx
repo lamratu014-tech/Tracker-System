@@ -24,7 +24,7 @@ export default function EventDetailScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { currentUser, isAdmin } = useAuth();
+  const { currentUser, isProgrammeLead } = useAuth();
   const { events, updateEvent, deleteEvent, getProjectById, teams } = useData();
 
   const event = events.find(e => e.id === id);
@@ -45,7 +45,7 @@ export default function EventDetailScreen() {
 
   const project = event.projectId ? getProjectById(event.projectId) : undefined;
   const isFullView = event.visibility === "full";
-  const canEdit = isAdmin || (isFullView && event.createdByTeamId === currentUser?.teamId);
+  const canEdit = isProgrammeLead || (isFullView && event.createdByTeamId === currentUser?.teamId);
 
   const creatorTeam = teams.find(t => t.id === event.createdByTeamId);
   const invitedTeams = teams.filter(t => event.invitedTeamIds.includes(t.id));

@@ -2,6 +2,8 @@ export * from "./users";
 export * from "./invites";
 export * from "./sessions";
 export * from "./passwordResets";
+export * from "./programmes";
+export * from "./streams";
 export * from "./teams";
 export * from "./personnel";
 export * from "./projects";

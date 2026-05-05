@@ -16,13 +16,13 @@ function NativeTabLayout() {
         <Icon sf={{ default: "house", selected: "house.fill" }} />
         <Label>Dashboard</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="calendar">
-        <Icon sf={{ default: "calendar", selected: "calendar.fill" }} />
-        <Label>Calendar</Label>
+      <NativeTabs.Trigger name="programme">
+        <Icon sf={{ default: "square.grid.2x2", selected: "square.grid.2x2.fill" }} />
+        <Label>Programme</Label>
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="projects">
-        <Icon sf={{ default: "briefcase", selected: "briefcase.fill" }} />
-        <Label>Projects</Label>
+      <NativeTabs.Trigger name="calendar">
+        <Icon sf={{ default: "calendar", selected: "calendar" }} />
+        <Label>Calendar</Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">
         <Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
@@ -87,6 +87,18 @@ function ClassicTabLayout() {
         }}
       />
       <Tabs.Screen
+        name="programme"
+        options={{
+          title: "Programme",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="square.grid.2x2" tintColor={color} size={24} />
+            ) : (
+              <Feather name="grid" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
         name="calendar"
         options={{
           title: "Calendar",
@@ -95,18 +107,6 @@ function ClassicTabLayout() {
               <SymbolView name="calendar" tintColor={color} size={24} />
             ) : (
               <Feather name="calendar" size={22} color={color} />
-            ),
-        }}
-      />
-      <Tabs.Screen
-        name="projects"
-        options={{
-          title: "Projects",
-          tabBarIcon: ({ color }) =>
-            isIOS ? (
-              <SymbolView name="briefcase" tintColor={color} size={24} />
-            ) : (
-              <Feather name="briefcase" size={22} color={color} />
             ),
         }}
       />

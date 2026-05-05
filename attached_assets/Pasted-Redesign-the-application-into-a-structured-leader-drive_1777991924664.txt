@@ -1,0 +1,194 @@
+Redesign the application into a structured, leader-driven hierarchical system with controlled access and clear separation of responsibility.
+
+### 1. Core Structure
+
+- The top-level entity must be called “Programme”
+- Programme name must be editable by Programme Leads (Admins)
+
+- Under each Programme, create Streams (major functional divisions)
+- Under each Stream, create Teams (execution groups)
+
+Final hierarchy:
+Programme → Stream → Team → Tasks / Calendar / Files
+
+---
+
+### 2. System Philosophy
+
+This is a leader-driven platform, not a collaborative tool.
+
+- Leaders control all structure, data, and updates  
+- Members do not access the system  
+- Information flows upward  
+- Decisions flow downward  
+- Visibility is tiered and restricted  
+
+---
+
+### 3. Roles and Permissions
+
+#### Programme Lead (Admin / Owner merged)
+- Full access to entire Programme  
+- Can:
+  - Edit Programme name  
+  - Create, edit, delete Streams  
+  - Create, edit, delete Teams  
+  - Assign Team Leads  
+  - View and edit all data  
+
+Workspace:
+- “My Team Workspace” (Global Command View)
+- Shows all Streams and Teams with full detail
+
+---
+
+#### Stream-Level Visibility (for structure only)
+Streams act as grouped categories (e.g. Marketing, Operations)
+
+- Used to organise Teams  
+- Not directly task-managed  
+- Visible to all roles within the Programme  
+
+---
+
+#### Team Lead
+- Full control of their own Team  
+- Can manage:
+  - tasks  
+  - calendar  
+  - members (records only)
+
+Visibility Rules:
+- Can see:
+  - all Streams  
+  - all Team names within those Streams  
+
+- Cannot:
+  - access other Teams’ data  
+  - edit anything outside their Team  
+
+Workspace:
+- “My Team Workspace” (Team-Level View)
+- Their Team = full access  
+- Other Teams = visible but locked  
+
+---
+
+#### Members (No Access)
+- No login  
+- No system access  
+- Exist only as named records within Teams  
+- Can be assigned to tasks  
+
+---
+
+### 4. Admin Deep Access Feature (Important)
+
+Programme Leads must be able to:
+
+- Click into ANY Stream  
+- Click into ANY Team  
+- Override access restrictions  
+
+This ensures full control when needed.
+
+---
+
+### 5. Visibility & Access Logic
+
+- All users in a Programme can:
+  - See Streams  
+  - See Team names  
+
+- Only authorised roles can:
+  - Open and interact with Team data  
+
+Access Rules:
+
+- Programme Lead → full access to all Streams and Teams  
+- Team Lead → full access to own Team only  
+- Other Teams → visible but locked  
+
+---
+
+### 6. Dashboard Requirements
+
+#### Programme Lead Dashboard:
+- Overview of all Streams  
+- Breakdown of Teams within each Stream  
+- Progress tracking per Team  
+- Overdue task alerts  
+- “At Risk” indicators  
+- Activity feed across Programme  
+
+---
+
+#### Team Lead Dashboard:
+- Their Team task pipeline  
+- Calendar  
+- Workload overview  
+- Stream view showing:
+  - other Teams (locked)  
+  - status indicators only  
+
+---
+
+### 7. Team UI Requirements
+
+Each Team must include:
+- Task management system  
+- Calendar  
+- Member list (records only)  
+- Notes or file section  
+
+---
+
+### 8. Locked Team Preview UI
+
+For Teams without access, display:
+- Team name  
+- Parent Stream  
+- Status (e.g. On Track, Delayed)  
+- Progress indicator  
+
+These must:
+- Not be clickable for non-authorised users  
+- Clearly show restricted access  
+
+---
+
+### 9. Task Workflow
+
+- Tasks are created by Programme Leads or Team Leads  
+- Tasks are assigned to Members (non-users)  
+- Work is completed outside the system  
+
+Include:
+- Manual update capability by Team Leads  
+- Optional: simple external update input (no login required)
+
+---
+
+### 10. Calendar
+
+- Controlled by leaders only  
+- Filterable by:
+  - Programme  
+  - Stream  
+  - Team  
+
+---
+
+### 11. Design Goal
+
+The system must feel like:
+- A command centre for leadership
+- Structured, hierarchical, and controlled  
+- Clean separation between visibility and access  
+
+Avoid any design patterns that resemble open collaboration tools.
+
+---
+
+Ensure navigation is intuitive and always follows:
+Programme → Stream → Team → Tasks

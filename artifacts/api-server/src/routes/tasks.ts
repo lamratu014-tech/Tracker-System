@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { db, tasksTable, projectsTable, personnelTable, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { requireAuth, requireTeamLeader } from "../middlewares/requireAuth";
+import { requireAuth, requireTeamLead } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
 
 const router = Router();
@@ -14,7 +14,7 @@ router.get("/projects/:projectId/tasks", requireAuth, async (req, res): Promise<
 
   const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, projectId)).limit(1);
   if (!project) { res.status(404).json({ error: "Project not found" }); return; }
-  if (user.role !== "admin" && user.teamId !== project.teamId) { res.status(403).json({ error: "Access denied" }); return; }
+  if (user.role !== "programme_lead" && user.teamId !== project.teamId) { res.status(403).json({ error: "Access denied" }); return; }
 
   const tasks = await db
     .select({
@@ -36,7 +36,6 @@ router.get("/projects/:projectId/tasks", requireAuth, async (req, res): Promise<
     .where(eq(tasksTable.projectId, projectId))
     .orderBy(tasksTable.createdAt);
 
-  // Enrich with personnel names
   const personnelIds = tasks
     .filter((t) => t.assignedToMemberId)
     .map((t) => t.assignedToMemberId!);
@@ -52,7 +51,7 @@ router.get("/projects/:projectId/tasks", requireAuth, async (req, res): Promise<
 
   const enriched = tasks.map((t) => ({
     ...t,
-    assignedMemberName: t.assignedToMemberId ? personnelNames[t.assignedToMemberId] : null,
+    assignedMemberName: t.assignedToMemberId ? personnelNames[t.assignedToMemberId] ?? null : null,
   }));
 
   res.json(enriched);
@@ -69,15 +68,15 @@ const TaskBody = z.object({
   assignedToMemberId: z.string().optional().nullable(),
 });
 
-// POST /tasks — admin or team_leader
-router.post("/tasks", requireTeamLeader, async (req, res): Promise<void> => {
+// POST /tasks — programme_lead or team_lead
+router.post("/tasks", requireTeamLead, async (req, res): Promise<void> => {
   const user = req.authUser!;
   const parsed = TaskBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, parsed.data.projectId)).limit(1);
   if (!project) { res.status(404).json({ error: "Project not found" }); return; }
-  if (user.role !== "admin" && user.teamId !== project.teamId) { res.status(403).json({ error: "Access denied" }); return; }
+  if (user.role !== "programme_lead" && user.teamId !== project.teamId) { res.status(403).json({ error: "Access denied" }); return; }
 
   const [task] = await db.insert(tasksTable).values({
     ...parsed.data,
@@ -89,7 +88,7 @@ router.post("/tasks", requireTeamLeader, async (req, res): Promise<void> => {
 });
 
 // PATCH /tasks/:id
-router.patch("/tasks/:id", requireTeamLeader, async (req, res): Promise<void> => {
+router.patch("/tasks/:id", requireTeamLead, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const user = req.authUser!;
 
@@ -97,7 +96,7 @@ router.patch("/tasks/:id", requireTeamLeader, async (req, res): Promise<void> =>
   if (!existing) { res.status(404).json({ error: "Task not found" }); return; }
 
   const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, existing.projectId)).limit(1);
-  if (user.role !== "admin" && user.teamId !== project?.teamId) { res.status(403).json({ error: "Access denied" }); return; }
+  if (user.role !== "programme_lead" && user.teamId !== project?.teamId) { res.status(403).json({ error: "Access denied" }); return; }
 
   const parsed = TaskBody.partial().omit({ projectId: true }).safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
@@ -114,7 +113,7 @@ router.patch("/tasks/:id", requireTeamLeader, async (req, res): Promise<void> =>
 });
 
 // DELETE /tasks/:id
-router.delete("/tasks/:id", requireTeamLeader, async (req, res): Promise<void> => {
+router.delete("/tasks/:id", requireTeamLead, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
   const user = req.authUser!;
 
@@ -122,7 +121,7 @@ router.delete("/tasks/:id", requireTeamLeader, async (req, res): Promise<void> =
   if (!existing) { res.status(404).json({ error: "Task not found" }); return; }
 
   const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, existing.projectId)).limit(1);
-  if (user.role !== "admin" && user.teamId !== project?.teamId) { res.status(403).json({ error: "Access denied" }); return; }
+  if (user.role !== "programme_lead" && user.teamId !== project?.teamId) { res.status(403).json({ error: "Access denied" }); return; }
 
   await db.delete(tasksTable).where(eq(tasksTable.id, id));
   await logActivity({ user, actionType: "delete", entityType: "task", entityId: id, entityTitle: existing.title, teamId: project?.teamId });

@@ -87,19 +87,34 @@ export const api = {
   deleteUser: (token: string, userId: string) =>
     call(`/users/${userId}`, { method: "DELETE" }, token),
 
+  // ─── Programme ──────────────────────────────────────────
+  getProgramme: (token: string) => call("/programmes", {}, token),
+  updateProgramme: (token: string, id: string, body: { name: string }) =>
+    call(`/programmes/${id}`, { method: "PATCH", body: JSON.stringify(body) }, token),
+
+  // ─── Streams ────────────────────────────────────────────
+  getStreams: (token: string) => call("/streams", {}, token),
+  getStream: (token: string, id: string) => call(`/streams/${id}`, {}, token),
+  createStream: (token: string, body: { name: string; description?: string; programmeId: string }) =>
+    call("/streams", { method: "POST", body: JSON.stringify(body) }, token),
+  updateStream: (token: string, id: string, body: { name?: string; description?: string }) =>
+    call(`/streams/${id}`, { method: "PATCH", body: JSON.stringify(body) }, token),
+  deleteStream: (token: string, id: string) =>
+    call(`/streams/${id}`, { method: "DELETE" }, token),
+  getStreamTeams: (token: string, streamId: string) =>
+    call(`/streams/${streamId}/teams`, {}, token),
+
   // ─── Teams ──────────────────────────────────────────────
   getTeams: (token: string) => call("/teams", {}, token),
   getTeam: (token: string, id: string) => call(`/teams/${id}`, {}, token),
-  createTeam: (token: string, body: { name: string; functionLabel?: string }) =>
+  createTeam: (token: string, body: { name: string; streamId?: string | null; functionLabel?: string }) =>
     call("/teams", { method: "POST", body: JSON.stringify(body) }, token),
-  updateTeam: (token: string, id: string, body: { name?: string; functionLabel?: string }) =>
+  updateTeam: (token: string, id: string, body: { name?: string; streamId?: string | null; functionLabel?: string }) =>
     call(`/teams/${id}`, { method: "PATCH", body: JSON.stringify(body) }, token),
   deleteTeam: (token: string, id: string) =>
     call(`/teams/${id}`, { method: "DELETE" }, token),
-  assignTeamLeader: (token: string, teamId: string, userId: string) =>
-    call(`/teams/${teamId}/assign-leader`, { method: "POST", body: JSON.stringify({ userId }) }, token),
-  assignTeamOwner: (token: string, teamId: string, userId: string) =>
-    call(`/teams/${teamId}/assign-owner`, { method: "POST", body: JSON.stringify({ userId }) }, token),
+  assignTeamLead: (token: string, teamId: string, userId: string) =>
+    call(`/teams/${teamId}/assign-lead`, { method: "POST", body: JSON.stringify({ userId }) }, token),
 
   // ─── Personnel ──────────────────────────────────────────
   getPersonnel: (token: string, teamId: string) => call(`/teams/${teamId}/personnel`, {}, token),

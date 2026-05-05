@@ -193,7 +193,7 @@ export default function DashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { currentUser, isAdmin } = useAuth();
+  const { currentUser, isProgrammeLead } = useAuth();
   if (!currentUser) return null;
   const { events, projects, tasks, milestones, updateTask } = useData();
 
@@ -278,7 +278,7 @@ export default function DashboardScreen() {
             <Text style={styles.headerTitle}>Operations Hub</Text>
           </View>
           <View style={styles.headerRight}>
-            {isAdmin && (
+            {isProgrammeLead && (
               <TouchableOpacity
                 style={styles.adminPill}
                 onPress={() => router.push("/admin")}

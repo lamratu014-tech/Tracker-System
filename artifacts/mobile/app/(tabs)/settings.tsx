@@ -16,15 +16,13 @@ import { useData } from "@/context/DataContext";
 import { useColors } from "@/hooks/useColors";
 
 const ROLE_COLORS: Record<UserRole, string> = {
-  admin: "#7C3AED",
-  team_leader: "#2563EB",
-  owner: "#059669",
+  programme_lead: "#7C3AED",
+  team_lead: "#2563EB",
 };
 
 const ROLE_LABELS: Record<UserRole, string> = {
-  admin: "Admin",
-  team_leader: "Team Leader",
-  owner: "Owner",
+  programme_lead: "Programme Lead",
+  team_lead: "Team Lead",
 };
 
 function SettingRow({
@@ -72,8 +70,8 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { currentUser, users, isAdmin, logout } = useAuth();
-  const { activityLogs, teams } = useData();
+  const { currentUser, users, isProgrammeLead, logout } = useAuth();
+  const { activityLogs, teams, streams, programme } = useData();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
@@ -81,6 +79,7 @@ export default function SettingsScreen() {
   if (!currentUser) return null;
 
   const myTeam = teams.find((t) => t.id === currentUser.teamId);
+  const myStream = streams.find((s) => s.id === myTeam?.streamId);
 
   function handleLogout() {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -100,6 +99,9 @@ export default function SettingsScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={[styles.header, { backgroundColor: colors.navyDark, paddingTop: topPad + 16 }]}>
         <Text style={styles.headerTitle}>Settings</Text>
+        {programme && (
+          <Text style={styles.headerSub}>{programme.name}</Text>
+        )}
       </View>
 
       <ScrollView
@@ -124,6 +126,12 @@ export default function SettingsScreen() {
             {myTeam && (
               <Text style={[styles.profileTeam, { color: colors.primary }]}>
                 {myTeam.name}{myTeam.functionLabel ? ` — ${myTeam.functionLabel}` : ""}
+                {myStream ? ` (${myStream.name})` : ""}
+              </Text>
+            )}
+            {isProgrammeLead && (
+              <Text style={[styles.profileTeam, { color: colors.primary }]}>
+                {streams.length} stream{streams.length !== 1 ? "s" : ""} · {teams.length} team{teams.length !== 1 ? "s" : ""}
               </Text>
             )}
             <Text style={[styles.profileEmail, { color: colors.mutedForeground }]}>
@@ -132,14 +140,14 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Admin */}
-        {isAdmin && (
+        {/* Programme Lead admin panel */}
+        {isProgrammeLead && (
           <>
-            <SectionHeader title="Administration" />
+            <SectionHeader title="Programme Management" />
             <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <SettingRow
                 icon="shield"
-                label="Admin Panel"
+                label="Programme Lead Panel"
                 value="Full access"
                 onPress={() => router.push("/admin")}
               />
@@ -156,9 +164,9 @@ export default function SettingsScreen() {
                 onPress={() => router.push("/admin")}
               />
               <SettingRow
-                icon="briefcase"
-                label="Teams"
-                value={`${teams.length} team${teams.length !== 1 ? "s" : ""}`}
+                icon="grid"
+                label="Streams & Teams"
+                value={`${streams.length} streams · ${teams.length} teams`}
                 onPress={() => router.push("/admin")}
               />
             </View>
@@ -173,7 +181,7 @@ export default function SettingsScreen() {
           <SettingRow icon="eye" label="Default Calendar View" value="Month" />
         </View>
 
-        <SectionHeader title="Projects" />
+        <SectionHeader title="Programme" />
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <SettingRow icon="flag" label="Default Task Priority" value="Medium" />
           <SettingRow icon="users" label="Task Assignment" value="User or Member" />
@@ -192,7 +200,6 @@ export default function SettingsScreen() {
           <SettingRow icon="info" label="Version" value="2.0.0" />
         </View>
 
-        {/* Sign Out */}
         <SectionHeader title="Account" />
         <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <SettingRow icon="log-out" label="Sign Out" onPress={handleLogout} danger />
@@ -204,8 +211,9 @@ export default function SettingsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  header: { paddingHorizontal: 20, paddingBottom: 20 },
+  header: { paddingHorizontal: 20, paddingBottom: 20, gap: 2 },
   headerTitle: { color: "#fff", fontSize: 24, fontFamily: "Inter_700Bold" },
+  headerSub: { color: "rgba(255,255,255,0.5)", fontSize: 13, fontFamily: "Inter_400Regular" },
   profileCard: {
     margin: 16, borderRadius: 14, borderWidth: 1, padding: 16,
     flexDirection: "row", alignItems: "center", gap: 14,

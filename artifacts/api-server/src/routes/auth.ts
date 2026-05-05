@@ -42,7 +42,7 @@ const SetupBody = z.object({
 const InviteBody = z.object({
   email: z.string().email(),
   name: z.string().min(1),
-  role: z.enum(["admin", "team_leader", "owner"]),
+  role: z.enum(["programme_lead", "team_lead"]),
   department: z.string().optional(),
 });
 
@@ -96,7 +96,7 @@ router.post("/auth/setup", async (req, res): Promise<void> => {
   const passwordHash = await hashPassword(password);
   const [user] = await db
     .insert(usersTable)
-    .values({ email, name, initials, department: department ?? "", role: "admin", passwordHash, active: true })
+    .values({ email, name, initials, department: department ?? "", role: "programme_lead", passwordHash, active: true })
     .returning();
 
   const token = await createSession(user.id);

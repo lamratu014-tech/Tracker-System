@@ -15,21 +15,19 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth, type UserRole, type AppUser } from "@/context/AuthContext";
-import { useData, type Team, type ActivityLog } from "@/context/DataContext";
+import { useData, type Team, type Stream, type ActivityLog } from "@/context/DataContext";
 import { useColors } from "@/hooks/useColors";
 
-type AdminTab = "users" | "teams" | "activity" | "settings";
+type AdminTab = "users" | "structure" | "activity" | "settings";
 
 const ROLE_COLORS: Record<UserRole, string> = {
-  admin: "#7C3AED",
-  team_leader: "#2563EB",
-  owner: "#059669",
+  programme_lead: "#7C3AED",
+  team_lead: "#2563EB",
 };
 
 const ROLE_LABELS: Record<UserRole, string> = {
-  admin: "Admin",
-  team_leader: "Team Leader",
-  owner: "Owner",
+  programme_lead: "Programme Lead",
+  team_lead: "Team Lead",
 };
 
 export default function AdminPanelScreen() {
@@ -45,18 +43,23 @@ export default function AdminPanelScreen() {
     deleteUser,
   } = useAuth();
   const {
+    programme,
+    streams,
     teams,
     activityLogs,
     createTeam,
     updateTeam,
     deleteTeam,
+    createStream,
+    updateStream,
+    deleteStream,
+    updateProgramme,
     refreshActivity,
   } = useData();
 
   const [tab, setTab] = useState<AdminTab>("users");
   const [showInvite, setShowInvite] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState<AppUser | null>(null);
-  const [showTeamModal, setShowTeamModal] = useState<Team | "new" | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<"all" | UserRole>("all");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
@@ -88,24 +91,26 @@ export default function AdminPanelScreen() {
   function handleDeactivate(user: AppUser) {
     Alert.alert("Deactivate User", `Suspend ${user.name}'s access?`, [
       { text: "Cancel", style: "cancel" },
-      { text: "Deactivate", style: "destructive", onPress: () => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning); deactivateUser(user.id); } },
+      { text: "Deactivate", style: "destructive", onPress: () => { deactivateUser(user.id); } },
     ]);
-  }
-
-  function handleReactivate(user: AppUser) {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    reactivateUser(user.id);
   }
 
   function handleDelete(user: AppUser) {
     Alert.alert("Delete User", `Permanently delete ${user.name}? This cannot be undone.`, [
       { text: "Cancel", style: "cancel" },
-      { text: "Delete Permanently", style: "destructive", onPress: () => { Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error); deleteUser(user.id); } },
+      { text: "Delete Permanently", style: "destructive", onPress: () => { deleteUser(user.id); } },
+    ]);
+  }
+
+  function handleDeleteStream(stream: Stream) {
+    Alert.alert("Delete Stream", `Delete "${stream.name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => deleteStream(stream.id) },
     ]);
   }
 
   function handleDeleteTeam(team: Team) {
-    Alert.alert("Delete Team", `Delete "${team.name}" and all its projects? This cannot be undone.`, [
+    Alert.alert("Delete Team", `Delete "${team.name}"? All its projects will also be deleted.`, [
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: () => deleteTeam(team.id) },
     ]);
@@ -113,7 +118,7 @@ export default function AdminPanelScreen() {
 
   const TABS: { key: AdminTab; label: string; icon: string }[] = [
     { key: "users", label: "Users", icon: "users" },
-    { key: "teams", label: "Teams", icon: "briefcase" },
+    { key: "structure", label: "Structure", icon: "grid" },
     { key: "activity", label: "Activity", icon: "activity" },
     { key: "settings", label: "Settings", icon: "settings" },
   ];
@@ -137,7 +142,7 @@ export default function AdminPanelScreen() {
         ))}
       </View>
 
-      {/* ── Users Tab ──────────────────────────────────────────────── */}
+      {/* ── Users Tab ─────────────────────────────────────── */}
       {tab === "users" && (
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: botPad }}>
           <View style={styles.sectionHeader}>
@@ -163,7 +168,7 @@ export default function AdminPanelScreen() {
           </View>
 
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }} contentContainerStyle={{ gap: 6, paddingRight: 4 }}>
-            {(["all", "admin", "team_leader", "owner"] as const).map((r) => (
+            {(["all", "programme_lead", "team_lead"] as const).map((r) => (
               <TouchableOpacity
                 key={r}
                 style={[styles.filterChipSmall, { backgroundColor: roleFilter === r ? (r === "all" ? colors.primary : ROLE_COLORS[r as UserRole] ?? colors.primary) : colors.muted }]}
@@ -191,6 +196,7 @@ export default function AdminPanelScreen() {
           </ScrollView>
 
           {filteredUsers.map((user) => {
+            const userTeam = teams.find((t) => t.id === user.teamId);
             return (
               <View
                 key={user.id}
@@ -203,6 +209,7 @@ export default function AdminPanelScreen() {
                   <Text style={[styles.userName, { color: colors.foreground }]}>{user.name}</Text>
                   <Text style={[styles.userEmail, { color: colors.mutedForeground }]}>{user.email}</Text>
                   {user.department ? <Text style={[styles.userDept, { color: colors.mutedForeground }]}>{user.department}</Text> : null}
+                  {userTeam ? <Text style={[styles.userDept, { color: colors.primary }]}>{userTeam.name}</Text> : null}
                 </View>
                 <View style={styles.userRight}>
                   <TouchableOpacity
@@ -219,7 +226,7 @@ export default function AdminPanelScreen() {
                           <Feather name="user-x" size={13} color="#D97706" />
                         </TouchableOpacity>
                       ) : (
-                        <TouchableOpacity style={[styles.iconBtn, { backgroundColor: "#D1FAE5" }]} onPress={() => handleReactivate(user)} activeOpacity={0.7}>
+                        <TouchableOpacity style={[styles.iconBtn, { backgroundColor: "#D1FAE5" }]} onPress={() => { reactivateUser(user.id); }} activeOpacity={0.7}>
                           <Feather name="user-check" size={13} color="#059669" />
                         </TouchableOpacity>
                       )}
@@ -239,20 +246,78 @@ export default function AdminPanelScreen() {
           {filteredUsers.length === 0 && (
             <View style={[styles.emptyState, { backgroundColor: colors.muted }]}>
               <Feather name="users" size={24} color={colors.mutedForeground} />
-              <Text style={[styles.emptyStateText, { color: colors.mutedForeground }]}>No members match your filters</Text>
+              <Text style={[styles.emptyStateText, { color: colors.mutedForeground }]}>No users match your filters</Text>
             </View>
           )}
         </ScrollView>
       )}
 
-      {/* ── Teams Tab ──────────────────────────────────────────────── */}
-      {tab === "teams" && (
+      {/* ── Structure Tab (Streams + Teams) ───────────────── */}
+      {tab === "structure" && (
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: botPad }}>
+          {/* Streams */}
           <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+              Streams ({streams.length})
+            </Text>
+            <TouchableOpacity
+              style={[styles.addBtn, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                Alert.prompt("New Stream", "Enter stream name:", (name) => {
+                  if (name?.trim() && programme) {
+                    createStream({ name: name.trim(), programmeId: programme.id });
+                  }
+                });
+              }}
+              activeOpacity={0.7}
+            >
+              <Feather name="plus" size={14} color="#fff" />
+              <Text style={styles.addBtnText}>New Stream</Text>
+            </TouchableOpacity>
+          </View>
+
+          {streams.length === 0 && (
+            <View style={[styles.emptyState, { backgroundColor: colors.muted }]}>
+              <Feather name="grid" size={24} color={colors.mutedForeground} />
+              <Text style={[styles.emptyStateText, { color: colors.mutedForeground }]}>
+                No streams yet. Streams group teams into functional areas.
+              </Text>
+            </View>
+          )}
+
+          {streams.map((stream) => {
+            const streamTeams = teams.filter((t) => t.streamId === stream.id);
+            return (
+              <View key={stream.id} style={[styles.streamCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={styles.streamCardHeader}>
+                  <View style={[styles.streamDot, { backgroundColor: colors.primary }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.streamName, { color: colors.foreground }]}>{stream.name}</Text>
+                    {stream.description ? <Text style={[styles.streamDesc, { color: colors.mutedForeground }]}>{stream.description}</Text> : null}
+                  </View>
+                  <TouchableOpacity onPress={() => handleDeleteStream(stream)} style={styles.deleteBtn}>
+                    <Feather name="trash-2" size={14} color="#EF4444" />
+                  </TouchableOpacity>
+                </View>
+                <Text style={[styles.streamMeta, { color: colors.mutedForeground }]}>{streamTeams.length} team{streamTeams.length !== 1 ? "s" : ""}</Text>
+              </View>
+            );
+          })}
+
+          {/* Teams */}
+          <View style={[styles.sectionHeader, { marginTop: 20 }]}>
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
               Teams ({teams.length})
             </Text>
-            <TouchableOpacity style={[styles.addBtn, { backgroundColor: colors.primary }]} onPress={() => setShowTeamModal("new")} activeOpacity={0.7}>
+            <TouchableOpacity
+              style={[styles.addBtn, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                Alert.prompt("New Team", "Enter team name:", (name) => {
+                  if (name?.trim()) createTeam({ name: name.trim() });
+                });
+              }}
+              activeOpacity={0.7}
+            >
               <Feather name="plus" size={14} color="#fff" />
               <Text style={styles.addBtnText}>New Team</Text>
             </TouchableOpacity>
@@ -269,454 +334,362 @@ export default function AdminPanelScreen() {
 
           {teams.map((team) => {
             const teamUsers = users.filter((u) => u.teamId === team.id);
-            const leader = teamUsers.find((u) => u.role === "team_leader");
-            const owner = teamUsers.find((u) => u.role === "owner");
+            const teamLead = teamUsers.find((u) => u.role === "team_lead");
+            const stream = streams.find((s) => s.id === team.streamId);
             return (
               <View key={team.id} style={[styles.teamCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 <View style={styles.teamCardHeader}>
                   <View style={[styles.teamIcon, { backgroundColor: colors.primary + "20" }]}>
                     <Feather name="briefcase" size={16} color={colors.primary} />
                   </View>
-                  <View style={{ flex: 1 }}>
+                  <View style={styles.teamMeta}>
                     <Text style={[styles.teamName, { color: colors.foreground }]}>{team.name}</Text>
-                    {team.functionLabel && <Text style={[styles.teamFunction, { color: colors.mutedForeground }]}>{team.functionLabel}</Text>}
-                  </View>
-                  <TouchableOpacity style={[styles.iconBtn, { backgroundColor: colors.muted }]} onPress={() => setShowTeamModal(team)} activeOpacity={0.7}>
-                    <Feather name="edit-2" size={13} color={colors.foreground} />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={[styles.iconBtn, { backgroundColor: "#FEE2E2" }]} onPress={() => handleDeleteTeam(team)} activeOpacity={0.7}>
-                    <Feather name="trash-2" size={13} color="#EF4444" />
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.teamMembers}>
-                  <View style={styles.teamMemberChip}>
-                    <Feather name="shield" size={11} color="#2563EB" />
-                    <Text style={[styles.teamMemberText, { color: colors.mutedForeground }]}>
-                      Leader: {leader?.name ?? "Unassigned"}
+                    <Text style={[styles.teamSub, { color: colors.mutedForeground }]}>
+                      {stream ? `${stream.name} · ` : "Unassigned · "}
+                      {teamUsers.length} user{teamUsers.length !== 1 ? "s" : ""}
                     </Text>
+                    {teamLead && (
+                      <Text style={[styles.teamLeadLabel, { color: colors.primary }]}>Lead: {teamLead.name}</Text>
+                    )}
                   </View>
-                  <View style={styles.teamMemberChip}>
-                    <Feather name="user" size={11} color="#059669" />
-                    <Text style={[styles.teamMemberText, { color: colors.mutedForeground }]}>
-                      Owner: {owner?.name ?? "Unassigned"}
-                    </Text>
-                  </View>
-                  <Text style={[styles.teamMemberCount, { color: colors.mutedForeground }]}>
-                    {teamUsers.length} user{teamUsers.length !== 1 ? "s" : ""}
-                  </Text>
+                  <TouchableOpacity onPress={() => handleDeleteTeam(team)} style={styles.deleteBtn}>
+                    <Feather name="trash-2" size={14} color="#EF4444" />
+                  </TouchableOpacity>
                 </View>
               </View>
             );
           })}
-
-          <View style={[styles.gdprCard, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-            <Feather name="info" size={14} color={colors.primary} />
-            <Text style={[styles.gdprText, { color: colors.mutedForeground }]}>
-              Assign Team Leaders and Owners to teams from the Users tab by changing their role. Team Leaders and Owners are automatically associated with the team during invite or role update.
-            </Text>
-          </View>
         </ScrollView>
       )}
 
-      {/* ── Activity Tab ───────────────────────────────────────────── */}
+      {/* ── Activity Tab ──────────────────────────────────── */}
       {tab === "activity" && (
-        <View style={{ flex: 1 }}>
-          <View style={[styles.activityHeader, { borderBottomColor: colors.border }]}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Activity Log</Text>
+        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: botPad }}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+              Activity Log ({activityLogs.length})
+            </Text>
             <TouchableOpacity
-              style={[styles.refreshBtn, { backgroundColor: colors.muted }]}
-              onPress={async () => { setActivityLoading(true); await refreshActivity(); setActivityLoading(false); }}
+              style={[styles.addBtn, { backgroundColor: colors.muted }]}
+              onPress={async () => {
+                setActivityLoading(true);
+                await refreshActivity();
+                setActivityLoading(false);
+              }}
               activeOpacity={0.7}
             >
-              {activityLoading ? <ActivityIndicator size="small" color={colors.primary} /> : <Feather name="refresh-cw" size={14} color={colors.primary} />}
+              {activityLoading ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Feather name="refresh-cw" size={14} color={colors.primary} />
+              )}
+              <Text style={[styles.addBtnText, { color: colors.primary }]}>Refresh</Text>
             </TouchableOpacity>
           </View>
-          <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: botPad }}>
-            {activityLogs.length === 0 ? (
-              <View style={[styles.emptyState, { backgroundColor: colors.muted }]}>
-                <Feather name="activity" size={24} color={colors.mutedForeground} />
-                <Text style={[styles.emptyStateText, { color: colors.mutedForeground }]}>No activity yet</Text>
+
+          {activityLogs.length === 0 ? (
+            <View style={[styles.emptyState, { backgroundColor: colors.muted }]}>
+              <Feather name="activity" size={24} color={colors.mutedForeground} />
+              <Text style={[styles.emptyStateText, { color: colors.mutedForeground }]}>No activity recorded yet</Text>
+            </View>
+          ) : (
+            activityLogs.map((log) => (
+              <View key={log.id} style={[styles.logRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <View style={[styles.logIcon, { backgroundColor: log.actionType === "create" ? "#D1FAE5" : log.actionType === "delete" ? "#FEE2E2" : "#DBEAFE" }]}>
+                  <Feather
+                    name={log.actionType === "create" ? "plus" : log.actionType === "delete" ? "trash-2" : "edit-2"}
+                    size={12}
+                    color={log.actionType === "create" ? "#059669" : log.actionType === "delete" ? "#EF4444" : "#2563EB"}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.logTitle, { color: colors.foreground }]} numberOfLines={1}>
+                    {log.entityTitle ?? log.entityType}
+                  </Text>
+                  <Text style={[styles.logMeta, { color: colors.mutedForeground }]}>
+                    {log.userName ?? "System"} · {log.actionType} · {log.entityType} · {new Date(log.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                  </Text>
+                </View>
               </View>
-            ) : (
-              activityLogs.map((log) => <ActivityRow key={log.id} log={log} />)
-            )}
-          </ScrollView>
-        </View>
+            ))
+          )}
+        </ScrollView>
       )}
 
-      {/* ── Settings Tab ───────────────────────────────────────────── */}
+      {/* ── Settings Tab ─────────────────────────────────── */}
       {tab === "settings" && (
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: botPad }}>
-          <SectionLabel title="Role Permissions" />
-          <View style={[styles.settingsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <SettingsRow icon="shield" label="Admin" value="Full system access" color={colors} />
-            <SettingsRow icon="users" label="Team Leader" value="Manage own team's data" color={colors} />
-            <SettingsRow icon="user" label="Owner" value="View + approve milestones, update phase" color={colors} />
-          </View>
+          <Text style={[styles.sectionTitle, { color: colors.foreground, marginBottom: 12 }]}>Programme Settings</Text>
+          <ProgrammeEditCard
+            programme={programme}
+            onSave={(name) => programme && updateProgramme(programme.id, { name })}
+            colors={colors}
+          />
 
-          <SectionLabel title="Data Isolation" />
-          <View style={[styles.settingsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <SettingsRow icon="lock" label="Team data" value="Isolated per team" color={colors} />
-            <SettingsRow icon="globe" label="Events" value="Controlled cross-team sharing" color={colors} />
-            <SettingsRow icon="eye-off" label="Private content" value="Backend-enforced" color={colors} />
-          </View>
-
-          <SectionLabel title="Security" />
-          <View style={[styles.settingsCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <SettingsRow icon="key" label="Authentication" value="bcrypt + session tokens" color={colors} />
-            <SettingsRow icon="database" label="Storage" value="PostgreSQL (server-side)" color={colors} />
-            <SettingsRow icon="file-text" label="Compliance" value="UK GDPR / DPA 2018" color={colors} />
+          <Text style={[styles.sectionTitle, { color: colors.foreground, marginTop: 24, marginBottom: 8 }]}>User Roles</Text>
+          <View style={[styles.roleInfoCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            {(["programme_lead", "team_lead"] as UserRole[]).map((role) => (
+              <View key={role} style={[styles.roleInfoRow, { borderBottomColor: colors.border }]}>
+                <View style={[styles.roleDot, { backgroundColor: ROLE_COLORS[role] }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.roleInfoLabel, { color: colors.foreground }]}>{ROLE_LABELS[role]}</Text>
+                  <Text style={[styles.roleInfoDesc, { color: colors.mutedForeground }]}>
+                    {role === "programme_lead"
+                      ? "Full access: manage streams, teams, users, all projects and events across the programme"
+                      : "Manage tasks, milestones, events and members for their assigned team"}
+                  </Text>
+                </View>
+              </View>
+            ))}
           </View>
         </ScrollView>
       )}
 
-      {/* Role Change Modal */}
+      {/* ── Role Change Modal ─────────────────────────────── */}
       <Modal visible={!!showRoleModal} transparent animationType="fade" onRequestClose={() => setShowRoleModal(null)}>
         <View style={styles.modalOverlay}>
-          <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-              Change Role — {showRoleModal?.name}
-            </Text>
-            {(["admin", "team_leader", "owner"] as UserRole[]).map((role) => (
-              <TouchableOpacity
-                key={role}
-                style={[styles.roleOption, { borderColor: ROLE_COLORS[role] + "40", backgroundColor: ROLE_COLORS[role] + "10" }]}
-                onPress={() => showRoleModal && handleRoleChange(showRoleModal, role)}
-                activeOpacity={0.7}
-              >
-                <View style={[styles.roleDot, { backgroundColor: ROLE_COLORS[role] }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.roleOptionTitle, { color: colors.foreground }]}>{ROLE_LABELS[role]}</Text>
-                  <Text style={[styles.roleOptionDesc, { color: colors.mutedForeground }]}>
-                    {role === "admin" ? "Full system access, user management, all teams"
-                      : role === "team_leader" ? "Manage tasks, milestones, events for own team"
-                      : "View own team, approve milestones, update phase/notes"}
+          <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Change Role</Text>
+            <Text style={[styles.modalSub, { color: colors.mutedForeground }]}>{showRoleModal?.name}</Text>
+            <View style={{ gap: 10, marginTop: 16 }}>
+              {(["programme_lead", "team_lead"] as UserRole[]).map((role) => (
+                <TouchableOpacity
+                  key={role}
+                  style={[styles.roleOption, { backgroundColor: showRoleModal?.role === role ? ROLE_COLORS[role] : colors.muted }]}
+                  onPress={() => showRoleModal && handleRoleChange(showRoleModal, role)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={[styles.roleOptionText, { color: showRoleModal?.role === role ? "#fff" : colors.foreground }]}>
+                    {ROLE_LABELS[role]}
                   </Text>
-                </View>
-                {showRoleModal?.role === role && <Feather name="check" size={16} color={ROLE_COLORS[role]} />}
-              </TouchableOpacity>
-            ))}
-            <TouchableOpacity style={[styles.cancelBtn, { backgroundColor: colors.muted }]} onPress={() => setShowRoleModal(null)} activeOpacity={0.7}>
-              <Text style={[styles.cancelBtnText, { color: colors.mutedForeground }]}>Cancel</Text>
+                  {showRoleModal?.role === role && <Feather name="check" size={14} color="#fff" />}
+                </TouchableOpacity>
+              ))}
+            </View>
+            <TouchableOpacity style={[styles.cancelBtn, { backgroundColor: colors.muted, marginTop: 16 }]} onPress={() => setShowRoleModal(null)}>
+              <Text style={[styles.cancelBtnText, { color: colors.foreground }]}>Cancel</Text>
             </TouchableOpacity>
           </View>
         </View>
       </Modal>
 
-      {/* Team Create/Edit Modal */}
-      <TeamModal
-        visible={!!showTeamModal}
-        team={showTeamModal === "new" ? null : showTeamModal}
-        onClose={() => setShowTeamModal(null)}
-        onSave={async (name, functionLabel) => {
-          if (showTeamModal === "new") {
-            await createTeam({ name, functionLabel });
-          } else if (showTeamModal) {
-            await updateTeam(showTeamModal.id, { name, functionLabel });
-          }
-          setShowTeamModal(null);
-        }}
-      />
-
-      {/* Invite User Modal */}
-      <InviteUserModal visible={showInvite} onClose={() => setShowInvite(false)} onInvite={inviteUser} />
+      {/* ── Invite Modal ──────────────────────────────────── */}
+      <Modal visible={showInvite} transparent animationType="slide" onRequestClose={() => setShowInvite(false)}>
+        <InviteForm
+          onClose={() => setShowInvite(false)}
+          onInvite={inviteUser}
+          colors={colors}
+        />
+      </Modal>
     </View>
   );
 }
 
-function ActivityRow({ log }: { log: ActivityLog }) {
-  const colors = useColors();
-  const ACTION_ICONS: Record<string, string> = {
-    create: "plus-circle",
-    update: "edit-2",
-    delete: "trash-2",
-  };
-  const ACTION_COLORS: Record<string, string> = {
-    create: "#059669",
-    update: "#2563EB",
-    delete: "#EF4444",
-  };
-  const icon = ACTION_ICONS[log.actionType] ?? "activity";
-  const color = ACTION_COLORS[log.actionType] ?? "#6B7280";
+function ProgrammeEditCard({ programme, onSave, colors }: { programme: any; onSave: (name: string) => void; colors: any }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(programme?.name ?? "Programme");
+
+  if (!programme) return null;
 
   return (
-    <View style={[aStyles.row, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={[aStyles.icon, { backgroundColor: color + "20" }]}>
-        <Feather name={icon as any} size={13} color={color} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[aStyles.text, { color: colors.foreground }]} numberOfLines={2}>
-          <Text style={{ fontFamily: "Inter_600SemiBold" }}>{log.userName ?? "System"}</Text>
-          {` ${log.actionType}d `}
-          <Text style={{ fontFamily: "Inter_600SemiBold" }}>{log.entityTitle ?? log.entityType}</Text>
-        </Text>
-        <Text style={[aStyles.meta, { color: colors.mutedForeground }]}>
-          {log.userRole ? ROLE_LABELS[log.userRole as UserRole] ?? log.userRole : "—"} · {log.entityType} · {new Date(log.createdAt).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
-        </Text>
-      </View>
-    </View>
-  );
-}
-
-const aStyles = StyleSheet.create({
-  row: { flexDirection: "row", alignItems: "flex-start", gap: 10, borderRadius: 10, borderWidth: 1, padding: 12, marginBottom: 8 },
-  icon: { width: 28, height: 28, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  text: { fontSize: 13, fontFamily: "Inter_400Regular", marginBottom: 2 },
-  meta: { fontSize: 11, fontFamily: "Inter_400Regular" },
-});
-
-function TeamModal({ visible, team, onClose, onSave }: {
-  visible: boolean;
-  team: Team | null;
-  onClose: () => void;
-  onSave: (name: string, functionLabel?: string) => Promise<void>;
-}) {
-  const colors = useColors();
-  const [name, setName] = useState(team?.name ?? "");
-  const [fn, setFn] = useState(team?.functionLabel ?? "");
-  const [saving, setSaving] = useState(false);
-
-  React.useEffect(() => { setName(team?.name ?? ""); setFn(team?.functionLabel ?? ""); }, [team, visible]);
-
-  async function handleSave() {
-    if (!name.trim()) return;
-    setSaving(true);
-    await onSave(name.trim(), fn.trim() || undefined);
-    setSaving(false);
-  }
-
-  return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.modalOverlay}>
-        <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
-          <Text style={[styles.modalTitle, { color: colors.foreground }]}>{team ? "Edit Team" : "New Team"}</Text>
-          <Text style={[{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, marginBottom: 4 }]}>Team Name</Text>
+    <View style={[styles.editCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <Text style={[styles.editLabel, { color: colors.mutedForeground }]}>Programme Name</Text>
+      {editing ? (
+        <View style={styles.editRow}>
           <TextInput
-            style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
-            value={name}
-            onChangeText={setName}
-            placeholder="e.g. Engineering"
-            placeholderTextColor={colors.mutedForeground}
+            style={[styles.editInput, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border, flex: 1 }]}
+            value={draft}
+            onChangeText={setDraft}
             autoFocus
           />
-          <Text style={[{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, marginBottom: 4 }]}>Function Label (optional)</Text>
-          <TextInput
-            style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
-            value={fn}
-            onChangeText={setFn}
-            placeholder="e.g. Product & Technology"
-            placeholderTextColor={colors.mutedForeground}
-          />
-          <View style={{ flexDirection: "row", gap: 8, marginTop: 4 }}>
-            <TouchableOpacity style={[styles.cancelBtn, { backgroundColor: colors.muted, flex: 1 }]} onPress={onClose} activeOpacity={0.7}>
-              <Text style={[styles.cancelBtnText, { color: colors.mutedForeground }]}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.cancelBtn, { backgroundColor: colors.primary, flex: 1 }]}
-              onPress={handleSave}
-              disabled={!name.trim() || saving}
-              activeOpacity={0.7}
-            >
-              {saving ? <ActivityIndicator color="#fff" size="small" /> : <Text style={[styles.cancelBtnText, { color: "#fff" }]}>Save</Text>}
-            </TouchableOpacity>
-          </View>
+          <TouchableOpacity style={[styles.saveBtn, { backgroundColor: colors.primary }]} onPress={() => { onSave(draft); setEditing(false); }}>
+            <Text style={{ color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" }}>Save</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.saveBtn, { backgroundColor: colors.muted }]} onPress={() => { setDraft(programme.name); setEditing(false); }}>
+            <Text style={{ color: colors.foreground, fontSize: 14, fontFamily: "Inter_600SemiBold" }}>Cancel</Text>
+          </TouchableOpacity>
         </View>
-      </View>
-    </Modal>
-  );
-}
-
-function InviteUserModal({ visible, onClose, onInvite }: {
-  visible: boolean;
-  onClose: () => void;
-  onInvite: (email: string, name: string, role: UserRole, department?: string) => Promise<{ error?: string; acceptUrl?: string }>;
-}) {
-  const colors = useColors();
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [dept, setDept] = useState("");
-  const [role, setRole] = useState<UserRole>("owner");
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ error?: string; acceptUrl?: string } | null>(null);
-
-  function reset() { setName(""); setEmail(""); setDept(""); setRole("owner"); setLoading(false); setResult(null); }
-  function handleClose() { reset(); onClose(); }
-
-  async function handleSend() {
-    if (!name.trim() || !email.trim()) return;
-    setLoading(true);
-    const res = await onInvite(email.trim(), name.trim(), role, dept.trim() || undefined);
-    setLoading(false);
-    setResult(res);
-  }
-
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={handleClose}>
-      <View style={styles.modalOverlay}>
-        <View style={[styles.modalCard, { backgroundColor: colors.card }]}>
-          {result ? (
-            <>
-              {result.error ? (
-                <>
-                  <Feather name="alert-circle" size={32} color="#EF4444" style={{ alignSelf: "center", marginBottom: 8 }} />
-                  <Text style={[styles.modalTitle, { color: colors.foreground, textAlign: "center" }]}>Invite Failed</Text>
-                  <Text style={[{ color: colors.mutedForeground, textAlign: "center", fontSize: 13, marginBottom: 16 }]}>{result.error}</Text>
-                </>
-              ) : (
-                <>
-                  <Feather name="check-circle" size={32} color="#059669" style={{ alignSelf: "center", marginBottom: 8 }} />
-                  <Text style={[styles.modalTitle, { color: colors.foreground, textAlign: "center" }]}>Invite Sent!</Text>
-                  <Text style={[{ color: colors.mutedForeground, textAlign: "center", fontSize: 13, marginBottom: 8 }]}>
-                    An invite email has been sent to {email}.
-                  </Text>
-                  {result.acceptUrl && (
-                    <View style={[{ backgroundColor: colors.muted, borderRadius: 8, padding: 10, marginBottom: 12 }]}>
-                      <Text style={[{ color: colors.mutedForeground, fontSize: 11 }]}>Dev link:</Text>
-                      <Text style={[{ color: colors.primary, fontSize: 11, fontFamily: "Inter_500Medium" }]} selectable>{result.acceptUrl}</Text>
-                    </View>
-                  )}
-                </>
-              )}
-              <TouchableOpacity style={[styles.cancelBtn, { backgroundColor: colors.primary }]} onPress={handleClose} activeOpacity={0.7}>
-                <Text style={[styles.cancelBtnText, { color: "#fff" }]}>Done</Text>
-              </TouchableOpacity>
-            </>
-          ) : (
-            <>
-              <Text style={[styles.modalTitle, { color: colors.foreground }]}>Invite User</Text>
-              {[
-                { label: "Full Name", value: name, setter: setName, placeholder: "Jane Smith" },
-                { label: "Email Address", value: email, setter: setEmail, placeholder: "jane@example.com" },
-                { label: "Department (optional)", value: dept, setter: setDept, placeholder: "e.g. Operations" },
-              ].map(({ label, value, setter, placeholder }) => (
-                <View key={label} style={{ marginBottom: 12 }}>
-                  <Text style={[{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, marginBottom: 4 }]}>{label}</Text>
-                  <TextInput
-                    style={[styles.modalInput, { color: colors.foreground, borderColor: colors.border, backgroundColor: colors.background }]}
-                    value={value}
-                    onChangeText={setter}
-                    placeholder={placeholder}
-                    placeholderTextColor={colors.mutedForeground}
-                    keyboardType={label === "Email Address" ? "email-address" : "default"}
-                    autoCapitalize="none"
-                  />
-                </View>
-              ))}
-              <Text style={[{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground, marginBottom: 6 }]}>Role</Text>
-              <View style={{ flexDirection: "row", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
-                {(["admin", "team_leader", "owner"] as UserRole[]).map((r) => (
-                  <TouchableOpacity
-                    key={r}
-                    style={[styles.roleChip, { backgroundColor: role === r ? ROLE_COLORS[r] : colors.muted }]}
-                    onPress={() => setRole(r)}
-                    activeOpacity={0.7}
-                  >
-                    <Text style={[{ fontSize: 12, fontFamily: "Inter_500Medium", color: role === r ? "#fff" : colors.mutedForeground }]}>
-                      {ROLE_LABELS[r]}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
-              </View>
-              <View style={{ flexDirection: "row", gap: 8 }}>
-                <TouchableOpacity style={[styles.cancelBtn, { backgroundColor: colors.muted, flex: 1 }]} onPress={handleClose} activeOpacity={0.7}>
-                  <Text style={[styles.cancelBtnText, { color: colors.mutedForeground }]}>Cancel</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.cancelBtn, { backgroundColor: name.trim() && email.trim() ? colors.primary : colors.muted, flex: 1 }]}
-                  onPress={handleSend}
-                  disabled={!name.trim() || !email.trim() || loading}
-                  activeOpacity={0.7}
-                >
-                  {loading ? <ActivityIndicator color="#fff" size="small" /> : (
-                    <Text style={[styles.cancelBtnText, { color: name.trim() && email.trim() ? "#fff" : colors.mutedForeground }]}>Send Invite</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </>
-          )}
+      ) : (
+        <View style={styles.editRow}>
+          <Text style={[styles.programmeNameText, { color: colors.foreground, flex: 1 }]}>{programme.name}</Text>
+          <TouchableOpacity onPress={() => { setDraft(programme.name); setEditing(true); }}>
+            <Feather name="edit-2" size={16} color={colors.primary} />
+          </TouchableOpacity>
         </View>
-      </View>
-    </Modal>
-  );
-}
-
-function SectionLabel({ title }: { title: string }) {
-  const colors = useColors();
-  return <Text style={[settingsStyles.label, { color: colors.mutedForeground }]}>{title}</Text>;
-}
-
-function SettingsRow({ icon, label, value, color }: { icon: string; label: string; value: string; color: any }) {
-  return (
-    <View style={[settingsStyles.row, { borderBottomColor: color.border }]}>
-      <View style={[settingsStyles.icon, { backgroundColor: color.muted }]}>
-        <Feather name={icon as any} size={14} color={color.primary} />
-      </View>
-      <Text style={[settingsStyles.label2, { color: color.foreground }]}>{label}</Text>
-      <Text style={[settingsStyles.value, { color: color.mutedForeground }]}>{value}</Text>
+      )}
     </View>
   );
 }
 
-const settingsStyles = StyleSheet.create({
-  label: { fontSize: 11, fontFamily: "Inter_600SemiBold", letterSpacing: 0.6, textTransform: "uppercase", marginTop: 16, marginBottom: 6 },
-  row: { flexDirection: "row", alignItems: "center", paddingVertical: 10, borderBottomWidth: StyleSheet.hairlineWidth, gap: 10 },
-  icon: { width: 28, height: 28, borderRadius: 7, alignItems: "center", justifyContent: "center" },
-  label2: { flex: 1, fontSize: 13, fontFamily: "Inter_400Regular" },
-  value: { fontSize: 12, fontFamily: "Inter_500Medium" },
-});
+function InviteForm({ onClose, onInvite, colors }: {
+  onClose: () => void;
+  onInvite: (email: string, name: string, role: UserRole, department?: string) => Promise<{ error?: string; acceptUrl?: string }>;
+  colors: any;
+}) {
+  const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
+  const [role, setRole] = useState<UserRole>("team_lead");
+  const [department, setDepartment] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [acceptUrl, setAcceptUrl] = useState("");
+
+  async function handleSubmit() {
+    if (!email.trim() || !name.trim()) { setError("Email and name are required."); return; }
+    setLoading(true);
+    const result = await onInvite(email.trim(), name.trim(), role, department.trim() || undefined);
+    setLoading(false);
+    if (result.error) { setError(result.error); }
+    else { setAcceptUrl(result.acceptUrl ?? ""); }
+  }
+
+  if (acceptUrl) {
+    return (
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <Feather name="check-circle" size={36} color="#059669" style={{ alignSelf: "center", marginBottom: 12 }} />
+          <Text style={[styles.modalTitle, { color: colors.foreground, textAlign: "center" }]}>Invite Sent!</Text>
+          <Text style={[styles.modalSub, { color: colors.mutedForeground, textAlign: "center", marginTop: 8 }]}>
+            Share this link with the invited user:
+          </Text>
+          <View style={[styles.urlBox, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+            <Text style={[styles.urlText, { color: colors.foreground }]} selectable>{acceptUrl}</Text>
+          </View>
+          <TouchableOpacity style={[styles.cancelBtn, { backgroundColor: colors.primary, marginTop: 16 }]} onPress={onClose}>
+            <Text style={[styles.cancelBtnText, { color: "#fff" }]}>Done</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.modalOverlay}>
+      <View style={[styles.modalCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        <Text style={[styles.modalTitle, { color: colors.foreground }]}>Invite User</Text>
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        <TextInput
+          style={[styles.inviteInput, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+          value={name}
+          onChangeText={setName}
+          placeholder="Full name"
+          placeholderTextColor={colors.mutedForeground}
+          autoFocus
+        />
+        <TextInput
+          style={[styles.inviteInput, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+          value={email}
+          onChangeText={setEmail}
+          placeholder="Email address"
+          placeholderTextColor={colors.mutedForeground}
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
+        <TextInput
+          style={[styles.inviteInput, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+          value={department}
+          onChangeText={setDepartment}
+          placeholder="Department (optional)"
+          placeholderTextColor={colors.mutedForeground}
+        />
+        <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Role</Text>
+        <View style={{ flexDirection: "row", gap: 8, marginBottom: 16 }}>
+          {(["programme_lead", "team_lead"] as UserRole[]).map((r) => (
+            <TouchableOpacity
+              key={r}
+              style={[styles.roleChip, { backgroundColor: role === r ? ROLE_COLORS[r] : colors.muted }]}
+              onPress={() => setRole(r)}
+            >
+              <Text style={[styles.roleChipText, { color: role === r ? "#fff" : colors.mutedForeground }]}>
+                {ROLE_LABELS[r]}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+        <View style={{ flexDirection: "row", gap: 8 }}>
+          <TouchableOpacity style={[styles.cancelBtn, { backgroundColor: colors.muted, flex: 1 }]} onPress={onClose}>
+            <Text style={[styles.cancelBtnText, { color: colors.foreground }]}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.cancelBtn, { backgroundColor: colors.primary, flex: 1 }]} onPress={handleSubmit} disabled={loading}>
+            {loading ? <ActivityIndicator color="#fff" size="small" /> : <Text style={[styles.cancelBtnText, { color: "#fff" }]}>Send Invite</Text>}
+          </TouchableOpacity>
+        </View>
+      </View>
+    </View>
+  );
+}
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
   tabBar: { flexDirection: "row", borderBottomWidth: StyleSheet.hairlineWidth },
-  tab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", paddingVertical: 10, gap: 4 },
+  tab: { flex: 1, alignItems: "center", justifyContent: "center", paddingVertical: 10, gap: 3, borderBottomWidth: 2, borderBottomColor: "transparent" },
   tabText: { fontSize: 11, fontFamily: "Inter_500Medium" },
   sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-  sectionTitle: { fontSize: 16, fontFamily: "Inter_600SemiBold" },
-  addBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8 },
+  sectionTitle: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  addBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 12, paddingVertical: 7, borderRadius: 8 },
   addBtnText: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  searchBar: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 10, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8, marginBottom: 8 },
+  searchBar: { flexDirection: "row", alignItems: "center", gap: 8, borderRadius: 10, borderWidth: 1, paddingHorizontal: 10, paddingVertical: 8, marginBottom: 10 },
   searchInput: { flex: 1, fontSize: 14, fontFamily: "Inter_400Regular" },
   filterChipSmall: { borderRadius: 16, paddingHorizontal: 10, paddingVertical: 5 },
   filterChipText: { fontSize: 12, fontFamily: "Inter_500Medium" },
   filterDivider: { width: 1, marginHorizontal: 2 },
-  userCard: { flexDirection: "row", alignItems: "center", borderRadius: 12, borderWidth: 1, padding: 12, marginBottom: 8, gap: 10 },
-  avatar: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+  userCard: { borderRadius: 12, borderWidth: 1, padding: 12, flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
+  avatar: { width: 38, height: 38, borderRadius: 19, alignItems: "center", justifyContent: "center" },
   avatarText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },
   userInfo: { flex: 1, gap: 1 },
   userName: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  userEmail: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  userEmail: { fontSize: 12, fontFamily: "Inter_400Regular" },
   userDept: { fontSize: 11, fontFamily: "Inter_400Regular" },
-  userRight: { alignItems: "flex-end", gap: 6 },
-  roleBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 3 },
+  userRight: { alignItems: "flex-end", gap: 4 },
+  roleBadge: { borderRadius: 6, paddingHorizontal: 8, paddingVertical: 3 },
   roleText: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
-  userActions: { flexDirection: "row", gap: 6 },
+  userActions: { flexDirection: "row", gap: 4 },
   iconBtn: { width: 28, height: 28, borderRadius: 7, alignItems: "center", justifyContent: "center" },
-  youTag: { fontSize: 11, fontFamily: "Inter_600SemiBold" },
-  emptyState: { borderRadius: 12, padding: 32, alignItems: "center", gap: 8 },
+  youTag: { fontSize: 11, fontFamily: "Inter_500Medium" },
+  streamCard: { borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 8 },
+  streamCardHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 },
+  streamDot: { width: 8, height: 8, borderRadius: 4 },
+  streamName: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  streamDesc: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 1 },
+  streamMeta: { fontSize: 12, fontFamily: "Inter_400Regular", marginLeft: 18 },
+  teamCard: { borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 8 },
+  teamCardHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  teamIcon: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  teamMeta: { flex: 1 },
+  teamName: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  teamSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 1 },
+  teamLeadLabel: { fontSize: 11, fontFamily: "Inter_500Medium", marginTop: 2 },
+  deleteBtn: { padding: 6 },
+  logRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, borderRadius: 10, borderWidth: 1, padding: 12, marginBottom: 6 },
+  logIcon: { width: 24, height: 24, borderRadius: 6, alignItems: "center", justifyContent: "center", marginTop: 1 },
+  logTitle: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  logMeta: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
+  emptyState: { borderRadius: 12, padding: 24, alignItems: "center", gap: 8, marginBottom: 8 },
   emptyStateText: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center" },
-  teamCard: { borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 10 },
-  teamCardHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 },
-  teamIcon: { width: 36, height: 36, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-  teamName: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  teamFunction: { fontSize: 12, fontFamily: "Inter_400Regular" },
-  teamMembers: { flexDirection: "row", flexWrap: "wrap", gap: 8, alignItems: "center" },
-  teamMemberChip: { flexDirection: "row", alignItems: "center", gap: 4 },
-  teamMemberText: { fontSize: 12, fontFamily: "Inter_400Regular" },
-  teamMemberCount: { fontSize: 11, fontFamily: "Inter_400Regular", marginLeft: "auto" as any },
-  activityHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 16, borderBottomWidth: StyleSheet.hairlineWidth },
-  refreshBtn: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  gdprCard: { flexDirection: "row", alignItems: "flex-start", gap: 8, borderRadius: 10, borderWidth: 1, padding: 12, marginTop: 8 },
-  gdprText: { flex: 1, fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 16 },
-  settingsCard: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 14, marginBottom: 8 },
-  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 20 },
-  modalCard: { borderRadius: 16, padding: 20 },
-  modalTitle: { fontSize: 16, fontFamily: "Inter_700Bold", marginBottom: 16 },
-  modalInput: { borderWidth: 1, borderRadius: 8, padding: 12, fontSize: 14, fontFamily: "Inter_400Regular", marginBottom: 12 },
-  roleOption: { flexDirection: "row", alignItems: "center", borderRadius: 10, borderWidth: 1, padding: 12, marginBottom: 8, gap: 10 },
-  roleDot: { width: 10, height: 10, borderRadius: 5 },
-  roleOptionTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold", marginBottom: 2 },
-  roleOptionDesc: { fontSize: 11, fontFamily: "Inter_400Regular" },
+  editCard: { borderRadius: 12, borderWidth: 1, padding: 16, gap: 8 },
+  editLabel: { fontSize: 12, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 },
+  editRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  editInput: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 8, fontSize: 15, fontFamily: "Inter_400Regular" },
+  saveBtn: { borderRadius: 8, paddingHorizontal: 14, paddingVertical: 8 },
+  programmeNameText: { fontSize: 18, fontFamily: "Inter_700Bold" },
+  roleInfoCard: { borderRadius: 12, borderWidth: 1, overflow: "hidden" },
+  roleInfoRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 14, borderBottomWidth: StyleSheet.hairlineWidth },
+  roleDot: { width: 8, height: 8, borderRadius: 4, marginTop: 5 },
+  roleInfoLabel: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  roleInfoDesc: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2, lineHeight: 18 },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", padding: 16 },
+  modalCard: { width: "100%", maxWidth: 400, borderRadius: 16, borderWidth: 1, padding: 20 },
+  modalTitle: { fontSize: 18, fontFamily: "Inter_700Bold" },
+  modalSub: { fontSize: 14, fontFamily: "Inter_400Regular", marginTop: 4 },
+  roleOption: { borderRadius: 10, paddingVertical: 12, paddingHorizontal: 16, flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  roleOptionText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   cancelBtn: { borderRadius: 10, paddingVertical: 12, alignItems: "center" },
   cancelBtnText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
-  roleChip: { borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
+  inviteInput: { borderRadius: 8, borderWidth: 1, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14, fontFamily: "Inter_400Regular", marginBottom: 10 },
+  fieldLabel: { fontSize: 12, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 },
+  roleChip: { flex: 1, borderRadius: 8, paddingVertical: 10, alignItems: "center" },
+  roleChipText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  urlBox: { borderRadius: 8, borderWidth: 1, padding: 12, marginTop: 12 },
+  urlText: { fontSize: 12, fontFamily: "Inter_400Regular", lineHeight: 16 },
+  errorText: { color: "#EF4444", fontSize: 13, fontFamily: "Inter_400Regular", marginBottom: 8 },
 });

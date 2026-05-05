@@ -1,8 +1,8 @@
 import { Router } from "express";
 import { z } from "zod";
-import { db, usersTable, teamsTable } from "@workspace/db";
+import { db, usersTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { requireAuth, requireAdmin } from "../middlewares/requireAuth";
+import { requireAuth, requireProgrammeLead } from "../middlewares/requireAuth";
 
 const router = Router();
 
@@ -11,7 +11,7 @@ function safeUser(u: typeof usersTable.$inferSelect) {
   return rest;
 }
 
-router.get("/users", requireAdmin, async (req, res): Promise<void> => {
+router.get("/users", requireProgrammeLead, async (_req, res): Promise<void> => {
   const users = await db
     .select()
     .from(usersTable)
@@ -20,11 +20,11 @@ router.get("/users", requireAdmin, async (req, res): Promise<void> => {
 });
 
 const UpdateRoleBody = z.object({
-  role: z.enum(["admin", "team_leader", "owner"]),
+  role: z.enum(["programme_lead", "team_lead"]),
   teamId: z.string().optional().nullable(),
 });
 
-router.patch("/users/:id/role", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/users/:id/role", requireProgrammeLead, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
   if (id === req.authUser!.id) {
@@ -53,7 +53,7 @@ router.patch("/users/:id/role", requireAdmin, async (req, res): Promise<void> =>
   res.json(safeUser(user));
 });
 
-router.patch("/users/:id/deactivate", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/users/:id/deactivate", requireProgrammeLead, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
   if (id === req.authUser!.id) {
@@ -76,7 +76,7 @@ router.patch("/users/:id/deactivate", requireAdmin, async (req, res): Promise<vo
   res.json(safeUser(user));
 });
 
-router.patch("/users/:id/reactivate", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/users/:id/reactivate", requireProgrammeLead, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
   const [user] = await db
@@ -94,7 +94,7 @@ router.patch("/users/:id/reactivate", requireAdmin, async (req, res): Promise<vo
   res.json(safeUser(user));
 });
 
-router.delete("/users/:id", requireAdmin, async (req, res): Promise<void> => {
+router.delete("/users/:id", requireProgrammeLead, async (req, res): Promise<void> => {
   const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
 
   if (id === req.authUser!.id) {

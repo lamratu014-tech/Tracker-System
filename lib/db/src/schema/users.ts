@@ -11,9 +11,9 @@ export const usersTable = pgTable("users", {
   initials: text("initials").notNull(),
   department: text("department").notNull().default(""),
   role: text("role")
-    .$type<"admin" | "team_leader" | "owner">()
+    .$type<"programme_lead" | "team_lead">()
     .notNull()
-    .default("owner"),
+    .default("team_lead"),
   teamId: text("team_id"),
   passwordHash: text("password_hash"),
   active: boolean("active").notNull().default(true),
@@ -34,4 +34,4 @@ export const insertUserSchema = createInsertSchema(usersTable).omit({
 });
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type User = typeof usersTable.$inferSelect;
-export type UserRole = "admin" | "team_leader" | "owner";
+export type UserRole = "programme_lead" | "team_lead";

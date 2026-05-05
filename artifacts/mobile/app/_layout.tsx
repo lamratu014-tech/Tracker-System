@@ -52,6 +52,14 @@ function RootLayoutNav() {
         <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
         <Stack.Screen name="admin" options={{ headerShown: false }} />
         <Stack.Screen
+          name="stream/[id]"
+          options={{ title: "Stream", headerBackTitle: "Back" }}
+        />
+        <Stack.Screen
+          name="team/[id]"
+          options={{ title: "Team Workspace", headerBackTitle: "Back" }}
+        />
+        <Stack.Screen
           name="event/[id]"
           options={{ title: "Event Details", headerBackTitle: "Back" }}
         />
@@ -60,20 +68,20 @@ function RootLayoutNav() {
           options={{ title: "Project", headerBackTitle: "Back" }}
         />
         <Stack.Screen
+          name="new-stream"
+          options={{ title: "New Stream", presentation: "modal", headerBackTitle: "Cancel" }}
+        />
+        <Stack.Screen
+          name="new-team"
+          options={{ title: "New Team", presentation: "modal", headerBackTitle: "Cancel" }}
+        />
+        <Stack.Screen
           name="new-event"
-          options={{
-            title: "New Event",
-            presentation: "modal",
-            headerBackTitle: "Cancel",
-          }}
+          options={{ title: "New Event", presentation: "modal", headerBackTitle: "Cancel" }}
         />
         <Stack.Screen
           name="new-project"
-          options={{
-            title: "New Project",
-            presentation: "modal",
-            headerBackTitle: "Cancel",
-          }}
+          options={{ title: "New Project", presentation: "modal", headerBackTitle: "Cancel" }}
         />
       </Stack>
     </AuthGate>

@@ -1,17 +1,17 @@
 import { Router } from "express";
 import { db, activityLogsTable } from "@workspace/db";
 import { eq, desc } from "drizzle-orm";
-import { requireAuth, requireAdmin } from "../middlewares/requireAuth";
+import { requireAuth } from "../middlewares/requireAuth";
 
 const router = Router();
 
-// GET /activity — admin sees all; others see only their team's
+// GET /activity — programme_lead sees all; team_lead sees only their team's
 router.get("/activity", requireAuth, async (req, res): Promise<void> => {
   const user = req.authUser!;
   const limit = Math.min(Number(req.query.limit) || 50, 200);
 
   let logs;
-  if (user.role === "admin") {
+  if (user.role === "programme_lead") {
     logs = await db
       .select()
       .from(activityLogsTable)
