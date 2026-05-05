@@ -1,0 +1,271 @@
+import { Router } from "express";
+import { z } from "zod";
+import { db, usersTable, invitesTable } from "@workspace/db";
+import { eq, and, gt, isNull } from "drizzle-orm";
+import {
+  hashPassword,
+  verifyPassword,
+  createSession,
+  deleteSession,
+  generateToken,
+  countUsers,
+} from "../lib/auth";
+import { sendInviteEmail } from "../lib/email";
+import { requireAuth, requireAdmin } from "../middlewares/requireAuth";
+
+const router = Router();
+
+router.get("/auth/status", async (_req, res): Promise<void> => {
+  const count = await countUsers();
+  res.json({ needsSetup: count === 0 });
+});
+
+const LoginBody = z.object({
+  email: z.string().email(),
+  password: z.string().min(1),
+});
+
+const AcceptInviteBody = z.object({
+  token: z.string().min(1),
+  name: z.string().min(1),
+  password: z.string().min(8),
+});
+
+const SetupBody = z.object({
+  email: z.string().email(),
+  name: z.string().min(1),
+  password: z.string().min(8),
+  department: z.string().optional(),
+});
+
+const InviteBody = z.object({
+  email: z.string().email(),
+  name: z.string().min(1),
+  role: z.enum(["admin", "manager", "viewer"]),
+  department: z.string().optional(),
+});
+
+function safeUser(u: typeof usersTable.$inferSelect) {
+  const { passwordHash: _, ...rest } = u;
+  return rest;
+}
+
+function getAppDomain(req: import("express").Request): string {
+  const host = req.get("host") ?? "localhost";
+  const proto = req.get("x-forwarded-proto") ?? req.protocol;
+  return `${proto}://${host}`;
+}
+
+router.get("/auth/me", requireAuth, async (req, res): Promise<void> => {
+  res.json(safeUser(req.authUser!));
+});
+
+router.post("/auth/setup", async (req, res): Promise<void> => {
+  const existing = await countUsers();
+  if (existing > 0) {
+    res.status(409).json({ error: "App is already set up" });
+    return;
+  }
+
+  const parsed = SetupBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { email, name, password, department } = parsed.data;
+  const initials = name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  const passwordHash = await hashPassword(password);
+  const [user] = await db
+    .insert(usersTable)
+    .values({ email, name, initials, department: department ?? "", role: "admin", passwordHash, active: true })
+    .returning();
+
+  const token = await createSession(user.id);
+  req.log.info({ userId: user.id }, "First admin account created");
+  res.status(201).json({ token, user: safeUser(user) });
+});
+
+router.post("/auth/login", async (req, res): Promise<void> => {
+  const parsed = LoginBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "Invalid email or password" });
+    return;
+  }
+
+  const { email, password } = parsed.data;
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.email, email.toLowerCase()))
+    .limit(1);
+
+  if (!user || !user.passwordHash || !user.active) {
+    res.status(401).json({ error: "Invalid email or password" });
+    return;
+  }
+
+  const ok = await verifyPassword(password, user.passwordHash);
+  if (!ok) {
+    res.status(401).json({ error: "Invalid email or password" });
+    return;
+  }
+
+  const token = await createSession(user.id);
+  req.log.info({ userId: user.id }, "User logged in");
+  res.json({ token, user: safeUser(user) });
+});
+
+router.post("/auth/logout", requireAuth, async (req, res): Promise<void> => {
+  const token = req.headers.authorization!.slice(7);
+  await deleteSession(token);
+  res.sendStatus(204);
+});
+
+router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
+  const parsed = InviteBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { email, name, role, department } = parsed.data;
+
+  const [existing] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.email, email.toLowerCase()))
+    .limit(1);
+  if (existing) {
+    res.status(409).json({ error: "A user with this email already exists" });
+    return;
+  }
+
+  const token = generateToken(24);
+  const expiresAt = new Date();
+  expiresAt.setHours(expiresAt.getHours() + 72);
+
+  await db.insert(invitesTable).values({
+    email: email.toLowerCase(),
+    name,
+    token,
+    role,
+    department: department ?? "",
+    invitedByName: req.authUser!.name,
+    expiresAt,
+  });
+
+  const acceptUrl = `${getAppDomain(req)}/accept-invite?token=${token}`;
+  req.log.info({ email, acceptUrl }, "Invite created");
+
+  await sendInviteEmail({
+    toEmail: email,
+    toName: name,
+    invitedByName: req.authUser!.name,
+    role,
+    acceptUrl,
+  });
+
+  res.status(201).json({ message: "Invite sent", acceptUrl });
+});
+
+router.post("/auth/accept-invite", async (req, res): Promise<void> => {
+  const parsed = AcceptInviteBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const { token, name, password } = parsed.data;
+  const now = new Date();
+
+  const [invite] = await db
+    .select()
+    .from(invitesTable)
+    .where(
+      and(
+        eq(invitesTable.token, token),
+        isNull(invitesTable.usedAt),
+        gt(invitesTable.expiresAt, now)
+      )
+    )
+    .limit(1);
+
+  if (!invite) {
+    res.status(400).json({ error: "Invite link is invalid or has expired" });
+    return;
+  }
+
+  const [existing] = await db
+    .select()
+    .from(usersTable)
+    .where(eq(usersTable.email, invite.email))
+    .limit(1);
+  if (existing) {
+    res.status(409).json({ error: "An account with this email already exists. Please log in." });
+    return;
+  }
+
+  const initials = name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+  const passwordHash = await hashPassword(password);
+
+  const [user] = await db
+    .insert(usersTable)
+    .values({
+      email: invite.email,
+      name,
+      initials,
+      department: invite.department,
+      role: invite.role,
+      passwordHash,
+      active: true,
+      invitedByName: invite.invitedByName,
+    })
+    .returning();
+
+  await db
+    .update(invitesTable)
+    .set({ usedAt: now })
+    .where(eq(invitesTable.id, invite.id));
+
+  const sessionToken = await createSession(user.id);
+  req.log.info({ userId: user.id }, "User accepted invite and created account");
+  res.status(201).json({ token: sessionToken, user: safeUser(user) });
+});
+
+router.get("/auth/invite/:token", async (req, res): Promise<void> => {
+  const token = Array.isArray(req.params.token) ? req.params.token[0] : req.params.token;
+  const now = new Date();
+
+  const [invite] = await db
+    .select()
+    .from(invitesTable)
+    .where(
+      and(
+        eq(invitesTable.token, token),
+        isNull(invitesTable.usedAt),
+        gt(invitesTable.expiresAt, now)
+      )
+    )
+    .limit(1);
+
+  if (!invite) {
+    res.status(400).json({ error: "Invite link is invalid or has expired" });
+    return;
+  }
+
+  res.json({ email: invite.email, name: invite.name, role: invite.role, department: invite.department });
+});
+
+export default router;

@@ -1,8 +1,15 @@
 import { Feather } from "@expo/vector-icons";
-import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
 import React from "react";
-import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Alert,
+  Platform,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth, type UserRole } from "@/context/AuthContext";
 import { useAudit } from "@/context/AuditContext";
@@ -59,20 +66,31 @@ export default function SettingsScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { currentUser, users, isAdmin, switchUser } = useAuth();
+  const { currentUser, users, isAdmin, logout } = useAuth();
   const { entries } = useAudit();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const botPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
 
+  if (!currentUser) return null;
+
+  function handleLogout() {
+    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign Out",
+        style: "destructive",
+        onPress: async () => {
+          await logout();
+          router.replace("/login");
+        },
+      },
+    ]);
+  }
+
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View
-        style={[
-          styles.header,
-          { backgroundColor: colors.navyDark, paddingTop: topPad + 16 },
-        ]}
-      >
+      <View style={[styles.header, { backgroundColor: colors.navyDark, paddingTop: topPad + 16 }]}>
         <Text style={styles.headerTitle}>Settings</Text>
       </View>
 
@@ -81,18 +99,8 @@ export default function SettingsScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Profile */}
-        <View
-          style={[
-            styles.profileCard,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
-          <View
-            style={[
-              styles.avatar,
-              { backgroundColor: ROLE_COLORS[currentUser.role] },
-            ]}
-          >
+        <View style={[styles.profileCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <View style={[styles.avatar, { backgroundColor: ROLE_COLORS[currentUser.role] }]}>
             <Text style={styles.avatarText}>{currentUser.initials}</Text>
           </View>
           <View style={styles.profileInfo}>
@@ -100,7 +108,8 @@ export default function SettingsScreen() {
               {currentUser.name}
             </Text>
             <Text style={[styles.profileRole, { color: colors.mutedForeground }]}>
-              {currentUser.department} ·{" "}
+              {currentUser.department}
+              {currentUser.department ? " · " : ""}
               <Text style={{ color: ROLE_COLORS[currentUser.role] }}>
                 {currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1)}
               </Text>
@@ -111,71 +120,11 @@ export default function SettingsScreen() {
           </View>
         </View>
 
-        {/* Switch user (demo) */}
-        <SectionHeader title="Switch User (Demo)" />
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, gap: 8, paddingBottom: 4 }}
-        >
-          {users
-            .filter((u) => u.active)
-            .map((u) => (
-              <TouchableOpacity
-                key={u.id}
-                style={[
-                  styles.userChip,
-                  {
-                    backgroundColor:
-                      u.id === currentUser.id ? colors.primary : colors.muted,
-                    borderColor:
-                      u.id === currentUser.id ? colors.primary : colors.border,
-                  },
-                ]}
-                onPress={() => {
-                  if (u.id !== currentUser.id) {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    switchUser(u.id);
-                  }
-                }}
-                activeOpacity={0.7}
-              >
-                <Text
-                  style={[
-                    styles.userChipInitials,
-                    {
-                      color: u.id === currentUser.id ? "#fff" : ROLE_COLORS[u.role],
-                    },
-                  ]}
-                >
-                  {u.initials}
-                </Text>
-                <Text
-                  style={[
-                    styles.userChipName,
-                    {
-                      color:
-                        u.id === currentUser.id ? "#fff" : colors.foreground,
-                    },
-                  ]}
-                  numberOfLines={1}
-                >
-                  {u.name.split(" ")[0]}
-                </Text>
-              </TouchableOpacity>
-            ))}
-        </ScrollView>
-
         {/* Admin */}
         {isAdmin && (
           <>
             <SectionHeader title="Administration" />
-            <View
-              style={[
-                styles.section,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-            >
+            <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <SettingRow
                 icon="shield"
                 label="Admin Panel"
@@ -199,12 +148,7 @@ export default function SettingsScreen() {
         )}
 
         <SectionHeader title="Calendar" />
-        <View
-          style={[
-            styles.section,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
+        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <SettingRow icon="clock" label="Default Event Duration" value="1 hour" onPress={() => {}} />
           <SettingRow icon="bell" label="Default Reminder" value="15 min before" onPress={() => {}} />
           <SettingRow icon="globe" label="Time Zone" value="GMT+0 London" onPress={() => {}} />
@@ -212,35 +156,20 @@ export default function SettingsScreen() {
         </View>
 
         <SectionHeader title="Projects" />
-        <View
-          style={[
-            styles.section,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
+        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <SettingRow icon="user" label="Default Task Assignee" value="Unassigned" onPress={() => {}} />
           <SettingRow icon="flag" label="Default Task Priority" value="Medium" onPress={() => {}} />
         </View>
 
         <SectionHeader title="Notifications" />
-        <View
-          style={[
-            styles.section,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
+        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <SettingRow icon="bell" label="Event Reminders" value="On" onPress={() => {}} />
           <SettingRow icon="alert-triangle" label="At-Risk Alerts" value="On" onPress={() => {}} />
           <SettingRow icon="check-circle" label="Task Completion" value="Off" onPress={() => {}} />
         </View>
 
         <SectionHeader title="Data & Security" />
-        <View
-          style={[
-            styles.section,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
+        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <SettingRow icon="lock" label="Encryption" value="AES-256-GCM" />
           <SettingRow icon="shield" label="Key Storage" value="OS Secure Enclave" />
           <SettingRow icon="database" label="Data Location" value="On-device only" />
@@ -248,14 +177,15 @@ export default function SettingsScreen() {
         </View>
 
         <SectionHeader title="About" />
-        <View
-          style={[
-            styles.section,
-            { backgroundColor: colors.card, borderColor: colors.border },
-          ]}
-        >
+        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
           <SettingRow icon="info" label="Version" value="1.0.0" />
           <SettingRow icon="book-open" label="Documentation" onPress={() => {}} />
+        </View>
+
+        {/* Sign Out */}
+        <SectionHeader title="Account" />
+        <View style={[styles.section, { backgroundColor: colors.card, borderColor: colors.border }]}>
+          <SettingRow icon="log-out" label="Sign Out" onPress={handleLogout} danger />
         </View>
       </ScrollView>
     </View>
@@ -320,15 +250,4 @@ const styles = StyleSheet.create({
   rowLabel: { flex: 1, fontSize: 14, fontFamily: "Inter_400Regular" },
   rowRight: { flexDirection: "row", alignItems: "center", gap: 4 },
   rowValue: { fontSize: 13, fontFamily: "Inter_400Regular" },
-  userChip: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    borderRadius: 20,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  userChipInitials: { fontSize: 12, fontFamily: "Inter_700Bold" },
-  userChipName: { fontSize: 13, fontFamily: "Inter_500Medium" },
 });

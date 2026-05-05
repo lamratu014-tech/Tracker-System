@@ -1,139 +1,262 @@
-import AsyncStorage from "@react-native-async-storage/async-storage";
-import React, { createContext, useCallback, useContext, useEffect, useState } from "react";
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
+import { api, getStoredToken, storeToken, clearToken } from "@/services/api";
 
 export type UserRole = "admin" | "manager" | "viewer";
 
 export interface AppUser {
   id: string;
+  email: string;
   name: string;
   initials: string;
-  email: string;
-  role: UserRole;
   department: string;
+  role: UserRole;
   active: boolean;
   createdAt: string;
+  invitedByName?: string | null;
 }
 
 interface AuthContextType {
-  currentUser: AppUser;
+  currentUser: AppUser | null;
   users: AppUser[];
   isAdmin: boolean;
   isManager: boolean;
-  switchUser: (userId: string) => void;
-  updateUserRole: (userId: string, role: UserRole) => void;
-  addUser: (user: Omit<AppUser, "id" | "createdAt">) => void;
-  deactivateUser: (userId: string) => void;
-  deleteUser: (userId: string) => void;
-  reactivateUser: (userId: string) => void;
+  isLoading: boolean;
+  isAuthenticated: boolean;
+  needsSetup: boolean;
+  sessionToken: string | null;
+
+  login: (email: string, password: string) => Promise<{ error?: string }>;
+  logout: () => Promise<void>;
+  setup: (email: string, name: string, password: string, department?: string) => Promise<{ error?: string }>;
+  inviteUser: (email: string, name: string, role: UserRole, department?: string) => Promise<{ error?: string; acceptUrl?: string }>;
+  updateUserRole: (userId: string, role: UserRole) => Promise<void>;
+  deactivateUser: (userId: string) => Promise<void>;
+  reactivateUser: (userId: string) => Promise<void>;
+  deleteUser: (userId: string) => Promise<void>;
+  refreshUsers: () => Promise<void>;
 }
 
-const DEFAULT_USER: AppUser = {
-  id: "u1",
-  name: "Alex Morgan",
-  initials: "AM",
-  email: "a.morgan@organisation.org",
-  role: "admin",
-  department: "Operations",
-  active: true,
-  createdAt: new Date(Date.now() - 86400000 * 60).toISOString(),
-};
-
-const AuthContext = createContext<AuthContextType>({
-  currentUser: DEFAULT_USER,
-  users: [DEFAULT_USER],
-  isAdmin: true,
-  isManager: true,
-  switchUser: () => {},
-  updateUserRole: () => {},
-  addUser: () => {},
-  deactivateUser: () => {},
-  deleteUser: () => {},
-  reactivateUser: () => {},
-});
-
-const USERS_KEY = "ops_users_v1";
-const CURRENT_USER_KEY = "ops_current_user_v1";
-
-function genId() {
-  return Date.now().toString() + Math.random().toString(36).substr(2, 6);
-}
-
-const SEED_USERS: AppUser[] = [
-  DEFAULT_USER,
-  { id: "u2", name: "Sarah Chen", initials: "SC", email: "s.chen@organisation.org", role: "manager", department: "Events", active: true, createdAt: new Date(Date.now() - 86400000 * 45).toISOString() },
-  { id: "u3", name: "James Liu", initials: "JL", email: "j.liu@organisation.org", role: "manager", department: "HR", active: true, createdAt: new Date(Date.now() - 86400000 * 30).toISOString() },
-  { id: "u4", name: "Nina Patel", initials: "NP", email: "n.patel@organisation.org", role: "manager", department: "Facilities", active: true, createdAt: new Date(Date.now() - 86400000 * 20).toISOString() },
-  { id: "u5", name: "Tom Reid", initials: "TR", email: "t.reid@organisation.org", role: "viewer", department: "Finance", active: true, createdAt: new Date(Date.now() - 86400000 * 10).toISOString() },
-];
+const AuthContext = createContext<AuthContextType | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [users, setUsers] = useState<AppUser[]>(SEED_USERS);
-  const [currentUserId, setCurrentUserId] = useState<string>("u1");
+  const [currentUser, setCurrentUser] = useState<AppUser | null>(null);
+  const [users, setUsers] = useState<AppUser[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [needsSetup, setNeedsSetup] = useState(false);
+  const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   useEffect(() => {
-    async function load() {
+    async function init() {
       try {
-        const [storedUsers, storedCurrent] = await Promise.all([
-          AsyncStorage.getItem(USERS_KEY),
-          AsyncStorage.getItem(CURRENT_USER_KEY),
-        ]);
-        if (storedUsers) setUsers(JSON.parse(storedUsers));
-        if (storedCurrent) setCurrentUserId(storedCurrent);
+        const token = await getStoredToken();
+        if (token) {
+          const res = await api.me(token);
+          if (res.ok) {
+            const user = (await res.json()) as AppUser;
+            setCurrentUser(user);
+            setSessionToken(token);
+            const usersRes = await api.getUsers(token);
+            if (usersRes.ok) setUsers((await usersRes.json()) as AppUser[]);
+          } else {
+            await clearToken();
+          }
+        } else {
+          const statusRes = await api.status();
+          if (statusRes.ok) {
+            const { needsSetup: ns } = (await statusRes.json()) as { needsSetup: boolean };
+            setNeedsSetup(ns);
+          }
+        }
+      } catch {
+        // API unreachable — app will show login/setup after load
+      } finally {
+        setIsLoading(false);
+      }
+    }
+    init();
+  }, []);
+
+  const handleAuthSuccess = useCallback(
+    async (token: string, user: AppUser) => {
+      await storeToken(token);
+      setSessionToken(token);
+      setCurrentUser(user);
+      const usersRes = await api.getUsers(token);
+      if (usersRes.ok) setUsers((await usersRes.json()) as AppUser[]);
+    },
+    []
+  );
+
+  const login = useCallback(
+    async (email: string, password: string): Promise<{ error?: string }> => {
+      try {
+        const res = await api.login(email, password);
+        if (res.ok) {
+          const { token, user } = (await res.json()) as { token: string; user: AppUser };
+          await handleAuthSuccess(token, user);
+          return {};
+        }
+        const body = (await res.json()) as { error?: string };
+        return { error: body.error ?? "Login failed" };
+      } catch {
+        return { error: "Could not connect to server" };
+      }
+    },
+    [handleAuthSuccess]
+  );
+
+  const logout = useCallback(async () => {
+    if (sessionToken) {
+      try {
+        await api.logout(sessionToken);
       } catch {}
     }
-    load();
-  }, []);
+    await clearToken();
+    setSessionToken(null);
+    setCurrentUser(null);
+    setUsers([]);
+  }, [sessionToken]);
 
-  const saveUsers = useCallback(async (data: AppUser[]) => {
-    setUsers(data);
-    await AsyncStorage.setItem(USERS_KEY, JSON.stringify(data));
-  }, []);
+  const setup = useCallback(
+    async (email: string, name: string, password: string, department?: string): Promise<{ error?: string }> => {
+      try {
+        const res = await api.setup({ email, name, password, department });
+        if (res.ok) {
+          const { token, user } = (await res.json()) as { token: string; user: AppUser };
+          setNeedsSetup(false);
+          await handleAuthSuccess(token, user);
+          return {};
+        }
+        const body = (await res.json()) as { error?: string };
+        return { error: body.error ?? "Setup failed" };
+      } catch {
+        return { error: "Could not connect to server" };
+      }
+    },
+    [handleAuthSuccess]
+  );
 
-  const switchUser = useCallback(async (userId: string) => {
-    setCurrentUserId(userId);
-    await AsyncStorage.setItem(CURRENT_USER_KEY, userId);
-  }, []);
+  const refreshUsers = useCallback(async () => {
+    if (!sessionToken) return;
+    try {
+      const res = await api.getUsers(sessionToken);
+      if (res.ok) setUsers((await res.json()) as AppUser[]);
+    } catch {}
+  }, [sessionToken]);
 
-  const updateUserRole = useCallback((userId: string, role: UserRole) => {
-    saveUsers(users.map((u) => (u.id === userId ? { ...u, role } : u)));
-  }, [users, saveUsers]);
+  const inviteUser = useCallback(
+    async (email: string, name: string, role: UserRole, department?: string): Promise<{ error?: string; acceptUrl?: string }> => {
+      if (!sessionToken) return { error: "Not authenticated" };
+      try {
+        const res = await api.invite(sessionToken, { email, name, role, department });
+        if (res.ok) {
+          const body = (await res.json()) as { message: string; acceptUrl: string };
+          return { acceptUrl: body.acceptUrl };
+        }
+        const body = (await res.json()) as { error?: string };
+        return { error: body.error ?? "Failed to send invite" };
+      } catch {
+        return { error: "Could not connect to server" };
+      }
+    },
+    [sessionToken]
+  );
 
-  const addUser = useCallback((user: Omit<AppUser, "id" | "createdAt">) => {
-    saveUsers([...users, { ...user, id: genId(), createdAt: new Date().toISOString() }]);
-  }, [users, saveUsers]);
+  const updateUserRole = useCallback(
+    async (userId: string, role: UserRole) => {
+      if (!sessionToken) return;
+      const res = await api.updateRole(sessionToken, userId, role);
+      if (res.ok) await refreshUsers();
+    },
+    [sessionToken, refreshUsers]
+  );
 
-  const deactivateUser = useCallback((userId: string) => {
-    saveUsers(users.map((u) => (u.id === userId ? { ...u, active: false } : u)));
-  }, [users, saveUsers]);
+  const deactivateUser = useCallback(
+    async (userId: string) => {
+      if (!sessionToken) return;
+      const res = await api.deactivateUser(sessionToken, userId);
+      if (res.ok) await refreshUsers();
+    },
+    [sessionToken, refreshUsers]
+  );
 
-  const reactivateUser = useCallback((userId: string) => {
-    saveUsers(users.map((u) => (u.id === userId ? { ...u, active: true } : u)));
-  }, [users, saveUsers]);
+  const reactivateUser = useCallback(
+    async (userId: string) => {
+      if (!sessionToken) return;
+      const res = await api.reactivateUser(sessionToken, userId);
+      if (res.ok) await refreshUsers();
+    },
+    [sessionToken, refreshUsers]
+  );
 
-  const deleteUser = useCallback((userId: string) => {
-    saveUsers(users.filter((u) => u.id !== userId));
-  }, [users, saveUsers]);
+  const deleteUser = useCallback(
+    async (userId: string) => {
+      if (!sessionToken) return;
+      const res = await api.deleteUser(sessionToken, userId);
+      if (res.status === 204) await refreshUsers();
+    },
+    [sessionToken, refreshUsers]
+  );
 
-  const currentUser = users.find((u) => u.id === currentUserId) ?? DEFAULT_USER;
+  const isAuthenticated = !!currentUser;
+  const isAdmin = currentUser?.role === "admin";
+  const isManager = isAdmin || currentUser?.role === "manager";
 
   return (
-    <AuthContext.Provider value={{
-      currentUser,
-      users,
-      isAdmin: currentUser.role === "admin",
-      isManager: currentUser.role === "admin" || currentUser.role === "manager",
-      switchUser,
-      updateUserRole,
-      addUser,
-      deactivateUser,
-      deleteUser,
-      reactivateUser,
-    }}>
+    <AuthContext.Provider
+      value={{
+        currentUser,
+        users,
+        isAdmin,
+        isManager,
+        isLoading,
+        isAuthenticated,
+        needsSetup,
+        sessionToken,
+        login,
+        logout,
+        setup,
+        inviteUser,
+        updateUserRole,
+        deactivateUser,
+        reactivateUser,
+        deleteUser,
+        refreshUsers,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
 }
 
-export function useAuth() {
-  return useContext(AuthContext);
+export function useAuth(): AuthContextType {
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    return {
+      currentUser: null,
+      users: [],
+      isAdmin: false,
+      isManager: false,
+      isLoading: true,
+      isAuthenticated: false,
+      needsSetup: false,
+      sessionToken: null,
+      login: async () => ({}),
+      logout: async () => {},
+      setup: async () => ({}),
+      inviteUser: async () => ({}),
+      updateUserRole: async () => {},
+      deactivateUser: async () => {},
+      reactivateUser: async () => {},
+      deleteUser: async () => {},
+      refreshUsers: async () => {},
+    };
+  }
+  return ctx;
 }
