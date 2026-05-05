@@ -12,7 +12,13 @@ import {
 } from "react-native";
 
 import { useColors } from "@/hooks/useColors";
-import { canManageEverything, useCurrentUser, useStore } from "@/store/useStore";
+import {
+  canManageEverything,
+  canManageStream,
+  canManageTeam,
+  useCurrentUser,
+  useStore,
+} from "@/store/useStore";
 
 export default function EventDetailScreen() {
   const colors = useColors();
@@ -34,7 +40,11 @@ export default function EventDetailScreen() {
 
   const isAdmin = canManageEverything(me);
   const isCreator = me?.id === event.createdBy;
-  const canDelete = isAdmin || isCreator;
+  const overseerOfStream =
+    !!event.linkedStreamId && canManageStream(me, event.linkedStreamId);
+  const overseerOrLeaderOfTeam =
+    !!event.linkedTeamId && canManageTeam(me, event.linkedTeamId, streams);
+  const canDelete = isAdmin || isCreator || overseerOfStream || overseerOrLeaderOfTeam;
 
   let linkedLabel = "Programme-wide";
   if (event.linkedTeamId) {

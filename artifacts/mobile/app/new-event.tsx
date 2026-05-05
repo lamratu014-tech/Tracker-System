@@ -46,16 +46,17 @@ export default function NewEventScreen() {
 
   const allowedTeams = useMemo(() => {
     if (!me) return [];
-    const flat = streams.flatMap((s) => s.teams.map((t) => ({ team: t, streamName: s.name })));
+    const flat = streams.flatMap((s) => s.teams.map((t) => ({ team: t, streamName: s.name, streamId: s.id })));
     if (me.role === "admin") return flat;
+    if (me.role === "stream_overseer") return flat.filter((x) => x.streamId === me.streamId);
     if (me.role === "leader" && me.teamId) return flat.filter((x) => x.team.id === me.teamId);
     return [];
   }, [streams, me]);
 
-  if (!me || me.role === "member") {
+  if (!me) {
     return (
       <View style={[styles.gate, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.mutedForeground }}>Members can't create events.</Text>
+        <Text style={{ color: colors.mutedForeground }}>Sign in to create events.</Text>
       </View>
     );
   }
@@ -64,6 +65,9 @@ export default function NewEventScreen() {
     if (!title.trim()) return Alert.alert("Title required", "Please enter an event title.");
     if (!date) return Alert.alert("Date required", "Pick a date.");
     if (!time) return Alert.alert("Time required", "Pick a time.");
+    if (me!.role !== "admin" && !linkedTeamId) {
+      return Alert.alert("Team required", "Pick a team for this event.");
+    }
 
     let linkedStreamId: string | null = null;
     if (linkedTeamId) {

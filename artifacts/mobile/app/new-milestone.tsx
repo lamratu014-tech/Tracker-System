@@ -53,7 +53,7 @@ export default function NewMilestoneScreen() {
   const allowedProjects = useMemo(() => {
     const flat: Array<{ project: Project; teamId: string; teamName: string; streamName: string }> = [];
     for (const s of streams) for (const t of s.teams) for (const p of t.projects) {
-      if (canCreateForTeam(me, t.id)) {
+      if (canCreateForTeam(me, t.id, streams)) {
         flat.push({ project: p, teamId: t.id, teamName: t.name, streamName: s.name });
       }
     }
@@ -83,7 +83,7 @@ export default function NewMilestoneScreen() {
     if (!deadline) return Alert.alert("Deadline required", "Pick a deadline.");
     const found = findProject(streams, projectId);
     if (!found) return Alert.alert("Error", "Project not found.");
-    if (!canCreateForTeam(me, found.team.id)) return Alert.alert("Not allowed", "You can't add a milestone to this team.");
+    if (!canCreateForTeam(me, found.team.id, streams)) return Alert.alert("Not allowed", "You can't add a milestone to this team.");
     const ms = addMilestone(projectId, { title: title.trim(), status, deadline, assignedTo: null });
     if (ms) router.back();
     else Alert.alert("Error", "Could not create milestone.");

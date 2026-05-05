@@ -15,19 +15,21 @@ import { useColors } from "@/hooks/useColors";
 import type { Role } from "@/models/types";
 import { useCurrentUser, useStore } from "@/store/useStore";
 
-type AdminTab = "users" | "structure" | "events";
+type AdminTab = "structure" | "users" | "members" | "events";
 
 const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
+  stream_overseer: "Overseer",
   leader: "Leader",
-  member: "Member",
 };
 
 const ROLE_COLOR: Record<Role, string> = {
   admin: "#7C3AED",
+  stream_overseer: "#0EA5E9",
   leader: "#2563EB",
-  member: "#059669",
 };
+
+const ROLE_CYCLE: Role[] = ["admin", "stream_overseer", "leader"];
 
 function confirm(message: string, onYes: () => void) {
   if (Platform.OS === "web") {
@@ -45,6 +47,7 @@ export default function AdminPanelScreen() {
   const router = useRouter();
   const me = useCurrentUser();
   const users = useStore((s) => s.users);
+  const members = useStore((s) => s.members);
   const streams = useStore((s) => s.streams);
   const events = useStore((s) => s.events);
   const updateUser = useStore((s) => s.updateUser);
@@ -52,6 +55,7 @@ export default function AdminPanelScreen() {
   const deleteStream = useStore((s) => s.deleteStream);
   const deleteTeam = useStore((s) => s.deleteTeam);
   const deleteEvent = useStore((s) => s.deleteEvent);
+  const deleteMember = useStore((s) => s.deleteMember);
 
   const [tab, setTab] = useState<AdminTab>("structure");
   const [expandedStreamId, setExpandedStreamId] = useState<string | null>(streams[0]?.id ?? null);
@@ -67,15 +71,54 @@ export default function AdminPanelScreen() {
     return "—";
   }
 
+  function streamLabel(streamId: string | null): string {
+    if (!streamId) return "—";
+    return streams.find((s) => s.id === streamId)?.name ?? "—";
+  }
+
   function changeRole(userId: string, currentRole: Role) {
-    const next: Role = currentRole === "admin" ? "leader" : currentRole === "leader" ? "member" : "admin";
+    const u = users.find((x) => x.id === userId);
+    if (!u) return;
+    const idx = ROLE_CYCLE.indexOf(currentRole);
+    const next = ROLE_CYCLE[(idx + 1) % ROLE_CYCLE.length];
+    if (next === "stream_overseer" && !u.streamId) {
+      Alert.alert(
+        "Stream required",
+        "Assign this user to a stream first (re-invite them with a stream) before making them an Overseer.",
+      );
+      return;
+    }
+    if (next === "leader" && !u.teamId) {
+      Alert.alert(
+        "Team required",
+        "Assign this user to a team first (re-invite them with a team) before making them a Leader.",
+      );
+      return;
+    }
     updateUser(userId, { role: next });
+  }
+
+  function copyCode(code: string) {
+    try {
+      if (Platform.OS === "web" && typeof navigator !== "undefined" && navigator.clipboard) {
+        navigator.clipboard.writeText(code).catch(() => undefined);
+      } else {
+        Alert.alert("Invite code", code);
+      }
+    } catch {
+      // ignore
+    }
   }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <View style={[styles.tabs, { backgroundColor: colors.card, borderBottomColor: colors.border }]}>
-        {(["structure", "users", "events"] as AdminTab[]).map((t) => (
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={[styles.tabs, { backgroundColor: colors.card, borderBottomColor: colors.border }]}
+        contentContainerStyle={{ flexGrow: 1 }}
+      >
+        {(["structure", "users", "members", "events"] as AdminTab[]).map((t) => (
           <TouchableOpacity
             key={t}
             style={[styles.tab, tab === t && { borderBottomColor: colors.primary }]}
@@ -86,7 +129,7 @@ export default function AdminPanelScreen() {
             </Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
         {tab === "structure" ? (
@@ -203,43 +246,115 @@ export default function AdminPanelScreen() {
                 onPress={() => router.push("/new-user")}
               >
                 <Feather name="user-plus" size={12} color="#fff" />
-                <Text style={[styles.smallBtnText, { color: "#fff" }]}>User</Text>
+                <Text style={[styles.smallBtnText, { color: "#fff" }]}>Invite</Text>
               </TouchableOpacity>
             </View>
-            {users.map((u) => (
-              <View key={u.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 10 }]}>
-                <View style={[styles.avatar, { backgroundColor: ROLE_COLOR[u.role] + "22" }]}>
-                  <Text style={[styles.avatarText, { color: ROLE_COLOR[u.role] }]}>
-                    {u.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
-                  </Text>
+            {users.map((u) => {
+              const scope =
+                u.role === "admin"
+                  ? "All streams"
+                  : u.role === "stream_overseer"
+                    ? streamLabel(u.streamId)
+                    : teamLabel(u.teamId);
+              return (
+                <View key={u.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                    <View style={[styles.avatar, { backgroundColor: ROLE_COLOR[u.role] + "22" }]}>
+                      <Text style={[styles.avatarText, { color: ROLE_COLOR[u.role] }]}>
+                        {u.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.cardTitle, { color: colors.foreground }]}>
+                        {u.name} {me?.id === u.id ? <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>(you)</Text> : null}
+                      </Text>
+                      <Text style={[styles.cardSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                        {u.email} · {scope}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={[styles.roleChip, { backgroundColor: ROLE_COLOR[u.role] }]}
+                      onPress={() => changeRole(u.id, u.role)}
+                      hitSlop={6}
+                    >
+                      <Text style={styles.roleChipText}>{ROLE_LABEL[u.role]}</Text>
+                    </TouchableOpacity>
+                    {me?.id !== u.id ? (
+                      <TouchableOpacity
+                        style={styles.iconBtn}
+                        onPress={() => confirm(`Delete user "${u.name}"?`, () => deleteUser(u.id))}
+                      >
+                        <Feather name="trash-2" size={14} color="#DC2626" />
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+                  {!u.active && u.inviteCode ? (
+                    <TouchableOpacity
+                      style={[styles.codeRow, { backgroundColor: colors.muted, borderColor: colors.border }]}
+                      onPress={() => copyCode(u.inviteCode!)}
+                      activeOpacity={0.7}
+                    >
+                      <Feather name="key" size={12} color={colors.primary} />
+                      <Text style={[styles.codeLabel, { color: colors.mutedForeground }]}>Invite code</Text>
+                      <Text style={[styles.codeText, { color: colors.foreground }]}>{u.inviteCode}</Text>
+                      <Feather name="copy" size={12} color={colors.mutedForeground} />
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.cardTitle, { color: colors.foreground }]}>
-                    {u.name} {me?.id === u.id ? <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>(you)</Text> : null}
-                  </Text>
-                  <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
-                    {teamLabel(u.teamId)}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={[styles.roleChip, { backgroundColor: ROLE_COLOR[u.role] }]}
-                  onPress={() => changeRole(u.id, u.role)}
-                  hitSlop={6}
+              );
+            })}
+            <Text style={[styles.hint, { color: colors.mutedForeground }]}>
+              Tap the role chip to cycle: Admin → Overseer → Leader.
+            </Text>
+          </>
+        ) : null}
+
+        {tab === "members" ? (
+          <>
+            <View style={styles.sectionRow}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Members ({members.length})</Text>
+              <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
+                Add via team page
+              </Text>
+            </View>
+            {members.length === 0 ? (
+              <View style={[styles.empty, { backgroundColor: colors.muted }]}>
+                <Text style={{ color: colors.mutedForeground }}>No members yet.</Text>
+              </View>
+            ) : (
+              members.map((m) => (
+                <View
+                  key={m.id}
+                  style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 10 }]}
                 >
-                  <Text style={styles.roleChipText}>{ROLE_LABEL[u.role]}</Text>
-                </TouchableOpacity>
-                {me?.id !== u.id ? (
+                  <View style={[styles.avatar, { backgroundColor: colors.primary + "22" }]}>
+                    <Text style={[styles.avatarText, { color: colors.primary }]}>
+                      {m.name.split(" ").map((n) => n[0]).join("").slice(0, 2).toUpperCase()}
+                    </Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.cardTitle, { color: colors.foreground }]}>{m.name}</Text>
+                    <Text style={[styles.cardSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+                      {teamLabel(m.teamId)}
+                    </Text>
+                  </View>
                   <TouchableOpacity
                     style={styles.iconBtn}
-                    onPress={() => confirm(`Delete user "${u.name}"?`, () => deleteUser(u.id))}
+                    onPress={() => router.push({ pathname: "/team/[id]", params: { id: m.teamId } })}
+                  >
+                    <Feather name="external-link" size={14} color={colors.primary} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.iconBtn}
+                    onPress={() => confirm(`Remove "${m.name}"?`, () => deleteMember(m.id))}
                   >
                     <Feather name="trash-2" size={14} color="#DC2626" />
                   </TouchableOpacity>
-                ) : null}
-              </View>
-            ))}
+                </View>
+              ))
+            )}
             <Text style={[styles.hint, { color: colors.mutedForeground }]}>
-              Tap the role chip to cycle: Admin → Leader → Member → Admin.
+              Members are roster entries — they don't log in.
             </Text>
           </>
         ) : null}
@@ -304,14 +419,14 @@ export default function AdminPanelScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  tabs: { flexDirection: "row", borderBottomWidth: StyleSheet.hairlineWidth },
-  tab: { flex: 1, paddingVertical: 12, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
+  tabs: { flexGrow: 0, borderBottomWidth: StyleSheet.hairlineWidth },
+  tab: { paddingVertical: 12, paddingHorizontal: 18, alignItems: "center", borderBottomWidth: 2, borderBottomColor: "transparent" },
   tabText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   sectionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
   sectionTitle: { fontSize: 15, fontFamily: "Inter_700Bold" },
   smallBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
   smallBtnText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  card: { borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 8, overflow: "hidden" },
+  card: { borderWidth: 1, borderRadius: 10, padding: 12, marginBottom: 8, overflow: "hidden", gap: 8 },
   cardHeader: { flexDirection: "row", alignItems: "center", gap: 10, padding: 12 },
   cardBody: { paddingHorizontal: 10, paddingBottom: 10, gap: 6 },
   cardTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
@@ -330,4 +445,10 @@ const styles = StyleSheet.create({
   dateBox: { width: 40, height: 40, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   dateBoxDay: { fontSize: 16, fontFamily: "Inter_700Bold" },
   dateBoxMo: { fontSize: 9, fontFamily: "Inter_600SemiBold", textTransform: "uppercase" },
+  codeRow: {
+    flexDirection: "row", alignItems: "center", gap: 8,
+    paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8, borderWidth: 1,
+  },
+  codeLabel: { fontSize: 11, fontFamily: "Inter_500Medium" },
+  codeText: { flex: 1, fontSize: 14, fontFamily: "Inter_700Bold", letterSpacing: 2 },
 });
