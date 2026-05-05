@@ -1,0 +1,142 @@
+You are a senior React Native (Expo) engineer. Refactor and fix my entire app so that it becomes a fully functional, production-ready prototype.
+
+DO NOT patch small issues. Instead, rebuild the logic cleanly while preserving the UI structure and concept.
+
+CORE REQUIREMENTS:
+
+1. STATE MANAGEMENT
+- Replace all scattered useState logic with a structured global state using Zustand.
+- Create a central store for:
+  - streams
+  - teams
+  - projects
+  - milestones
+  - user (role, assigned property, permissions)
+- Ensure all updates trigger proper re-renders.
+
+2. DATA STRUCTURE (MANDATORY)
+Implement this hierarchy exactly:
+
+streams: [
+  {
+    id,
+    name,
+    teams: [
+      {
+        id,
+        name,
+        leaderId,
+        projects: [
+          {
+            id,
+            title,
+            description,
+            milestones: [
+              {
+                id,
+                title,
+                completed
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]
+
+3. FIX COLLAPSIBLE STREAMS
+- Remove any third-party collapsible library.
+- Implement pure React toggle logic using state.
+- Only one stream should expand at a time.
+- Clicking again collapses it.
+
+4. FULL CRUD FUNCTIONALITY
+Make the following fully functional and persistent in state:
+- Add Stream (admin only)
+- Add Team (admin only)
+- Add Project (leader + admin)
+- Add Milestone (leader + admin)
+- Edit all of the above
+- Delete all of the above
+
+All changes must instantly reflect in UI.
+
+5. ROLE-BASED PERMISSIONS (STRICT)
+Implement 3 roles:
+
+ADMIN:
+- Full access to everything
+
+LEADER:
+- Can view all streams
+- Can ONLY edit their assigned team
+- Can create/edit projects and milestones within their team
+
+MEMBER:
+- Cannot access the app interface
+- Only their name exists in the system
+
+Enforce permissions in BOTH:
+- UI (hide buttons)
+- Logic (block actions)
+
+6. AUTH SYSTEM (SIMPLIFIED BUT REAL)
+- Login using:
+  - propertyPostcode
+  - password
+- Match users from a local mock database
+- Store logged-in user in global state
+- Prevent access if not authenticated
+
+7. PERSISTENCE
+- Use AsyncStorage to persist:
+  - streams
+  - projects
+  - milestones
+  - user session
+- Data must remain after app reload
+
+8. ADMIN CONTROLS
+- Make program name editable by admin
+- Add admin dashboard screen
+- Admin can:
+  - rename streams
+  - reassign team leaders
+  - manage all data
+
+9. NAVIGATION FIXES
+- Use React Navigation properly
+- Ensure screens refresh when data updates
+- No stale state issues
+
+10. ERROR HANDLING
+- Add try/catch to all actions
+- Log errors clearly in console
+- Prevent app crashes
+
+11. UI RULES
+- Keep existing layout and design
+- Improve responsiveness where needed
+- Add basic loading states where appropriate
+
+12. CODE QUALITY
+- Break code into:
+  - components
+  - screens
+  - store
+  - utils
+- Remove duplicated logic
+- Use clean, readable structure
+
+FINAL RESULT:
+The app must behave like a real system:
+- Streams expand and collapse properly
+- Projects and milestones can be created and persist
+- Roles actually restrict access
+- No fake UI buttons — everything must work
+
+After refactoring, explain:
+1. What was broken
+2. What you changed
+3. How the new architecture works
