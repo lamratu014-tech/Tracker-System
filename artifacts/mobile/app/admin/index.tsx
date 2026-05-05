@@ -41,6 +41,9 @@ export default function AdminPanelScreen() {
   const [auditFilter, setAuditFilter] = useState<"all" | "warn" | "critical">("all");
   const [showAddUser, setShowAddUser] = useState(false);
   const [showRoleModal, setShowRoleModal] = useState<AppUser | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState<"all" | UserRole>("all");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "inactive">("all");
 
   const botPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
 
@@ -49,6 +52,21 @@ export default function AdminPanelScreen() {
     if (auditFilter === "all") return reversed;
     return reversed.filter((e) => e.severity === auditFilter);
   }, [entries, auditFilter]);
+
+  const filteredUsers = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim();
+    return users.filter((u) => {
+      if (roleFilter !== "all" && u.role !== roleFilter) return false;
+      if (statusFilter === "active" && !u.active) return false;
+      if (statusFilter === "inactive" && u.active) return false;
+      if (!q) return true;
+      return (
+        u.name.toLowerCase().includes(q) ||
+        u.email.toLowerCase().includes(q) ||
+        u.department.toLowerCase().includes(q)
+      );
+    });
+  }, [users, searchQuery, roleFilter, statusFilter]);
 
   function handleRoleChange(user: AppUser, role: UserRole) {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -125,6 +143,7 @@ export default function AdminPanelScreen() {
       {/* Users Tab */}
       {tab === "users" && (
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: botPad }}>
+          {/* Header row */}
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
               Team Members ({users.filter((u) => u.active).length} active)
@@ -139,7 +158,75 @@ export default function AdminPanelScreen() {
             </TouchableOpacity>
           </View>
 
-          {users.map((user) => (
+          {/* Search bar */}
+          <View style={[styles.searchBar, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+            <Feather name="search" size={15} color={colors.mutedForeground} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.foreground }]}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              placeholder="Search by name, email or department…"
+              placeholderTextColor={colors.mutedForeground}
+              clearButtonMode="while-editing"
+              returnKeyType="search"
+            />
+            {searchQuery.length > 0 && (
+              <TouchableOpacity onPress={() => setSearchQuery("")} activeOpacity={0.7}>
+                <Feather name="x" size={14} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Role filter chips */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 8 }} contentContainerStyle={{ gap: 6, paddingRight: 4 }}>
+            {(["all", "admin", "manager", "viewer"] as const).map((r) => (
+              <TouchableOpacity
+                key={r}
+                style={[
+                  styles.filterChipSmall,
+                  { backgroundColor: roleFilter === r ? (r === "all" ? colors.primary : ROLE_COLORS[r as UserRole] ?? colors.primary) : colors.muted },
+                ]}
+                onPress={() => setRoleFilter(r)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.filterChipText, { color: roleFilter === r ? "#fff" : colors.mutedForeground }]}>
+                  {r === "all" ? "All Roles" : r.charAt(0).toUpperCase() + r.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+            <View style={[styles.filterDivider, { backgroundColor: colors.border }]} />
+            {(["all", "active", "inactive"] as const).map((s) => (
+              <TouchableOpacity
+                key={s}
+                style={[
+                  styles.filterChipSmall,
+                  { backgroundColor: statusFilter === s ? (s === "active" ? "#059669" : s === "inactive" ? "#6B7280" : colors.primary) : colors.muted },
+                ]}
+                onPress={() => setStatusFilter(s)}
+                activeOpacity={0.7}
+              >
+                <Text style={[styles.filterChipText, { color: statusFilter === s ? "#fff" : colors.mutedForeground }]}>
+                  {s === "all" ? "All Status" : s.charAt(0).toUpperCase() + s.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          {/* Result count when filtering */}
+          {(searchQuery.length > 0 || roleFilter !== "all" || statusFilter !== "all") && (
+            <Text style={[styles.resultCount, { color: colors.mutedForeground }]}>
+              {filteredUsers.length} of {users.length} members
+            </Text>
+          )}
+
+          {filteredUsers.length === 0 && (
+            <View style={[styles.emptyState, { backgroundColor: colors.muted }]}>
+              <Feather name="users" size={24} color={colors.mutedForeground} />
+              <Text style={[styles.emptyStateText, { color: colors.mutedForeground }]}>No members match your filters</Text>
+            </View>
+          )}
+
+          {filteredUsers.map((user) => (
             <View
               key={user.id}
               style={[
@@ -531,6 +618,32 @@ const styles = StyleSheet.create({
   userActions: { flexDirection: "row", gap: 6 },
   iconBtn: { width: 28, height: 28, borderRadius: 7, alignItems: "center", justifyContent: "center" },
   youTag: { fontSize: 11, fontFamily: "Inter_500Medium" },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderRadius: 10,
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginBottom: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    fontFamily: "Inter_400Regular",
+    padding: 0,
+  },
+  filterChipSmall: {
+    borderRadius: 20,
+    paddingHorizontal: 11,
+    paddingVertical: 5,
+  },
+  filterChipText: { fontSize: 12, fontFamily: "Inter_500Medium" },
+  filterDivider: { width: 1, height: "100%", marginHorizontal: 2 },
+  resultCount: { fontSize: 11, fontFamily: "Inter_400Regular", marginBottom: 8 },
+  emptyState: { borderRadius: 12, padding: 28, alignItems: "center", gap: 8, marginBottom: 12 },
+  emptyStateText: { fontSize: 13, fontFamily: "Inter_400Regular" },
   gdprCard: {
     borderRadius: 10,
     borderWidth: 1,
