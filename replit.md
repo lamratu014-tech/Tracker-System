@@ -159,3 +159,10 @@ Push schema changes: `pnpm --filter @workspace/db run push`
 
 ## Design Tokens
 Colors extend navyDark, navyMid, slate, success alongside standard foreground/background/card/muted/primary/border palette. Supports light/dark mode via useColors hook.
+
+## Recent UI Polish (CRUD completeness)
+- **Programme tab** (`(tabs)/programme.tsx`): streams collapse — only one expanded at a time (first auto-expanded on first load). Chevron toggle, external-link button to `/stream/[id]`, `+` button on each stream for programme leads. Unassigned Teams card is also collapsible.
+- **Admin → Structure** (`admin/index.tsx`): merged streams/teams into nested collapsible cards (teams render under their parent stream). Added `EditTeamModal` (name, function label, stream picker) wired to `updateTeam`. Combined header with Team and Stream add buttons. Unassigned Teams shown as its own collapsible group.
+- **Project detail** (`project/[id].tsx`): inline milestone create form with Today / +1wk / +2wks / +1mo / +3mo offset chips. Trash icon on each milestone for `canEditHighLevel`. Long-press on a `TaskItem` confirms (Alert on native, `window.confirm` on web) and deletes via `deleteTask`.
+- **TaskItem** (`components/TaskItem.tsx`): added optional `onLongPress` prop (`delayLongPress=400`).
+- Auto-expand uses a `didInit` ref to avoid re-opening the first stream after the user manually collapses it.

@@ -102,6 +102,25 @@ export default function ProgrammeScreen() {
   const { isProgrammeLead, currentUser } = useAuth();
   const { programme, streams, teams, tasks, projects } = useData();
 
+  // Only one stream expanded at a time. Default: first stream expanded on first load.
+  const [expandedStreamId, setExpandedStreamId] = useState<string | null>(null);
+  const [unassignedExpanded, setUnassignedExpanded] = useState(false);
+  const didInitExpandRef = React.useRef(false);
+  React.useEffect(() => {
+    if (!didInitExpandRef.current && streams.length > 0) {
+      didInitExpandRef.current = true;
+      setExpandedStreamId(streams[0].id);
+    }
+  }, [streams]);
+  function toggleStream(id: string) {
+    setUnassignedExpanded(false);
+    setExpandedStreamId((cur) => (cur === id ? null : id));
+  }
+  function toggleUnassigned() {
+    setExpandedStreamId(null);
+    setUnassignedExpanded((v) => !v);
+  }
+
   const topPad = Platform.OS === "web" ? 67 : insets.top;
   const tabBarH = Platform.OS === "web" ? 84 : Platform.OS === "ios" ? 49 : 56;
   const botPad = (Platform.OS === "web" ? 0 : insets.bottom) + tabBarH + 24;
@@ -179,13 +198,19 @@ export default function ProgrammeScreen() {
 
         {streams.map((stream) => {
           const streamTeams = teams.filter((t) => t.streamId === stream.id);
+          const expanded = expandedStreamId === stream.id;
           return (
-            <View key={stream.id}>
+            <View key={stream.id} style={[styles.streamCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <TouchableOpacity
                 style={styles.streamHeader}
-                onPress={() => router.push({ pathname: "/stream/[id]", params: { id: stream.id } })}
+                onPress={() => toggleStream(stream.id)}
                 activeOpacity={0.8}
               >
+                <Feather
+                  name={expanded ? "chevron-down" : "chevron-right"}
+                  size={18}
+                  color={colors.mutedForeground}
+                />
                 <View style={[styles.streamDot, { backgroundColor: colors.primary }]} />
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.streamName, { color: colors.foreground }]}>{stream.name}</Text>
@@ -194,10 +219,17 @@ export default function ProgrammeScreen() {
                   ) : null}
                 </View>
                 <Text style={[styles.teamCount, { color: colors.mutedForeground }]}>{streamTeams.length} team{streamTeams.length !== 1 ? "s" : ""}</Text>
+                <TouchableOpacity
+                  onPress={(e) => { e.stopPropagation(); router.push({ pathname: "/stream/[id]", params: { id: stream.id } }); }}
+                  style={styles.streamIconBtn}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Feather name="external-link" size={14} color={colors.mutedForeground} />
+                </TouchableOpacity>
                 {isProgrammeLead && (
                   <TouchableOpacity
-                    onPress={() => router.push("/new-team")}
-                    style={styles.streamAddBtn}
+                    onPress={(e) => { e.stopPropagation(); router.push("/new-team"); }}
+                    style={styles.streamIconBtn}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
                     <Feather name="plus" size={16} color={colors.primary} />
@@ -205,13 +237,59 @@ export default function ProgrammeScreen() {
                 )}
               </TouchableOpacity>
 
-              {streamTeams.length === 0 ? (
-                <View style={[styles.emptyStream, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-                  <Text style={[styles.emptyStreamText, { color: colors.mutedForeground }]}>No teams in this stream yet</Text>
+              {expanded && (
+                <View style={styles.streamBody}>
+                  {streamTeams.length === 0 ? (
+                    <View style={[styles.emptyStream, { backgroundColor: colors.muted, borderColor: colors.border }]}>
+                      <Text style={[styles.emptyStreamText, { color: colors.mutedForeground }]}>No teams in this stream yet</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.teamGrid}>
+                      {streamTeams.map((team) => {
+                        const stats = allTasksForTeam[team.id] ?? { total: 0, done: 0, atRisk: 0 };
+                        const canAccess = isProgrammeLead || currentUser?.teamId === team.id;
+                        return (
+                          <TeamCard
+                            key={team.id}
+                            team={team}
+                            canAccess={canAccess}
+                            taskCount={stats.total}
+                            doneCount={stats.done}
+                            atRiskCount={stats.atRisk}
+                            onPress={() => router.push({ pathname: "/team/[id]", params: { id: team.id } })}
+                          />
+                        );
+                      })}
+                    </View>
+                  )}
                 </View>
-              ) : (
+              )}
+            </View>
+          );
+        })}
+
+        {unassignedTeams.length > 0 && (
+          <View style={[styles.streamCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <TouchableOpacity
+              style={styles.streamHeader}
+              onPress={toggleUnassigned}
+              activeOpacity={0.8}
+            >
+              <Feather
+                name={unassignedExpanded ? "chevron-down" : "chevron-right"}
+                size={18}
+                color={colors.mutedForeground}
+              />
+              <View style={[styles.streamDot, { backgroundColor: colors.mutedForeground }]} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.streamName, { color: colors.foreground }]}>Unassigned Teams</Text>
+              </View>
+              <Text style={[styles.teamCount, { color: colors.mutedForeground }]}>{unassignedTeams.length}</Text>
+            </TouchableOpacity>
+            {unassignedExpanded && (
+              <View style={styles.streamBody}>
                 <View style={styles.teamGrid}>
-                  {streamTeams.map((team) => {
+                  {unassignedTeams.map((team) => {
                     const stats = allTasksForTeam[team.id] ?? { total: 0, done: 0, atRisk: 0 };
                     const canAccess = isProgrammeLead || currentUser?.teamId === team.id;
                     return (
@@ -227,34 +305,8 @@ export default function ProgrammeScreen() {
                     );
                   })}
                 </View>
-              )}
-            </View>
-          );
-        })}
-
-        {unassignedTeams.length > 0 && (
-          <View>
-            <View style={styles.streamHeader}>
-              <View style={[styles.streamDot, { backgroundColor: colors.mutedForeground }]} />
-              <Text style={[styles.streamName, { color: colors.mutedForeground }]}>Unassigned Teams</Text>
-            </View>
-            <View style={styles.teamGrid}>
-              {unassignedTeams.map((team) => {
-                const stats = allTasksForTeam[team.id] ?? { total: 0, done: 0, atRisk: 0 };
-                const canAccess = isProgrammeLead || currentUser?.teamId === team.id;
-                return (
-                  <TeamCard
-                    key={team.id}
-                    team={team}
-                    canAccess={canAccess}
-                    taskCount={stats.total}
-                    doneCount={stats.done}
-                    atRiskCount={stats.atRisk}
-                    onPress={() => router.push({ pathname: "/team/[id]", params: { id: team.id } })}
-                  />
-                );
-              })}
-            </View>
+              </View>
+            )}
           </View>
         )}
       </ScrollView>
@@ -273,13 +325,15 @@ const styles = StyleSheet.create({
   summaryPill: { flex: 1, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: 8, paddingVertical: 8, alignItems: "center" },
   summaryCount: { fontSize: 18, fontFamily: "Inter_700Bold" },
   summaryLabel: { color: "rgba(255,255,255,0.5)", fontSize: 10, fontFamily: "Inter_400Regular", marginTop: 1 },
-  streamHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10, paddingVertical: 4 },
+  streamCard: { borderRadius: 12, borderWidth: 1, overflow: "hidden" },
+  streamHeader: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 12, paddingHorizontal: 12 },
+  streamBody: { paddingHorizontal: 10, paddingBottom: 10 },
   streamDot: { width: 8, height: 8, borderRadius: 4 },
   streamName: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
   streamDesc: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 1 },
   teamCount: { fontSize: 12, fontFamily: "Inter_400Regular" },
-  streamAddBtn: { padding: 4 },
-  teamGrid: { gap: 8, marginBottom: 8 },
+  streamIconBtn: { padding: 4 },
+  teamGrid: { gap: 8 },
   teamCard: { borderRadius: 12, borderWidth: 1, padding: 14, gap: 8 },
   lockedCard: { opacity: 0.75 },
   teamCardHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },

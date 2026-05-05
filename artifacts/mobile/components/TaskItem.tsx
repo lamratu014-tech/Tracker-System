@@ -10,6 +10,7 @@ interface Props {
   task: Task;
   onToggle: (task: Task) => void;
   onPress?: (task: Task) => void;
+  onLongPress?: (task: Task) => void;
 }
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -18,7 +19,7 @@ const PRIORITY_COLORS: Record<string, string> = {
   low: "#94A3B8",
 };
 
-export function TaskItem({ task, onToggle, onPress }: Props) {
+export function TaskItem({ task, onToggle, onPress, onLongPress }: Props) {
   const colors = useColors();
   const isDone = task.status === "done";
 
@@ -34,6 +35,8 @@ export function TaskItem({ task, onToggle, onPress }: Props) {
     <TouchableOpacity
       style={[styles.row, { borderBottomColor: colors.border }]}
       onPress={() => onPress?.(task)}
+      onLongPress={onLongPress ? () => onLongPress(task) : undefined}
+      delayLongPress={400}
       activeOpacity={0.7}
     >
       <TouchableOpacity onPress={handleToggle} style={styles.checkbox} hitSlop={8}>

@@ -213,13 +213,80 @@ function CreateTeamModal({ visible, streams, onSave, onClose, colors, defaultStr
   );
 }
 
+// ─── Edit team modal ──────────────────────────────────────────────────────────
+function EditTeamModal({ visible, team, streams, onSave, onClose, colors }: {
+  visible: boolean; team: Team; streams: Stream[];
+  onSave: (patch: { name: string; functionLabel: string; streamId: string | null }) => void;
+  onClose: () => void; colors: any;
+}) {
+  const [name, setName] = useState(team.name);
+  const [func, setFunc] = useState(team.functionLabel ?? "");
+  const [streamId, setStreamId] = useState<string | null>(team.streamId ?? null);
+  return (
+    <FormModal visible={visible} title="Edit Team" onClose={onClose} colors={colors}>
+      <ScrollView contentContainerStyle={{ padding: 20, gap: 14 }} keyboardShouldPersistTaps="handled">
+        <View style={styles.field}>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Team Name *</Text>
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+            value={name} onChangeText={setName}
+            placeholderTextColor={colors.mutedForeground} autoFocus
+          />
+        </View>
+        <View style={styles.field}>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Function / Role Label</Text>
+          <TextInput
+            style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
+            value={func} onChangeText={setFunc} placeholder="e.g. Brand & Creative"
+            placeholderTextColor={colors.mutedForeground}
+          />
+        </View>
+        <View style={styles.field}>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Stream</Text>
+          <View style={{ marginTop: 6 }}>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+              <TouchableOpacity
+                style={[styles.teamPill, { borderColor: colors.border }, streamId === null && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                onPress={() => setStreamId(null)}
+              >
+                <Text style={[styles.teamPillText, { color: streamId === null ? "#fff" : colors.foreground }]}>Unassigned</Text>
+              </TouchableOpacity>
+              {streams.map((s) => (
+                <TouchableOpacity
+                  key={s.id}
+                  style={[styles.teamPill, { borderColor: colors.border }, streamId === s.id && { backgroundColor: colors.primary, borderColor: colors.primary }]}
+                  onPress={() => setStreamId(s.id)}
+                >
+                  <Text style={[styles.teamPillText, { color: streamId === s.id ? "#fff" : colors.foreground }]}>{s.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+        <View style={styles.rowBtns}>
+          <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted }]} onPress={onClose}>
+            <Text style={[styles.btnText, { color: colors.foreground }]}>Cancel</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.btn, { backgroundColor: name.trim() ? colors.primary : colors.border }]}
+            onPress={() => { if (!name.trim()) return; onSave({ name: name.trim(), functionLabel: func.trim(), streamId }); }}
+            disabled={!name.trim()}
+          >
+            <Text style={[styles.btnText, { color: "#fff" }]}>Save Changes</Text>
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+    </FormModal>
+  );
+}
+
 // ─── Main admin screen ────────────────────────────────────────────────────────
 export default function AdminPanelScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ tab?: string; highlight?: string }>();
   const { users, currentUser, createUser, updateUserRole, inviteUser, deactivateUser, reactivateUser, deleteUser } = useAuth();
-  const { programme, streams, teams, activityLogs, createTeam, deleteTeam, createStream, deleteStream, updateProgramme, refreshActivity } = useData();
+  const { programme, streams, teams, activityLogs, createTeam, updateTeam, deleteTeam, createStream, deleteStream, updateProgramme, refreshActivity } = useData();
 
   const initialTab: AdminTab =
     params.tab === "structure" || params.tab === "activity" || params.tab === "settings" ? params.tab : "users";
@@ -264,6 +331,20 @@ export default function AdminPanelScreen() {
   const [activityLoading, setActivityLoading] = useState(false);
   const [editProgrammeName, setEditProgrammeName] = useState(false);
   const [draftProgrammeName, setDraftProgrammeName] = useState(programme?.name ?? "");
+  const [editTeamId, setEditTeamId] = useState<string | null>(null);
+  const [expandedStructureStreamId, setExpandedStructureStreamId] = useState<string | null>(null);
+  const [unassignedStructureExpanded, setUnassignedStructureExpanded] = useState(false);
+  const didInitStructureExpandRef = useRef(false);
+  useEffect(() => {
+    if (!didInitStructureExpandRef.current && streams.length > 0) {
+      didInitStructureExpandRef.current = true;
+      setExpandedStructureStreamId(streams[0].id);
+    }
+  }, [streams]);
+  function toggleStructureStream(id: string) {
+    setUnassignedStructureExpanded(false);
+    setExpandedStructureStreamId((cur) => (cur === id ? null : id));
+  }
 
   const botPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
 
@@ -472,30 +553,48 @@ export default function AdminPanelScreen() {
         </ScrollView>
       )}
 
-      {/* ── Structure (Streams + Teams) ───────────────── */}
+      {/* ── Structure (Streams with nested Teams) ─────── */}
       {tab === "structure" && (
         <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: botPad }}>
-          {/* Streams */}
           <View style={styles.sectionHeader}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Streams ({streams.length})</Text>
-            <TouchableOpacity style={[styles.addBtn, { backgroundColor: colors.primary }]} onPress={() => setShowCreateStream(true)}>
-              <Feather name="plus" size={14} color="#fff" />
-              <Text style={styles.addBtnText}>New Stream</Text>
-            </TouchableOpacity>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+              Streams ({streams.length}) · Teams ({teams.length})
+            </Text>
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              <TouchableOpacity style={[styles.addBtn, { backgroundColor: colors.muted }]} onPress={() => { setCreateTeamStreamId(null); setShowCreateTeam(true); }}>
+                <Feather name="users" size={14} color={colors.primary} />
+                <Text style={[styles.addBtnText, { color: colors.primary }]}>Team</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.addBtn, { backgroundColor: colors.primary }]} onPress={() => setShowCreateStream(true)}>
+                <Feather name="plus" size={14} color="#fff" />
+                <Text style={styles.addBtnText}>Stream</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {streams.length === 0 && (
+          {streams.length === 0 && teams.length === 0 && (
             <View style={[styles.empty, { backgroundColor: colors.muted }]}>
               <Feather name="grid" size={24} color={colors.mutedForeground} />
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No streams yet. Streams group teams into functional areas.</Text>
+              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No streams or teams yet. Create a stream to group teams.</Text>
             </View>
           )}
+
           {streams.map((stream) => {
             const streamTeams = teams.filter((t) => t.streamId === stream.id);
+            const expanded = expandedStructureStreamId === stream.id;
             return (
-              <View key={stream.id} style={[styles.structureCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <View style={styles.structureCardHeader}>
-                  <View style={[styles.streamDot, { backgroundColor: colors.primary }]} />
+              <View key={stream.id} style={[styles.structureCard, { backgroundColor: colors.card, borderColor: colors.border, padding: 0 }]}>
+                <TouchableOpacity
+                  style={styles.collapseHeader}
+                  onPress={() => toggleStructureStream(stream.id)}
+                  activeOpacity={0.8}
+                >
+                  <Feather
+                    name={expanded ? "chevron-down" : "chevron-right"}
+                    size={18}
+                    color={colors.mutedForeground}
+                  />
+                  <View style={[styles.streamDot, { backgroundColor: colors.primary, marginTop: 0 }]} />
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.structureName, { color: colors.foreground }]}>{stream.name}</Text>
                     {stream.description ? <Text style={[styles.structureSub, { color: colors.mutedForeground }]}>{stream.description}</Text> : null}
@@ -504,71 +603,137 @@ export default function AdminPanelScreen() {
                   <View style={styles.structureActions}>
                     <TouchableOpacity
                       style={[styles.actionBtn, { backgroundColor: colors.primary + "15" }]}
-                      onPress={() => { setCreateTeamStreamId(stream.id); setShowCreateTeam(true); }}
+                      onPress={(e) => { e.stopPropagation(); setCreateTeamStreamId(stream.id); setShowCreateTeam(true); }}
                     >
                       <Feather name="plus" size={14} color={colors.primary} />
                     </TouchableOpacity>
                     <TouchableOpacity
                       style={[styles.actionBtn, { backgroundColor: "#FEE2E2" }]}
-                      onPress={() => Alert.alert("Delete Stream", `Delete "${stream.name}"?`, [
-                        { text: "Cancel", style: "cancel" },
-                        { text: "Delete", style: "destructive", onPress: () => deleteStream(stream.id) },
-                      ])}
+                      onPress={(e) => {
+                        e.stopPropagation();
+                        Alert.alert("Delete Stream", `Delete "${stream.name}"? Teams will become unassigned.`, [
+                          { text: "Cancel", style: "cancel" },
+                          { text: "Delete", style: "destructive", onPress: () => deleteStream(stream.id) },
+                        ]);
+                      }}
                     >
                       <Feather name="trash-2" size={14} color="#DC2626" />
                     </TouchableOpacity>
                   </View>
-                </View>
+                </TouchableOpacity>
+
+                {expanded && (
+                  <View style={styles.collapseBody}>
+                    {streamTeams.length === 0 ? (
+                      <View style={[styles.nestedEmpty, { backgroundColor: colors.muted }]}>
+                        <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No teams in this stream yet</Text>
+                      </View>
+                    ) : (
+                      streamTeams.map((team) => {
+                        const teamUsers = users.filter((u) => u.teamId === team.id);
+                        const lead = teamUsers.find((u) => u.role === "team_lead");
+                        return (
+                          <View key={team.id} style={[styles.nestedTeamRow, { borderColor: colors.border }]}>
+                            <View style={[styles.teamIcon, { backgroundColor: colors.primary + "15" }]}>
+                              <Feather name="users" size={14} color={colors.primary} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={[styles.structureName, { color: colors.foreground, fontSize: 14 }]}>{team.name}</Text>
+                              {team.functionLabel ? <Text style={[styles.structureSub, { color: colors.mutedForeground }]}>{team.functionLabel}</Text> : null}
+                              <Text style={[styles.structureMeta, { color: colors.mutedForeground }]}>
+                                {teamUsers.length} user{teamUsers.length !== 1 ? "s" : ""}
+                                {lead ? ` · Lead: ${lead.name}` : ""}
+                              </Text>
+                            </View>
+                            <View style={styles.structureActions}>
+                              <TouchableOpacity
+                                style={[styles.actionBtn, { backgroundColor: colors.muted }]}
+                                onPress={() => setEditTeamId(team.id)}
+                              >
+                                <Feather name="edit-2" size={13} color={colors.primary} />
+                              </TouchableOpacity>
+                              <TouchableOpacity
+                                style={[styles.actionBtn, { backgroundColor: "#FEE2E2" }]}
+                                onPress={() => Alert.alert("Delete Team", `Delete "${team.name}"?`, [
+                                  { text: "Cancel", style: "cancel" },
+                                  { text: "Delete", style: "destructive", onPress: () => deleteTeam(team.id) },
+                                ])}
+                              >
+                                <Feather name="trash-2" size={13} color="#DC2626" />
+                              </TouchableOpacity>
+                            </View>
+                          </View>
+                        );
+                      })
+                    )}
+                  </View>
+                )}
               </View>
             );
           })}
 
-          {/* Teams */}
-          <View style={[styles.sectionHeader, { marginTop: 20 }]}>
-            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Teams ({teams.length})</Text>
-            <TouchableOpacity style={[styles.addBtn, { backgroundColor: colors.primary }]} onPress={() => { setCreateTeamStreamId(null); setShowCreateTeam(true); }}>
-              <Feather name="plus" size={14} color="#fff" />
-              <Text style={styles.addBtnText}>New Team</Text>
-            </TouchableOpacity>
-          </View>
-
-          {teams.length === 0 && (
-            <View style={[styles.empty, { backgroundColor: colors.muted }]}>
-              <Feather name="briefcase" size={24} color={colors.mutedForeground} />
-              <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>No teams yet. Teams are where work gets done.</Text>
+          {/* Unassigned teams */}
+          {teams.some((t) => !t.streamId) && (
+            <View style={[styles.structureCard, { backgroundColor: colors.card, borderColor: colors.border, padding: 0 }]}>
+              <TouchableOpacity
+                style={styles.collapseHeader}
+                onPress={() => { setExpandedStructureStreamId(null); setUnassignedStructureExpanded((v) => !v); }}
+                activeOpacity={0.8}
+              >
+                <Feather
+                  name={unassignedStructureExpanded ? "chevron-down" : "chevron-right"}
+                  size={18}
+                  color={colors.mutedForeground}
+                />
+                <View style={[styles.streamDot, { backgroundColor: colors.mutedForeground, marginTop: 0 }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.structureName, { color: colors.foreground }]}>Unassigned Teams</Text>
+                  <Text style={[styles.structureMeta, { color: colors.mutedForeground }]}>
+                    {teams.filter((t) => !t.streamId).length} team{teams.filter((t) => !t.streamId).length !== 1 ? "s" : ""}
+                  </Text>
+                </View>
+              </TouchableOpacity>
+              {unassignedStructureExpanded && (
+                <View style={styles.collapseBody}>
+                  {teams.filter((t) => !t.streamId).map((team) => {
+                    const teamUsers = users.filter((u) => u.teamId === team.id);
+                    const lead = teamUsers.find((u) => u.role === "team_lead");
+                    return (
+                      <View key={team.id} style={[styles.nestedTeamRow, { borderColor: colors.border }]}>
+                        <View style={[styles.teamIcon, { backgroundColor: colors.primary + "15" }]}>
+                          <Feather name="users" size={14} color={colors.primary} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                          <Text style={[styles.structureName, { color: colors.foreground, fontSize: 14 }]}>{team.name}</Text>
+                          {team.functionLabel ? <Text style={[styles.structureSub, { color: colors.mutedForeground }]}>{team.functionLabel}</Text> : null}
+                          <Text style={[styles.structureMeta, { color: colors.mutedForeground }]}>
+                            {teamUsers.length} user{teamUsers.length !== 1 ? "s" : ""}{lead ? ` · Lead: ${lead.name}` : ""}
+                          </Text>
+                        </View>
+                        <View style={styles.structureActions}>
+                          <TouchableOpacity
+                            style={[styles.actionBtn, { backgroundColor: colors.muted }]}
+                            onPress={() => setEditTeamId(team.id)}
+                          >
+                            <Feather name="edit-2" size={13} color={colors.primary} />
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={[styles.actionBtn, { backgroundColor: "#FEE2E2" }]}
+                            onPress={() => Alert.alert("Delete Team", `Delete "${team.name}"?`, [
+                              { text: "Cancel", style: "cancel" },
+                              { text: "Delete", style: "destructive", onPress: () => deleteTeam(team.id) },
+                            ])}
+                          >
+                            <Feather name="trash-2" size={13} color="#DC2626" />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
             </View>
           )}
-          {teams.map((team) => {
-            const teamUsers = users.filter((u) => u.teamId === team.id);
-            const lead = teamUsers.find((u) => u.role === "team_lead");
-            const streamName = streams.find((s) => s.id === team.streamId)?.name;
-            return (
-              <View key={team.id} style={[styles.structureCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-                <View style={styles.structureCardHeader}>
-                  <View style={[styles.teamIcon, { backgroundColor: colors.primary + "15" }]}>
-                    <Feather name="users" size={15} color={colors.primary} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.structureName, { color: colors.foreground }]}>{team.name}</Text>
-                    {team.functionLabel ? <Text style={[styles.structureSub, { color: colors.mutedForeground }]}>{team.functionLabel}</Text> : null}
-                    <Text style={[styles.structureMeta, { color: colors.mutedForeground }]}>
-                      {streamName ?? "Unassigned"} · {teamUsers.length} user{teamUsers.length !== 1 ? "s" : ""}
-                      {lead ? ` · Lead: ${lead.name}` : ""}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.actionBtn, { backgroundColor: "#FEE2E2" }]}
-                    onPress={() => Alert.alert("Delete Team", `Delete "${team.name}"?`, [
-                      { text: "Cancel", style: "cancel" },
-                      { text: "Delete", style: "destructive", onPress: () => deleteTeam(team.id) },
-                    ])}
-                  >
-                    <Feather name="trash-2" size={14} color="#DC2626" />
-                  </TouchableOpacity>
-                </View>
-              </View>
-            );
-          })}
         </ScrollView>
       )}
 
@@ -704,6 +869,29 @@ export default function AdminPanelScreen() {
           colors={colors}
         />
       )}
+
+      {editTeamId && (() => {
+        const t = teams.find((x) => x.id === editTeamId);
+        if (!t) return null;
+        return (
+          <EditTeamModal
+            visible
+            team={t}
+            streams={streams}
+            onSave={async (patch) => {
+              try {
+                await updateTeam(t.id, patch);
+                setEditTeamId(null);
+              } catch (e) {
+                console.error("updateTeam failed", e);
+                Alert.alert("Error", "Could not update team.");
+              }
+            }}
+            onClose={() => setEditTeamId(null)}
+            colors={colors}
+          />
+        );
+      })()}
     </View>
   );
 }
@@ -748,8 +936,12 @@ const styles = StyleSheet.create({
   youTagText: { fontSize: 10, fontFamily: "Inter_600SemiBold" },
   userActions: { gap: 6 },
   actionBtn: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
-  structureCard: { borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 8 },
+  structureCard: { borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 8, overflow: "hidden" },
   structureCardHeader: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
+  collapseHeader: { flexDirection: "row", alignItems: "center", gap: 10, padding: 14 },
+  collapseBody: { paddingHorizontal: 12, paddingBottom: 12, gap: 8 },
+  nestedTeamRow: { flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 10, borderRadius: 8, borderWidth: StyleSheet.hairlineWidth },
+  nestedEmpty: { borderRadius: 8, padding: 14, alignItems: "center" },
   streamDot: { width: 10, height: 10, borderRadius: 5, marginTop: 4 },
   teamIcon: { width: 32, height: 32, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   structureName: { fontSize: 15, fontFamily: "Inter_600SemiBold" },

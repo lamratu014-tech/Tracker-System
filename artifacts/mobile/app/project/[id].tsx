@@ -35,7 +35,12 @@ export default function ProjectDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isProgrammeLead, isTeamLead, currentUser } = useAuth();
-  const { projects, tasks, milestones, events, updateProject, deleteProject, updateTask, createTask, updateMilestone } = useData();
+  const {
+    projects, tasks, milestones, events,
+    updateProject, deleteProject,
+    updateTask, createTask, deleteTask,
+    createMilestone, updateMilestone, deleteMilestone,
+  } = useData();
 
   const project = projects.find(p => p.id === id);
   const [tab, setTab] = useState<TabType>("overview");
@@ -46,6 +51,10 @@ export default function ProjectDetailScreen() {
   const [draftNotes, setDraftNotes] = useState(project?.notes ?? "");
   const [draftStatus, setDraftStatus] = useState<ProjectStatus>(project?.status ?? "not_started");
   const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [showAddMilestone, setShowAddMilestone] = useState(false);
+  const [msTitle, setMsTitle] = useState("");
+  const [msDateOffsetDays, setMsDateOffsetDays] = useState<number>(14);
+  const [msSaving, setMsSaving] = useState(false);
 
   const projectTasks = useMemo(() => tasks.filter(t => t.projectId === id), [tasks, id]);
   const projectMilestones = useMemo(() => milestones.filter(m => m.projectId === id), [milestones, id]);
@@ -105,17 +114,77 @@ export default function ProjectDetailScreen() {
   async function addQuickTask() {
     if (!newTaskTitle.trim()) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    await createTask({
-      projectId: id,
-      title: newTaskTitle.trim(),
-      description: "",
-      status: "todo",
-      priority: "medium",
-      dueDate: null,
-      assignedToUserId: null,
-      assignedToMemberId: null,
-    });
-    setNewTaskTitle("");
+    try {
+      await createTask({
+        projectId: id,
+        title: newTaskTitle.trim(),
+        description: "",
+        status: "todo",
+        priority: "medium",
+        dueDate: null,
+        assignedToUserId: null,
+        assignedToMemberId: null,
+      });
+      setNewTaskTitle("");
+    } catch (e) {
+      console.error("createTask failed", e);
+      Alert.alert("Error", "Could not create task.");
+    }
+  }
+
+  function confirmDeleteTask(task: { id: string; title: string }) {
+    if (!canEdit) return;
+    const run = async () => {
+      try { await deleteTask(task.id); }
+      catch (e) { console.error(e); Alert.alert("Error", "Could not delete task."); }
+    };
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm(`Delete task "${task.title}"?`)) void run();
+      return;
+    }
+    Alert.alert("Delete Task", `Delete "${task.title}"?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => { void run(); } },
+    ]);
+  }
+
+  async function handleCreateMilestone() {
+    if (!msTitle.trim()) { Alert.alert("Title required", "Give the milestone a title."); return; }
+    setMsSaving(true);
+    try {
+      const date = new Date();
+      date.setDate(date.getDate() + msDateOffsetDays);
+      await createMilestone({
+        projectId: id,
+        title: msTitle.trim(),
+        date: date.toISOString(),
+        completed: false,
+      });
+      setMsTitle("");
+      setMsDateOffsetDays(14);
+      setShowAddMilestone(false);
+    } catch (e) {
+      console.error("createMilestone failed", e);
+      Alert.alert("Error", "Could not create milestone.");
+    } finally {
+      setMsSaving(false);
+    }
+  }
+
+  function confirmDeleteMilestone(m: { id: string; title: string }) {
+    if (!canEditHighLevel) return;
+    const run = async () => {
+      try { await deleteMilestone(m.id); }
+      catch (e) { console.error(e); Alert.alert("Error", "Could not delete milestone."); }
+    };
+    if (Platform.OS === "web") {
+      if (typeof window !== "undefined" && window.confirm(`Delete milestone "${m.title}"?`)) void run();
+      return;
+    }
+    Alert.alert("Delete Milestone", `Delete "${m.title}"?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: () => { void run(); } },
+    ]);
   }
 
   const botPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
@@ -328,6 +397,7 @@ export default function ProjectDetailScreen() {
                     onToggle={(updated) => {
                       if (canEdit) updateTask(t.id, { status: updated.status });
                     }}
+                    onLongPress={canEdit ? confirmDeleteTask : undefined}
                   />
                 ))}
               </View>
@@ -337,6 +407,67 @@ export default function ProjectDetailScreen() {
 
         {tab === "milestones" && (
           <View>
+            {canEditHighLevel && (
+              <TouchableOpacity
+                style={[styles.addInlineBtn, { backgroundColor: colors.primary }]}
+                onPress={() => setShowAddMilestone(true)}
+                activeOpacity={0.8}
+              >
+                <Feather name="plus" size={16} color="#fff" />
+                <Text style={styles.addInlineBtnText}>Add Milestone</Text>
+              </TouchableOpacity>
+            )}
+
+            {showAddMilestone && (
+              <View style={[styles.inlineForm, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Title</Text>
+                <TextInput
+                  style={[styles.inlineInput, { color: colors.foreground, borderBottomColor: colors.border }]}
+                  value={msTitle}
+                  onChangeText={setMsTitle}
+                  placeholder="e.g. Design review"
+                  placeholderTextColor={colors.mutedForeground}
+                  autoFocus
+                />
+                <Text style={[styles.fieldLabel, { color: colors.mutedForeground, marginTop: 12 }]}>Target Date</Text>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 6 }}>
+                  {[
+                    { label: "Today", days: 0 },
+                    { label: "+1 week", days: 7 },
+                    { label: "+2 weeks", days: 14 },
+                    { label: "+1 month", days: 30 },
+                    { label: "+3 months", days: 90 },
+                  ].map((opt) => (
+                    <TouchableOpacity
+                      key={opt.label}
+                      style={[styles.statusChip, { backgroundColor: msDateOffsetDays === opt.days ? colors.primary : colors.muted }]}
+                      onPress={() => setMsDateOffsetDays(opt.days)}
+                    >
+                      <Text style={{ fontSize: 13, fontFamily: "Inter_500Medium", color: msDateOffsetDays === opt.days ? "#fff" : colors.mutedForeground }}>
+                        {opt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <View style={{ flexDirection: "row", gap: 8, marginTop: 14 }}>
+                  <TouchableOpacity
+                    style={[styles.formBtn, { backgroundColor: colors.muted, flex: 1 }]}
+                    onPress={() => { setShowAddMilestone(false); setMsTitle(""); }}
+                    disabled={msSaving}
+                  >
+                    <Text style={{ color: colors.foreground, fontFamily: "Inter_600SemiBold", fontSize: 14 }}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.formBtn, { backgroundColor: colors.primary, flex: 1, opacity: msSaving ? 0.7 : 1 }]}
+                    onPress={handleCreateMilestone}
+                    disabled={msSaving}
+                  >
+                    <Text style={{ color: "#fff", fontFamily: "Inter_600SemiBold", fontSize: 14 }}>{msSaving ? "Saving..." : "Save"}</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+
             {projectMilestones.length === 0 ? (
               <View style={[styles.empty, { backgroundColor: colors.muted }]}>
                 <Feather name="flag" size={28} color={colors.mutedForeground} />
@@ -345,19 +476,20 @@ export default function ProjectDetailScreen() {
             ) : (
               <View style={[styles.taskList, { backgroundColor: colors.card, borderColor: colors.border }]}>
                 {projectMilestones.map(m => (
-                  <TouchableOpacity
-                    key={m.id}
-                    style={[styles.milestoneRow, { borderBottomColor: colors.border }]}
-                    onPress={() => {
-                      if (!canEditHighLevel) return;
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      updateMilestone(m.id, { completed: !m.completed });
-                    }}
-                    activeOpacity={canEditHighLevel ? 0.7 : 1}
-                  >
-                    <View style={[styles.milestoneCheck, { borderColor: m.completed ? colors.success : colors.border, backgroundColor: m.completed ? colors.success : "transparent" }]}>
-                      {m.completed && <Feather name="check" size={12} color="#fff" />}
-                    </View>
+                  <View key={m.id} style={[styles.milestoneRow, { borderBottomColor: colors.border }]}>
+                    <TouchableOpacity
+                      onPress={() => {
+                        if (!canEditHighLevel) return;
+                        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                        updateMilestone(m.id, { completed: !m.completed });
+                      }}
+                      activeOpacity={canEditHighLevel ? 0.7 : 1}
+                      hitSlop={6}
+                    >
+                      <View style={[styles.milestoneCheck, { borderColor: m.completed ? colors.success : colors.border, backgroundColor: m.completed ? colors.success : "transparent" }]}>
+                        {m.completed && <Feather name="check" size={12} color="#fff" />}
+                      </View>
+                    </TouchableOpacity>
                     <View style={styles.milestoneInfo}>
                       <Text style={[styles.milestoneTitle, { color: colors.foreground, textDecorationLine: m.completed ? "line-through" : "none", opacity: m.completed ? 0.5 : 1 }]}>
                         {m.title}
@@ -366,8 +498,14 @@ export default function ProjectDetailScreen() {
                         {new Date(m.date).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric" })}
                       </Text>
                     </View>
-                    <Feather name="flag" size={14} color={m.completed ? colors.success : colors.mutedForeground} />
-                  </TouchableOpacity>
+                    {canEditHighLevel ? (
+                      <TouchableOpacity onPress={() => confirmDeleteMilestone(m)} hitSlop={8} style={{ padding: 4 }}>
+                        <Feather name="trash-2" size={14} color="#DC2626" />
+                      </TouchableOpacity>
+                    ) : (
+                      <Feather name="flag" size={14} color={m.completed ? colors.success : colors.mutedForeground} />
+                    )}
+                  </View>
                 ))}
               </View>
             )}
@@ -454,6 +592,10 @@ const styles = StyleSheet.create({
   taskList: { borderRadius: 12, borderWidth: 1, paddingHorizontal: 14 },
   empty: { borderRadius: 12, padding: 32, alignItems: "center", gap: 8 },
   emptyText: { fontSize: 14, fontFamily: "Inter_400Regular" },
+  addInlineBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderRadius: 10, paddingVertical: 10, marginBottom: 12 },
+  addInlineBtnText: { color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" },
+  inlineForm: { borderRadius: 12, borderWidth: 1, padding: 14, marginBottom: 12 },
+  formBtn: { borderRadius: 10, paddingVertical: 12, alignItems: "center", justifyContent: "center" },
   milestoneRow: { flexDirection: "row", alignItems: "center", paddingVertical: 12, borderBottomWidth: StyleSheet.hairlineWidth, gap: 10 },
   milestoneCheck: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, alignItems: "center", justifyContent: "center" },
   milestoneInfo: { flex: 1 },
