@@ -103,7 +103,8 @@ export default function ProgrammeScreen() {
   const { programme, streams, teams, tasks, projects } = useData();
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const botPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
+  const tabBarH = Platform.OS === "web" ? 84 : Platform.OS === "ios" ? 49 : 56;
+  const botPad = (Platform.OS === "web" ? 0 : insets.bottom) + tabBarH + 24;
 
   const allTasksForTeam = useMemo(() => {
     const map: Record<string, { total: number; done: number; atRisk: number }> = {};

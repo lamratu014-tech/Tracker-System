@@ -78,7 +78,8 @@ export default function SettingsScreen() {
   const pendingHighlightRef = useRef<{ email: string; type: "direct" | "invite" } | null>(null);
 
   const topPad = Platform.OS === "web" ? 67 : insets.top;
-  const botPad = Platform.OS === "web" ? 34 : insets.bottom + 20;
+  const tabBarH = Platform.OS === "web" ? 84 : Platform.OS === "ios" ? 49 : 56;
+  const botPad = (Platform.OS === "web" ? 0 : insets.bottom) + tabBarH + 24;
 
   if (!currentUser) return null;
 
