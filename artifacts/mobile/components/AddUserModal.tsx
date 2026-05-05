@@ -369,7 +369,7 @@ export function AddUserModal({
             <View style={s.passwordLabelRow}>
               <Text style={[s.fieldLabel, { color: colors.mutedForeground }]}>Initial Password *</Text>
               <TouchableOpacity onPress={handleGeneratePassword} hitSlop={8}>
-                <Text style={[s.generateLink, { color: accent }]}>Generate</Text>
+                <Text style={[s.generateLink, { color: accent }]}>Generate password</Text>
               </TouchableOpacity>
             </View>
             <View style={s.passwordRow}>

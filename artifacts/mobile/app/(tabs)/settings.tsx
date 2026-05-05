@@ -174,19 +174,19 @@ export default function SettingsScreen() {
                 icon="users"
                 label="Manage Users"
                 value={`${users.filter((u) => u.active).length} active`}
-                onPress={() => router.push("/admin")}
+                onPress={() => router.push("/admin?tab=users")}
               />
               <SettingRow
                 icon="grid"
                 label="Streams & Teams"
                 value={`${streams.length} streams · ${teams.length} teams`}
-                onPress={() => router.push("/admin")}
+                onPress={() => router.push("/admin?tab=structure")}
               />
               <SettingRow
                 icon="activity"
                 label="Activity Log"
                 value={`${activityLogs.length} entries`}
-                onPress={() => router.push("/admin")}
+                onPress={() => router.push("/admin?tab=activity")}
               />
             </View>
           </>

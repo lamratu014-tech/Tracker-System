@@ -198,7 +198,8 @@ export default function DashboardScreen() {
   const [showAddUser, setShowAddUser] = useState(false);
   if (!currentUser) return null;
   const { events, projects, tasks, milestones, updateTask } = useData();
-  const showTeamCta = isProgrammeLead && users.length < 3;
+  const [teamCtaDismissed, setTeamCtaDismissed] = useState(false);
+  const showTeamCta = isProgrammeLead && users.length < 3 && !teamCtaDismissed;
 
   function handleTaskToggle(task: { id: string; status: string }) {
     updateTask(task.id, { status: task.status });
@@ -290,17 +291,21 @@ export default function DashboardScreen() {
                     setShowAddUser(true);
                   }}
                   activeOpacity={0.85}
+                  accessibilityRole="button"
+                  accessibilityLabel="Add user"
                 >
                   <Feather name="user-plus" size={14} color="#fff" />
-                  <Text style={styles.addUserBtnText}>Add User</Text>
+                  <Text style={styles.addUserBtnText}>+ Add User</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.adminLink}
                   onPress={() => router.push("/admin")}
                   activeOpacity={0.7}
                   hitSlop={8}
+                  accessibilityRole="link"
+                  accessibilityLabel="Admin panel"
                 >
-                  <Feather name="shield" size={14} color="rgba(255,255,255,0.75)" />
+                  <Text style={styles.adminLinkText}>Admin</Text>
                 </TouchableOpacity>
               </>
             )}
@@ -362,25 +367,40 @@ export default function DashboardScreen() {
       <View style={styles.body}>
         {/* Programme Lead empty-state CTA: build your team */}
         {showTeamCta && (
-          <TouchableOpacity
-            style={[styles.teamCta, { backgroundColor: "#EDE9FE", borderColor: "#C4B5FD" }]}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              setShowAddUser(true);
-            }}
-            activeOpacity={0.85}
-          >
-            <View style={[styles.teamCtaIcon, { backgroundColor: "#7C3AED" }]}>
-              <Feather name="user-plus" size={20} color="#fff" />
+          <View style={[styles.teamCta, { backgroundColor: "#EDE9FE", borderColor: "#C4B5FD" }]}>
+            <View style={styles.teamCtaTop}>
+              <View style={[styles.teamCtaIcon, { backgroundColor: "#7C3AED" }]}>
+                <Feather name="user-plus" size={20} color="#fff" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.teamCtaTitle}>Build your team</Text>
+                <Text style={styles.teamCtaSub}>
+                  You have {users.length} user{users.length !== 1 ? "s" : ""}. Add your team leads now — set their password directly or send an invite link.
+                </Text>
+              </View>
+              <TouchableOpacity
+                onPress={() => setTeamCtaDismissed(true)}
+                hitSlop={12}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss build your team prompt"
+              >
+                <Feather name="x" size={18} color="#7C3AED" />
+              </TouchableOpacity>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.teamCtaTitle}>Build your team</Text>
-              <Text style={styles.teamCtaSub}>
-                You have {users.length} user{users.length !== 1 ? "s" : ""}. Add your team leads now — set their password directly or send an invite link.
-              </Text>
-            </View>
-            <Feather name="chevron-right" size={20} color="#7C3AED" />
-          </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.teamCtaButton}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                setShowAddUser(true);
+              }}
+              activeOpacity={0.85}
+              accessibilityRole="button"
+              accessibilityLabel="Add user"
+            >
+              <Feather name="user-plus" size={16} color="#fff" />
+              <Text style={styles.teamCtaButtonText}>+ Add User</Text>
+            </TouchableOpacity>
+          </View>
         )}
 
         {/* Stats row */}
@@ -648,21 +668,29 @@ const styles = StyleSheet.create({
   },
   addUserBtnText: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
   adminLink: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.10)",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    backgroundColor: "rgba(255,255,255,0.12)",
     alignItems: "center",
     justifyContent: "center",
   },
+  adminLinkText: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 12,
+    fontFamily: "Inter_600SemiBold",
+  },
   teamCta: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
     borderRadius: 14,
     borderWidth: 1.5,
     padding: 14,
     marginBottom: 16,
+    gap: 12,
+  },
+  teamCtaTop: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
   },
   teamCtaIcon: {
     width: 40,
@@ -682,6 +710,25 @@ const styles = StyleSheet.create({
     fontFamily: "Inter_400Regular",
     marginTop: 2,
     lineHeight: 16,
+  },
+  teamCtaButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#7C3AED",
+    borderRadius: 12,
+    paddingVertical: 12,
+    shadowColor: "#7C3AED",
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3,
+  },
+  teamCtaButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontFamily: "Inter_700Bold",
   },
   headerBtn: {
     width: 36,

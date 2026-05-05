@@ -1,5 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { useLocalSearchParams } from "expo-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -216,13 +217,25 @@ function CreateTeamModal({ visible, streams, onSave, onClose, colors, defaultStr
 export default function AdminPanelScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams<{ tab?: string }>();
   const { users, currentUser, createUser, updateUserRole, inviteUser, deactivateUser, reactivateUser, deleteUser } = useAuth();
   const { programme, streams, teams, activityLogs, createTeam, deleteTeam, createStream, deleteStream, updateProgramme, refreshActivity } = useData();
 
-  const [tab, setTab] = useState<AdminTab>("users");
+  const initialTab: AdminTab =
+    params.tab === "structure" || params.tab === "activity" || params.tab === "settings" ? params.tab : "users";
+  const [tab, setTab] = useState<AdminTab>(initialTab);
   const [showAddUser, setShowAddUser] = useState(false);
   const [recentlyAddedEmail, setRecentlyAddedEmail] = useState<string | null>(null);
   const recentTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingHighlightRef = useRef<{ email: string; type: "direct" | "invite" } | null>(null);
+  const usersScrollRef = useRef<ScrollView | null>(null);
+  const cardYMapRef = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    if (params.tab === "users" || params.tab === "structure" || params.tab === "activity" || params.tab === "settings") {
+      setTab(params.tab as AdminTab);
+    }
+  }, [params.tab]);
   const [roleModalUser, setRoleModalUser] = useState<AppUser | null>(null);
   const [showCreateStream, setShowCreateStream] = useState(false);
   const [showCreateTeam, setShowCreateTeam] = useState(false);
@@ -267,11 +280,30 @@ export default function AdminPanelScreen() {
   }
 
   function handleAddUserSuccess(info: { email: string; type: "direct" | "invite" }) {
-    if (info.type === "direct") {
-      setRecentlyAddedEmail(info.email);
-      if (recentTimer.current) clearTimeout(recentTimer.current);
-      recentTimer.current = setTimeout(() => setRecentlyAddedEmail(null), 3500);
-    }
+    pendingHighlightRef.current = info;
+  }
+
+  function handleAddUserClose() {
+    setShowAddUser(false);
+    const pending = pendingHighlightRef.current;
+    pendingHighlightRef.current = null;
+    if (!pending || pending.type !== "direct") return;
+
+    setTab("users");
+    setSearchQuery("");
+    setRoleFilter("all");
+    setStatusFilter("all");
+    setRecentlyAddedEmail(pending.email);
+
+    if (recentTimer.current) clearTimeout(recentTimer.current);
+    recentTimer.current = setTimeout(() => setRecentlyAddedEmail(null), 1500);
+
+    setTimeout(() => {
+      const y = cardYMapRef.current[pending.email];
+      if (y !== undefined && usersScrollRef.current) {
+        usersScrollRef.current.scrollTo({ y: Math.max(0, y - 80), animated: true });
+      }
+    }, 120);
   }
 
   useEffect(() => {
@@ -305,7 +337,7 @@ export default function AdminPanelScreen() {
 
       {/* ── Users ────────────────────────────────────────── */}
       {tab === "users" && (
-        <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: botPad }}>
+        <ScrollView ref={usersScrollRef} contentContainerStyle={{ padding: 16, paddingBottom: botPad }}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
               Users ({users.filter((u) => u.active).length} active / {users.length} total)
@@ -360,6 +392,9 @@ export default function AdminPanelScreen() {
               return (
                 <View
                   key={user.id}
+                  onLayout={(e) => {
+                    cardYMapRef.current[user.email.toLowerCase()] = e.nativeEvent.layout.y;
+                  }}
                   style={[
                     styles.userCard,
                     { backgroundColor: colors.card, borderColor: colors.border },
@@ -617,7 +652,7 @@ export default function AdminPanelScreen() {
       {/* ── Modals ────────────────────────────────────── */}
       <AddUserModal
         visible={showAddUser}
-        onClose={() => setShowAddUser(false)}
+        onClose={handleAddUserClose}
         onSuccess={handleAddUserSuccess}
       />
 
