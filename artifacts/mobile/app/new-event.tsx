@@ -20,23 +20,17 @@ import { ErrorBanner } from "@/components/ErrorBanner";
 import { useColors } from "@/hooks/useColors";
 import { useMe } from "@/lib/permissions";
 
-const TIME_OPTIONS = ["09:00", "10:00", "11:00", "13:00", "14:00", "15:00", "16:00"];
-
-const DAY_OFFSETS = [
-  { label: "Today", days: 0 },
-  { label: "Tomorrow", days: 1 },
-  { label: "+3 days", days: 3 },
-  { label: "+1 wk", days: 7 },
-  { label: "+2 wks", days: 14 },
-];
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const DATE_RE = /^\d{2}\/\d{2}\/\d{4}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
 
-function dateFromOffset(days: number): string {
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+function defaultTomorrow(): string {
   const d = new Date();
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  d.setDate(d.getDate() + 1);
+  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
 }
 
 function daysInMonth(year: number, month1: number): number {
@@ -47,7 +41,7 @@ function daysInMonth(year: number, month1: number): number {
 
 function parseDateTime(date: string, time: string): Date | null {
   if (!DATE_RE.test(date) || !TIME_RE.test(time)) return null;
-  const [yStr, moStr, dStr] = date.split("-");
+  const [dStr, moStr, yStr] = date.split("/");
   const [hStr, miStr] = time.split(":");
   const y = Number(yStr);
   const mo = Number(moStr);
@@ -84,7 +78,7 @@ export default function NewEventScreen() {
 
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
-  const initialDate = dateFromOffset(1);
+  const initialDate = defaultTomorrow();
   const [startDate, setStartDate] = useState<string>(initialDate);
   const [startTime, setStartTime] = useState<string>("10:00");
   const [endDate, setEndDate] = useState<string>(initialDate);
@@ -107,8 +101,8 @@ export default function NewEventScreen() {
   const endValid = !!endDt;
   const orderValid = !!(startDt && endDt && endDt.getTime() > startDt.getTime());
   const dateError =
-    !startValid ? "Start date or time isn't valid (use YYYY-MM-DD and HH:MM)."
-    : !endValid ? "End date or time isn't valid (use YYYY-MM-DD and HH:MM)."
+    !startValid ? "Start date or time isn't valid (use DD/MM/YYYY and HH:MM)."
+    : !endValid ? "End date or time isn't valid (use DD/MM/YYYY and HH:MM)."
     : !orderValid ? "End must be after start."
     : null;
 
@@ -153,12 +147,6 @@ export default function NewEventScreen() {
     });
   }
 
-  function applyDayOffset(days: number) {
-    const v = dateFromOffset(days);
-    setStartDate(v);
-    setEndDate(v);
-  }
-
   return (
     <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}>
       <Text style={[styles.label, { color: colors.mutedForeground }]}>Title *</Text>
@@ -182,23 +170,6 @@ export default function NewEventScreen() {
         numberOfLines={3}
       />
 
-      <Text style={[styles.label, { color: colors.mutedForeground }]}>Quick pick (start day)</Text>
-      <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-        {DAY_OFFSETS.map((o) => {
-          const v = dateFromOffset(o.days);
-          const active = startDate === v;
-          return (
-            <TouchableOpacity
-              key={o.label}
-              style={[styles.chip, { borderColor: colors.border, backgroundColor: active ? colors.primary : colors.muted }]}
-              onPress={() => applyDayOffset(o.days)}
-            >
-              <Text style={[styles.chipText, { color: active ? "#fff" : colors.foreground }]}>{o.label}</Text>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
       <View style={styles.row2}>
         <View style={{ flex: 1 }}>
           <Text style={[styles.label, { color: colors.mutedForeground }]}>Start date *</Text>
@@ -209,10 +180,11 @@ export default function NewEventScreen() {
             ]}
             value={startDate}
             onChangeText={setStartDate}
-            placeholder="YYYY-MM-DD"
+            placeholder="DD/MM/YYYY"
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
             autoCorrect={false}
+            keyboardType="numbers-and-punctuation"
           />
         </View>
         <View style={{ flex: 1 }}>
@@ -228,20 +200,9 @@ export default function NewEventScreen() {
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
             autoCorrect={false}
+            keyboardType="numbers-and-punctuation"
           />
         </View>
-      </View>
-
-      <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-        {TIME_OPTIONS.map((t) => (
-          <TouchableOpacity
-            key={`s-${t}`}
-            style={[styles.chip, { borderColor: colors.border, backgroundColor: startTime === t ? colors.primary : colors.muted }]}
-            onPress={() => setStartTime(t)}
-          >
-            <Text style={[styles.chipText, { color: startTime === t ? "#fff" : colors.foreground }]}>{t}</Text>
-          </TouchableOpacity>
-        ))}
       </View>
 
       <View style={styles.row2}>
@@ -254,10 +215,11 @@ export default function NewEventScreen() {
             ]}
             value={endDate}
             onChangeText={setEndDate}
-            placeholder="YYYY-MM-DD"
+            placeholder="DD/MM/YYYY"
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
             autoCorrect={false}
+            keyboardType="numbers-and-punctuation"
           />
         </View>
         <View style={{ flex: 1 }}>
@@ -273,20 +235,9 @@ export default function NewEventScreen() {
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="none"
             autoCorrect={false}
+            keyboardType="numbers-and-punctuation"
           />
         </View>
-      </View>
-
-      <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-        {TIME_OPTIONS.map((t) => (
-          <TouchableOpacity
-            key={`e-${t}`}
-            style={[styles.chip, { borderColor: colors.border, backgroundColor: endTime === t ? colors.primary : colors.muted }]}
-            onPress={() => setEndTime(t)}
-          >
-            <Text style={[styles.chipText, { color: endTime === t ? "#fff" : colors.foreground }]}>{t}</Text>
-          </TouchableOpacity>
-        ))}
       </View>
 
       {dateError ? (
