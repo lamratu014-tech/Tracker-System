@@ -31,7 +31,7 @@ Production assumptions for this scan:
 ## Scan Anchors
 
 - **Production entry points:** `artifacts/api-server/src/app.ts`, `artifacts/api-server/src/routes/auth.ts`, `artifacts/api-server/src/routes/users.ts`, `artifacts/api-server/src/middlewares/requireAuth.ts`.
-- **Highest-risk areas:** token issuance/validation in `artifacts/api-server/src/lib/auth.ts`; password reset and invite flows in `artifacts/api-server/src/routes/auth.ts`; first-admin bootstrap (`POST /api/auth/setup`); client token/link handling in `artifacts/mobile/lib/auth/AuthContext.tsx` (sets the generated client base URL + bearer header), `artifacts/mobile/lib/auth/storage.ts`, and `artifacts/mobile/app/accept-invite.tsx`.
+- **Highest-risk areas:** token issuance/validation in `artifacts/api-server/src/lib/auth.ts`; password reset and invite flows in `artifacts/api-server/src/routes/auth.ts` (especially any link generation that derives origins from request headers, plus invite preview/redeem token handling); first-admin bootstrap (`POST /api/auth/setup`); row-level visibility and mutation checks in `artifacts/api-server/src/routes/streams.ts`, `artifacts/api-server/src/routes/teams.ts`, and `artifacts/api-server/src/routes/teamNotes.ts`; client token/link handling in `artifacts/mobile/lib/auth/AuthContext.tsx` (sets the generated client base URL + bearer header), `artifacts/mobile/lib/auth/storage.ts`, and `artifacts/mobile/app/accept-invite.tsx`.
 - **Public surfaces:** auth status, login, first-run setup (gated on empty `users` table + `SETUP_SECRET`), invite acceptance, password reset request/reset, invite token lookup.
 - **Authenticated surfaces:** `/api/auth/me`, `/api/auth/logout`, `/api/users`, all read endpoints under streams/teams/projects/milestones/events/team-notes/activity.
 - **Manager surfaces (`admin` | `stream_overseer` | `leader`):** create/update/delete for streams (update/delete only), teams, projects, milestones, members, team notes, events. Per-row scoping must be enforced in the handler.
@@ -50,11 +50,11 @@ Role changes, account activation state, account deletion, and password changes a
 
 ### Information Disclosure
 
-The API handles internal staff directory data and sensitive one-time URLs. Responses, logs, and email fallbacks must not expose password reset tokens, invite tokens, or broad user lists to parties that do not need them. Error handling should avoid leaking whether protected resources exist beyond what is operationally required.
+The API handles internal staff directory data, organisation structure, and sensitive one-time URLs. Responses, logs, and email fallbacks must not expose password reset tokens, invite tokens, stream/team metadata, or broad user lists to parties that do not need them. Error handling should avoid leaking whether protected resources exist beyond what is operationally required.
 
 ### Denial of Service
 
-Public auth endpoints can be hit without authentication. Password reset, login, and invite validation routes should avoid becoming brute-force or spam amplifiers, and expensive operations should not be triggerable without bounds.
+Public auth endpoints can be hit without authentication. Password reset, login, invite preview, and invite redemption routes should avoid becoming brute-force or spam amplifiers, and expensive operations should not be triggerable without bounds. Short bearer-style invite codes are only acceptable if paired with strong online abuse controls.
 
 ### Elevation of Privilege
 
