@@ -4,6 +4,7 @@ import {
   useListProjects,
   useListStreams,
   useListTeams,
+  useListUsers,
 } from "@workspace/api-client-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -18,7 +19,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
-import { canManageEverything, canManageStream, useMe } from "@/lib/permissions";
+import {
+  canManageEverything,
+  canManageStream,
+  teamVisibility,
+  useMe,
+} from "@/lib/permissions";
 
 export default function ProgrammeScreen() {
   const colors = useColors();
@@ -29,20 +35,14 @@ export default function ProgrammeScreen() {
   const streamsQ = useListStreams();
   const teamsQ = useListTeams();
   const projectsQ = useListProjects();
+  const usersQ = useListUsers();
   const streams = streamsQ.data ?? [];
   const teams = teamsQ.data ?? [];
   const projects = projectsQ.data ?? [];
+  const users = usersQ.data ?? [];
 
   const [expandedStreamId, setExpandedStreamId] = useState<string | null>(null);
   const didInit = useRef(false);
-
-  useEffect(() => {
-    if (!didInit.current && streams.length > 0) {
-      didInit.current = true;
-      const own = me?.streamId ? streams.find((s) => s.id === me.streamId) : null;
-      setExpandedStreamId(own ? own.id : streams[0].id);
-    }
-  }, [streams, me]);
 
   const teamsByStream = useMemo(() => {
     const m = new Map<string, typeof teams>();
@@ -62,6 +62,26 @@ export default function ProgrammeScreen() {
     return m;
   }, [projects]);
 
+  // Streams the current user is allowed to see at all.
+  // - admin / stream_overseer / no role: see every stream.
+  // - leader: see only their own stream (always, even when it has no teams).
+  const visibleStreams = useMemo(() => {
+    if (me?.role === "leader") {
+      return me.streamId ? streams.filter((s) => s.id === me.streamId) : [];
+    }
+    return streams;
+  }, [streams, me]);
+
+  useEffect(() => {
+    if (!didInit.current && visibleStreams.length > 0) {
+      didInit.current = true;
+      const own = me?.streamId
+        ? visibleStreams.find((s) => s.id === me.streamId)
+        : null;
+      setExpandedStreamId(own ? own.id : visibleStreams[0].id);
+    }
+  }, [visibleStreams, me]);
+
   function toggle(id: string) {
     setExpandedStreamId((cur) => (cur === id ? null : id));
   }
@@ -78,7 +98,7 @@ export default function ProgrammeScreen() {
         <View>
           <Text style={[styles.title, { color: colors.foreground }]}>Programme</Text>
           <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-            {streams.length} stream{streams.length !== 1 ? "s" : ""} · {teams.length} teams
+            {visibleStreams.length} stream{visibleStreams.length !== 1 ? "s" : ""}
           </Text>
         </View>
         {isAdmin ? (
@@ -98,7 +118,7 @@ export default function ProgrammeScreen() {
 
       {loading ? (
         <LoadingRow />
-      ) : streams.length === 0 ? (
+      ) : visibleStreams.length === 0 ? (
         <View style={[styles.empty, { backgroundColor: colors.muted }]}>
           <Feather name="layers" size={28} color={colors.mutedForeground} />
           <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
@@ -106,9 +126,12 @@ export default function ProgrammeScreen() {
           </Text>
         </View>
       ) : (
-        streams.map((stream) => {
+        visibleStreams.map((stream) => {
           const expanded = expandedStreamId === stream.id;
-          const streamTeams = teamsByStream.get(stream.id) ?? [];
+          const allTeamsHere = teamsByStream.get(stream.id) ?? [];
+          const visibleTeamsHere = allTeamsHere.filter(
+            (t) => teamVisibility(me, t) !== "hidden",
+          );
           const canAddTeamHere = canManageStream(me, stream.id);
           return (
             <View
@@ -129,7 +152,7 @@ export default function ProgrammeScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={[styles.streamName, { color: colors.foreground }]}>{stream.name}</Text>
                   <Text style={[styles.streamMeta, { color: colors.mutedForeground }]}>
-                    {streamTeams.length} team{streamTeams.length !== 1 ? "s" : ""}
+                    {visibleTeamsHere.length} team{visibleTeamsHere.length !== 1 ? "s" : ""}
                   </Text>
                 </View>
                 <TouchableOpacity
@@ -143,12 +166,36 @@ export default function ProgrammeScreen() {
 
               {expanded ? (
                 <View style={styles.streamBody}>
-                  {streamTeams.length === 0 ? (
+                  {visibleTeamsHere.length === 0 ? (
                     <Text style={[styles.muted, { color: colors.mutedForeground }]}>
                       No teams in this stream yet.
                     </Text>
                   ) : (
-                    streamTeams.map((team) => {
+                    visibleTeamsHere.map((team) => {
+                      const vis = teamVisibility(me, team);
+                      const leader = team.leaderId
+                        ? users.find((u) => u.id === team.leaderId)
+                        : null;
+                      const leaderLabel = leader?.name ?? "Unassigned";
+                      if (vis === "locked") {
+                        return (
+                          <View
+                            key={team.id}
+                            style={[styles.teamRow, { borderColor: colors.border, opacity: 0.85 }]}
+                          >
+                            <View style={[styles.teamIcon, { backgroundColor: colors.muted }]}>
+                              <Feather name="users" size={14} color={colors.mutedForeground} />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                              <Text style={[styles.teamName, { color: colors.foreground }]}>{team.name}</Text>
+                              <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
+                                Leader: {leaderLabel}
+                              </Text>
+                            </View>
+                            <Feather name="lock" size={14} color={colors.mutedForeground} />
+                          </View>
+                        );
+                      }
                       const pCount = projectsByTeam.get(team.id) ?? 0;
                       return (
                         <TouchableOpacity

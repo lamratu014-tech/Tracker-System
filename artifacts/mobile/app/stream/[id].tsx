@@ -10,6 +10,7 @@ import {
   useGetStream,
   useListProjects,
   useListStreamTeams,
+  useListUsers,
   useUpdateStream,
 } from "@workspace/api-client-react";
 import React, { useEffect, useState } from "react";
@@ -27,7 +28,12 @@ import {
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
-import { canManageEverything, useCanManageStream, useMe } from "@/lib/permissions";
+import {
+  canManageEverything,
+  teamVisibility,
+  useCanManageStream,
+  useMe,
+} from "@/lib/permissions";
 
 export default function StreamDetailScreen() {
   const colors = useColors();
@@ -43,10 +49,19 @@ export default function StreamDetailScreen() {
     query: { enabled: !!id, queryKey: getListStreamTeamsQueryKey(id ?? "") },
   });
   const projectsQ = useListProjects();
+  const usersQ = useListUsers();
 
   const stream = streamQ.data ?? null;
-  const teams = teamsQ.data ?? [];
+  const allTeams = teamsQ.data ?? [];
   const projects = projectsQ.data ?? [];
+  const users = usersQ.data ?? [];
+
+  // Drop teams the current user must not see at all.
+  const teams = allTeams.filter((t) => teamVisibility(me, t) !== "hidden");
+  // A leader may only view their own stream; any other stream (even if empty)
+  // is access-restricted. Admins / overseers can view every stream.
+  const accessRestricted =
+    !!stream && me?.role === "leader" && me.streamId !== stream.id;
 
   const canManage = useCanManageStream(stream?.id ?? null);
   const isAdmin = canManageEverything(me);
@@ -86,6 +101,31 @@ export default function StreamDetailScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }]}>
         <Text style={{ color: colors.mutedForeground }}>Stream not found.</Text>
+      </View>
+    );
+  }
+  if (accessRestricted) {
+    return (
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: colors.background, alignItems: "center", justifyContent: "center", gap: 12 },
+        ]}
+      >
+        <Feather name="lock" size={32} color={colors.mutedForeground} />
+        <Text style={{ color: colors.foreground, fontFamily: "Inter_700Bold", fontSize: 18 }}>
+          Access restricted
+        </Text>
+        <Text style={{ color: colors.mutedForeground, textAlign: "center" }}>
+          You don&apos;t have access to this stream.
+        </Text>
+        <TouchableOpacity
+          style={[styles.actionBtn, { backgroundColor: colors.muted }]}
+          onPress={() => router.back()}
+        >
+          <Feather name="arrow-left" size={14} color={colors.primary} />
+          <Text style={[styles.actionText, { color: colors.primary }]}>Back</Text>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -186,6 +226,27 @@ export default function StreamDetailScreen() {
         </View>
       ) : (
         teams.map((team) => {
+          const vis = teamVisibility(me, team);
+          if (vis === "locked") {
+            const leader = team.leaderId ? users.find((u) => u.id === team.leaderId) : null;
+            return (
+              <View
+                key={team.id}
+                style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border, opacity: 0.85 }]}
+              >
+                <View style={[styles.iconBox, { backgroundColor: colors.muted }]}>
+                  <Feather name="users" size={16} color={colors.mutedForeground} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.rowTitle, { color: colors.foreground }]}>{team.name}</Text>
+                  <Text style={[styles.rowMeta, { color: colors.mutedForeground }]}>
+                    Leader: {leader?.name ?? "Unassigned"}
+                  </Text>
+                </View>
+                <Feather name="lock" size={16} color={colors.mutedForeground} />
+              </View>
+            );
+          }
           const pCount = projectsForTeam(team.id);
           return (
             <TouchableOpacity

@@ -61,3 +61,40 @@ export function useCanCreateForTeam(
 ): boolean {
   return canCreateForTeam(useMe(), team);
 }
+
+export type TeamVisibility = "full" | "locked" | "hidden";
+
+/**
+ * How a team should be presented to a given user.
+ *
+ * - `full`   — show all detail and allow navigation to the team page.
+ * - `locked` — show only the team's name + leader on a list, with a lock
+ *              indicator; do not navigate, do not expose other detail.
+ * - `hidden` — do not render the team at all.
+ *
+ * Admins and stream overseers always get `full` (no visibility scoping).
+ * Leaders see their own team as `full`, sibling teams in their stream as
+ * `locked`, and any team outside their stream as `hidden`.
+ */
+export function teamVisibility(
+  user: Principal,
+  team: { id: string; streamId?: string | null } | null | undefined,
+): TeamVisibility {
+  if (!user || !team) return "hidden";
+  if (user.role === "admin") return "full";
+  if (user.role === "stream_overseer") return "full";
+  if (user.role === "leader") {
+    if (user.teamId && user.teamId === team.id) return "full";
+    if (team.streamId && user.streamId && team.streamId === user.streamId) {
+      return "locked";
+    }
+    return "hidden";
+  }
+  return "hidden";
+}
+
+export function useTeamVisibility(
+  team: { id: string; streamId?: string | null } | null | undefined,
+): TeamVisibility {
+  return teamVisibility(useMe(), team);
+}

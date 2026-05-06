@@ -4,10 +4,12 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   getGetStreamQueryKey,
   getGetTeamQueryKey,
+  getListProjectsQueryKey,
   getListStreamTeamsQueryKey,
   getListTeamMembersQueryKey,
   getListTeamNotesQueryKey,
   getListTeamsQueryKey,
+  getListUsersQueryKey,
   useAssignTeamLeader,
   useCreateTeamMember,
   useCreateTeamNote,
@@ -38,7 +40,7 @@ import {
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
-import { useCanManageTeam, useMe } from "@/lib/permissions";
+import { teamVisibility, useCanManageTeam, useMe } from "@/lib/permissions";
 
 export default function TeamDetailScreen() {
   const colors = useColors();
@@ -51,28 +53,52 @@ export default function TeamDetailScreen() {
     query: { enabled: !!id, queryKey: getGetTeamQueryKey(id ?? "") },
   });
   const team = teamQ.data ?? null;
+
+  // Once the team has loaded, decide whether the current user has full
+  // access. If not, we keep all dependent queries disabled so we never
+  // fetch members / notes / projects / users for a team the user
+  // shouldn't be able to inspect.
+  const teamLoaded = !!team;
+  const visibility = team
+    ? teamVisibility(me, { id: team.id, streamId: team.streamId })
+    : "hidden";
+  const canFetchTeamData = teamLoaded && visibility === "full";
+
   const streamQ = useGetStream(team?.streamId ?? "", {
-    query: { enabled: !!team?.streamId, queryKey: getGetStreamQueryKey(team?.streamId ?? "") },
+    query: {
+      enabled: canFetchTeamData && !!team?.streamId,
+      queryKey: getGetStreamQueryKey(team?.streamId ?? ""),
+    },
   });
   const stream = streamQ.data ?? null;
 
-  const usersQ = useListUsers();
+  const usersQ = useListUsers({
+    query: { enabled: canFetchTeamData, queryKey: getListUsersQueryKey() },
+  });
   const users = usersQ.data ?? [];
 
   const membersQ = useListTeamMembers(id ?? "", {
-    query: { enabled: !!id, queryKey: getListTeamMembersQueryKey(id ?? "") },
+    query: {
+      enabled: canFetchTeamData && !!id,
+      queryKey: getListTeamMembersQueryKey(id ?? ""),
+    },
   });
   const members = membersQ.data ?? [];
 
   const notesQ = useListTeamNotes(id ?? "", {
-    query: { enabled: !!id, queryKey: getListTeamNotesQueryKey(id ?? "") },
+    query: {
+      enabled: canFetchTeamData && !!id,
+      queryKey: getListTeamNotesQueryKey(id ?? ""),
+    },
   });
   const notes = useMemo(
     () => [...(notesQ.data ?? [])].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
     [notesQ.data],
   );
 
-  const projectsQ = useListProjects();
+  const projectsQ = useListProjects({
+    query: { enabled: canFetchTeamData, queryKey: getListProjectsQueryKey() },
+  });
   const teamProjects = useMemo(
     () => (projectsQ.data ?? []).filter((p) => p.teamId === id),
     [projectsQ.data, id],
@@ -148,6 +174,32 @@ export default function TeamDetailScreen() {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }]}>
         <Text style={{ color: colors.mutedForeground }}>Team not found.</Text>
+      </View>
+    );
+  }
+
+  if (visibility !== "full") {
+    return (
+      <View
+        style={[
+          styles.container,
+          { backgroundColor: colors.background, alignItems: "center", justifyContent: "center", gap: 12 },
+        ]}
+      >
+        <Feather name="lock" size={32} color={colors.mutedForeground} />
+        <Text style={{ color: colors.foreground, fontFamily: "Inter_700Bold", fontSize: 18 }}>
+          Access restricted
+        </Text>
+        <Text style={{ color: colors.mutedForeground, textAlign: "center" }}>
+          You don&apos;t have access to this team.
+        </Text>
+        <TouchableOpacity
+          style={[styles.actionBtn, { backgroundColor: colors.muted }]}
+          onPress={() => router.back()}
+        >
+          <Feather name="arrow-left" size={14} color={colors.primary} />
+          <Text style={[styles.actionText, { color: colors.primary }]}>Back</Text>
+        </TouchableOpacity>
       </View>
     );
   }
