@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, teamNotesTable, teamsTable } from "@workspace/db";
+import { db, teamNotesTable, teamsTable, usersTable } from "@workspace/db";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { CreateTeamNoteBody, UpdateTeamNoteBody } from "@workspace/api-zod";
@@ -22,12 +22,21 @@ router.get("/teams/:id/notes", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  const notes = await db
-    .select()
+  const rows = await db
+    .select({
+      id: teamNotesTable.id,
+      teamId: teamNotesTable.teamId,
+      authorId: teamNotesTable.authorId,
+      body: teamNotesTable.body,
+      createdAt: teamNotesTable.createdAt,
+      updatedAt: teamNotesTable.updatedAt,
+      authorName: usersTable.name,
+    })
     .from(teamNotesTable)
+    .leftJoin(usersTable, eq(usersTable.id, teamNotesTable.authorId))
     .where(eq(teamNotesTable.teamId, teamId))
     .orderBy(desc(teamNotesTable.createdAt));
-  res.json(notes);
+  res.json(rows);
 });
 
 // POST /teams/:id/notes — admin/overseer/leader
@@ -54,7 +63,7 @@ router.post("/teams/:id/notes", requireManager, async (req, res): Promise<void> 
     .returning();
 
   await logActivity({ user, actionType: "create", entityType: "team_note", entityId: note.id, teamId });
-  res.status(201).json(note);
+  res.status(201).json({ ...note, authorName: user.name });
 });
 
 // PATCH /team-notes/:id — author or admin
@@ -79,7 +88,13 @@ router.patch("/team-notes/:id", requireManager, async (req, res): Promise<void> 
     .set({ body: parsed.data.body })
     .where(eq(teamNotesTable.id, id))
     .returning();
-  res.json(note);
+
+  const [author] = await db
+    .select({ name: usersTable.name })
+    .from(usersTable)
+    .where(eq(usersTable.id, note.authorId))
+    .limit(1);
+  res.json({ ...note, authorName: author?.name ?? null });
 });
 
 // DELETE /team-notes/:id — author or admin

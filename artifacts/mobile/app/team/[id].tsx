@@ -540,7 +540,10 @@ export default function TeamDetailScreen() {
       ) : (
         <View style={styles.timeline}>
           {notes.map((n, idx) => {
-            const author = users.find((u) => u.id === n.authorId);
+            const authorName =
+              n.authorName ??
+              users.find((u) => u.id === n.authorId)?.name ??
+              "Removed user";
             const mine = me?.id === n.authorId;
             const canEditNote = canEdit && (mine || isAdmin);
             const isEditing = editingNoteId === n.id;
@@ -558,7 +561,7 @@ export default function TeamDetailScreen() {
                 >
                   <View style={styles.noteHeader}>
                     <Text style={[styles.noteAuthor, { color: colors.foreground }]}>
-                      {author?.name ?? "Unknown"}
+                      {authorName}
                     </Text>
                     <Text style={[styles.noteMeta, { color: colors.mutedForeground }]}>
                       {formatNoteDate(n.createdAt)}{wasEdited ? " · edited" : ""}

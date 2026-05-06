@@ -58,10 +58,13 @@ export default function StreamDetailScreen() {
 
   // Drop teams the current user must not see at all.
   const teams = allTeams.filter((t) => teamVisibility(me, t) !== "hidden");
-  // A leader may only view their own stream; any other stream (even if empty)
-  // is access-restricted. Admins / overseers can view every stream.
+  // Leaders and stream overseers may only view their own stream; any other
+  // stream (even if empty) is access-restricted. Admins can view every
+  // stream.
   const accessRestricted =
-    !!stream && me?.role === "leader" && me.streamId !== stream.id;
+    !!stream &&
+    (me?.role === "leader" || me?.role === "stream_overseer") &&
+    me.streamId !== stream.id;
 
   const canManage = useCanManageStream(stream?.id ?? null);
   const isAdmin = canManageEverything(me);

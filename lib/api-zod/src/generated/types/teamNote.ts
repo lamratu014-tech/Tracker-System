@@ -10,6 +10,7 @@ export interface TeamNote {
   id: string;
   teamId: string;
   authorId: string;
+  authorName: string | null;
   body: string;
   createdAt: Date;
   updatedAt: Date;

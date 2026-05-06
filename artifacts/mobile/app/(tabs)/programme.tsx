@@ -63,10 +63,12 @@ export default function ProgrammeScreen() {
   }, [projects]);
 
   // Streams the current user is allowed to see at all.
-  // - admin / stream_overseer / no role: see every stream.
-  // - leader: see only their own stream (always, even when it has no teams).
+  // - admin: see every stream.
+  // - stream_overseer / leader: see only their own stream (always, even
+  //   when it has no teams). Inside that stream, teamVisibility decides
+  //   whether each team is `full` or `locked`.
   const visibleStreams = useMemo(() => {
-    if (me?.role === "leader") {
+    if (me?.role === "leader" || me?.role === "stream_overseer") {
       return me.streamId ? streams.filter((s) => s.id === me.streamId) : [];
     }
     return streams;
