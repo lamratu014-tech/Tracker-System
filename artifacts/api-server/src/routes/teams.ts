@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, teamsTable, personnelTable, usersTable, streamsTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   CreateTeamBody,
   UpdateTeamBody,
@@ -11,28 +11,47 @@ import {
 import { z } from "zod";
 import { requireAuth, requireManager } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
-import { userCanAccessTeam, userCanAccessStream, userCanAssignAsLeader } from "../lib/permissions";
+import { userCanAccessTeam, userCanAccessStream, userCanAssignAsLeader, visibleTeamIdsFor } from "../lib/permissions";
 
 const router = Router();
 
 const IdParam = z.object({ id: z.string() });
 
 // GET /teams
-router.get("/teams", requireAuth, async (_req, res): Promise<void> => {
-  const teams = await db
-    .select({
-      id: teamsTable.id,
-      name: teamsTable.name,
-      streamId: teamsTable.streamId,
-      leaderId: teamsTable.leaderId,
-      functionLabel: teamsTable.functionLabel,
-      createdAt: teamsTable.createdAt,
-      updatedAt: teamsTable.updatedAt,
-      streamName: streamsTable.name,
-    })
-    .from(teamsTable)
-    .leftJoin(streamsTable, eq(teamsTable.streamId, streamsTable.id))
-    .orderBy(teamsTable.name);
+router.get("/teams", requireAuth, async (req, res): Promise<void> => {
+  const user = req.authUser!;
+  const visibleIds = await visibleTeamIdsFor(user);
+
+  const selectShape = {
+    id: teamsTable.id,
+    name: teamsTable.name,
+    streamId: teamsTable.streamId,
+    leaderId: teamsTable.leaderId,
+    functionLabel: teamsTable.functionLabel,
+    createdAt: teamsTable.createdAt,
+    updatedAt: teamsTable.updatedAt,
+    streamName: streamsTable.name,
+  };
+
+  type TeamRow = {
+    id: string; name: string; streamId: string | null; leaderId: string | null;
+    functionLabel: string | null; createdAt: Date; updatedAt: Date; streamName: string | null;
+  };
+  let teams: TeamRow[] = [];
+  if (visibleIds === "all") {
+    teams = await db
+      .select(selectShape)
+      .from(teamsTable)
+      .leftJoin(streamsTable, eq(teamsTable.streamId, streamsTable.id))
+      .orderBy(teamsTable.name);
+  } else if (visibleIds.length > 0) {
+    teams = await db
+      .select(selectShape)
+      .from(teamsTable)
+      .leftJoin(streamsTable, eq(teamsTable.streamId, streamsTable.id))
+      .where(inArray(teamsTable.id, visibleIds))
+      .orderBy(teamsTable.name);
+  }
   res.json(teams);
 });
 
@@ -40,6 +59,11 @@ router.get("/teams", requireAuth, async (_req, res): Promise<void> => {
 router.get("/teams/:id", requireAuth, async (req, res): Promise<void> => {
   const params = IdParam.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const user = req.authUser!;
+  if (!(await userCanAccessTeam(user, params.data.id))) {
+    res.status(403).json({ error: "Access denied" });
+    return;
+  }
   const [team] = await db
     .select({
       id: teamsTable.id,

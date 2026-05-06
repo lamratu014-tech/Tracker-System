@@ -111,3 +111,27 @@ export async function visibleTeamIdsFor(user: User): Promise<string[] | "all"> {
   if (user.role === "leader" && user.teamId) return [user.teamId];
   return [];
 }
+
+/**
+ * True when `user` may read a given stream.
+ *  - admin           → always
+ *  - stream_overseer → only their assigned stream
+ *  - leader          → only the stream that contains their team
+ */
+export async function userCanReadStream(
+  user: User,
+  streamId: string
+): Promise<boolean> {
+  if (user.role === "admin") return true;
+  if (user.role === "stream_overseer") return user.streamId === streamId;
+  if (user.role === "leader") {
+    if (!user.teamId) return false;
+    const [team] = await db
+      .select({ streamId: teamsTable.streamId })
+      .from(teamsTable)
+      .where(eq(teamsTable.id, user.teamId))
+      .limit(1);
+    return !!team && team.streamId === streamId;
+  }
+  return false;
+}

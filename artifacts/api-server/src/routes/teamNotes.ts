@@ -66,7 +66,7 @@ router.post("/teams/:id/notes", requireManager, async (req, res): Promise<void> 
   res.status(201).json({ ...note, authorName: user.name });
 });
 
-// PATCH /team-notes/:id — author or admin
+// PATCH /team-notes/:id — author or admin, must still have current access to the team
 router.patch("/team-notes/:id", requireManager, async (req, res): Promise<void> => {
   const params = IdParam.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
@@ -75,6 +75,11 @@ router.patch("/team-notes/:id", requireManager, async (req, res): Promise<void> 
 
   const [existing] = await db.select().from(teamNotesTable).where(eq(teamNotesTable.id, id)).limit(1);
   if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+
+  if (!(await userCanAccessTeam(user, existing.teamId))) {
+    res.status(403).json({ error: "Access denied" });
+    return;
+  }
   if (user.role !== "admin" && existing.authorId !== user.id) {
     res.status(403).json({ error: "Only the author or an admin can edit this note" });
     return;
@@ -97,7 +102,7 @@ router.patch("/team-notes/:id", requireManager, async (req, res): Promise<void> 
   res.json({ ...note, authorName: author?.name ?? null });
 });
 
-// DELETE /team-notes/:id — author or admin
+// DELETE /team-notes/:id — author or admin, must still have current access to the team
 router.delete("/team-notes/:id", requireManager, async (req, res): Promise<void> => {
   const params = IdParam.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
@@ -106,6 +111,11 @@ router.delete("/team-notes/:id", requireManager, async (req, res): Promise<void>
 
   const [existing] = await db.select().from(teamNotesTable).where(eq(teamNotesTable.id, id)).limit(1);
   if (!existing) { res.status(404).json({ error: "Not found" }); return; }
+
+  if (!(await userCanAccessTeam(user, existing.teamId))) {
+    res.status(403).json({ error: "Access denied" });
+    return;
+  }
   if (user.role !== "admin" && existing.authorId !== user.id) {
     res.status(403).json({ error: "Only the author or an admin can delete this note" });
     return;
