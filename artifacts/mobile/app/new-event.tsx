@@ -39,10 +39,38 @@ function dateFromOffset(days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+function daysInMonth(year: number, month1: number): number {
+  // month1 is 1-12. new Date(year, month, 0) returns the last day of the
+  // previous month, so passing month1 gives us the last day of month1.
+  return new Date(year, month1, 0).getDate();
+}
+
 function parseDateTime(date: string, time: string): Date | null {
   if (!DATE_RE.test(date) || !TIME_RE.test(time)) return null;
-  const d = new Date(`${date}T${time}:00`);
-  return isNaN(d.getTime()) ? null : d;
+  const [yStr, moStr, dStr] = date.split("-");
+  const [hStr, miStr] = time.split(":");
+  const y = Number(yStr);
+  const mo = Number(moStr);
+  const d = Number(dStr);
+  const h = Number(hStr);
+  const mi = Number(miStr);
+  if (!Number.isFinite(y) || y < 1970 || y > 9999) return null;
+  if (mo < 1 || mo > 12) return null;
+  if (d < 1 || d > daysInMonth(y, mo)) return null;
+  if (h < 0 || h > 23) return null;
+  if (mi < 0 || mi > 59) return null;
+  const out = new Date(y, mo - 1, d, h, mi, 0, 0);
+  // Final sanity: re-read fields to confirm no normalization happened.
+  if (
+    out.getFullYear() !== y ||
+    out.getMonth() !== mo - 1 ||
+    out.getDate() !== d ||
+    out.getHours() !== h ||
+    out.getMinutes() !== mi
+  ) {
+    return null;
+  }
+  return out;
 }
 
 export default function NewEventScreen() {

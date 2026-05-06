@@ -101,29 +101,36 @@ export default function CalendarScreen() {
   }
 
   // Map of dayKey -> ordered list of distinct stream ids (or null for programme-wide)
-  // covering that day. An event spans every day from start..end inclusive.
+  // covering each visible day. We iterate the visible cells (≤ 42) and check
+  // each event's [start..end] interval so very long events still render on
+  // every day in view without forcing an unbounded per-event walk.
   const streamsByDay = useMemo(() => {
     const map = new Map<string, (string | null)[]>();
-    for (const ev of events) {
+    const eventSpans = events.map((ev) => {
       const s = new Date(ev.startDate);
       const e = new Date(ev.endDate);
-      if (isNaN(s.getTime()) || isNaN(e.getTime())) continue;
-      const sId = streamIdFor(ev);
-      let cursor = startOfDay(s);
-      const endDay = startOfDay(e);
-      // Safety cap: 366 days max so a malformed range can't lock the UI.
-      let guard = 366;
-      while (cursor.getTime() <= endDay.getTime() && guard-- > 0) {
-        const k = dayKey(cursor);
-        const list = map.get(k) ?? [];
-        if (!list.includes(sId)) list.push(sId);
-        map.set(k, list);
-        cursor.setDate(cursor.getDate() + 1);
+      if (isNaN(s.getTime()) || isNaN(e.getTime())) return null;
+      return {
+        sStart: startOfDay(s).getTime(),
+        sEnd: startOfDay(e).getTime(),
+        sId: streamIdFor(ev),
+      };
+    });
+    for (const cell of cells) {
+      if (!cell) continue;
+      const cellTs = startOfDay(cell).getTime();
+      const list: (string | null)[] = [];
+      for (const span of eventSpans) {
+        if (!span) continue;
+        if (cellTs >= span.sStart && cellTs <= span.sEnd) {
+          if (!list.includes(span.sId)) list.push(span.sId);
+        }
       }
+      if (list.length > 0) map.set(dayKey(cell), list);
     }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events, teams]);
+  }, [events, teams, cells]);
 
   const selectedEvents = useMemo(() => {
     return events
