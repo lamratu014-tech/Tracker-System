@@ -31,6 +31,15 @@ import {
   canManageTeam,
   useMe,
 } from "@/lib/permissions";
+import { colorForStream } from "@/lib/streamColors";
+
+function sameDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
 
 export default function EventDetailScreen() {
   const colors = useColors();
@@ -87,6 +96,7 @@ export default function EventDetailScreen() {
   const teamId = event.invitedTeamIds[0] ?? event.createdByTeamId ?? null;
   const linkedTeam = teamId ? teams.find((t) => t.id === teamId) : null;
   const linkedStreamId = linkedTeam?.streamId ?? null;
+  const accent = colorForStream(linkedStreamId);
 
   const isAdmin = canManageEverything(me);
   const isCreator = !!event.createdByUserId && me?.id === event.createdByUserId;
@@ -133,11 +143,31 @@ export default function EventDetailScreen() {
   const creator = event.createdByUserId
     ? users.find((u) => u.id === event.createdByUserId)
     : null;
-  const dt = new Date(event.startDate);
-  const dateStr = dt.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-  const timeStr = event.isAllDay
-    ? "All day"
-    : dt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const startDt = new Date(event.startDate);
+  const endDt = new Date(event.endDate);
+  const validStart = !isNaN(startDt.getTime());
+  const validEnd = !isNaN(endDt.getTime());
+  const multiDay = validStart && validEnd && !sameDay(startDt, endDt);
+  const dateStr = validStart
+    ? startDt.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" })
+    : "—";
+  let timeStr: string;
+  if (event.isAllDay) {
+    timeStr = multiDay
+      ? `All day · until ${endDt.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })}`
+      : "All day";
+  } else if (validStart && validEnd) {
+    const startTime = startDt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    const endTime = endDt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    if (multiDay) {
+      const endLabel = endDt.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+      timeStr = `${startTime} → ${endLabel}, ${endTime}`;
+    } else {
+      timeStr = `${startTime} – ${endTime}`;
+    }
+  } else {
+    timeStr = "—";
+  }
 
   function confirmDelete() {
     if (!event) return;
@@ -156,19 +186,32 @@ export default function EventDetailScreen() {
 
   return (
     <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}>
-      <Text style={[styles.title, { color: colors.foreground }]}>{event.title}</Text>
+      <View style={styles.titleRow}>
+        <View style={[styles.streamSwatch, { backgroundColor: accent }]} />
+        <Text style={[styles.title, { color: colors.foreground, flex: 1 }]}>{event.title}</Text>
+      </View>
 
-      <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
+      <View
+        style={[
+          styles.card,
+          {
+            backgroundColor: colors.card,
+            borderColor: colors.border,
+            borderTopColor: accent,
+            borderTopWidth: 3,
+          },
+        ]}
+      >
         <View style={styles.line}>
-          <Feather name="calendar" size={14} color={colors.primary} />
+          <Feather name="calendar" size={14} color={accent} />
           <Text style={[styles.lineText, { color: colors.foreground }]}>{dateStr}</Text>
         </View>
         <View style={styles.line}>
-          <Feather name="clock" size={14} color={colors.primary} />
+          <Feather name="clock" size={14} color={accent} />
           <Text style={[styles.lineText, { color: colors.foreground }]}>{timeStr}</Text>
         </View>
         <View style={styles.line}>
-          <Feather name="link" size={14} color={colors.primary} />
+          <Feather name="link" size={14} color={accent} />
           <Text style={[styles.lineText, { color: colors.foreground }]}>{linkedLabel}</Text>
         </View>
         {event.location ? (
@@ -265,6 +308,8 @@ export default function EventDetailScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 20, gap: 12 },
+  titleRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  streamSwatch: { width: 6, height: 28, borderRadius: 3 },
   title: { fontSize: 24, fontFamily: "Inter_700Bold" },
   card: { padding: 14, borderRadius: 10, borderWidth: 1, gap: 8 },
   line: { flexDirection: "row", alignItems: "center", gap: 8 },

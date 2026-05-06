@@ -19,12 +19,14 @@ import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
 import { useMe } from "@/lib/permissions";
+import { colorForStream, NEUTRAL_STREAM_COLOR } from "@/lib/streamColors";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
 ];
+const MAX_DOTS = 3;
 
 function buildMonthGrid(year: number, month: number): (Date | null)[] {
   const first = new Date(year, month, 1);
@@ -44,10 +46,30 @@ function sameDay(a: Date, b: Date): boolean {
   );
 }
 
+function dayKey(d: Date): string {
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
 function timeOf(iso: string): string {
   const d = new Date(iso);
   if (isNaN(d.getTime())) return "";
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function rangeLabel(startIso: string, endIso: string, isAllDay: boolean): string {
+  const s = new Date(startIso);
+  const e = new Date(endIso);
+  if (isNaN(s.getTime()) || isNaN(e.getTime())) return "";
+  if (isAllDay) {
+    if (sameDay(s, e)) return "All day";
+    return `All day · until ${e.toLocaleDateString([], { month: "short", day: "numeric" })}`;
+  }
+  if (sameDay(s, e)) return `${timeOf(startIso)} – ${timeOf(endIso)}`;
+  return `${timeOf(startIso)} → ${e.toLocaleDateString([], { month: "short", day: "numeric" })} ${timeOf(endIso)}`;
 }
 
 export default function CalendarScreen() {
@@ -71,22 +93,48 @@ export default function CalendarScreen() {
 
   const cells = useMemo(() => buildMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
 
-  const eventsByDay = useMemo(() => {
-    const map = new Map<string, number>();
+  function streamIdFor(ev: { invitedTeamIds: string[]; createdByTeamId?: string | null }): string | null {
+    const teamId = ev.invitedTeamIds[0] ?? ev.createdByTeamId ?? null;
+    if (!teamId) return null;
+    const t = teams.find((x) => x.id === teamId);
+    return t?.streamId ?? null;
+  }
+
+  // Map of dayKey -> ordered list of distinct stream ids (or null for programme-wide)
+  // covering that day. An event spans every day from start..end inclusive.
+  const streamsByDay = useMemo(() => {
+    const map = new Map<string, (string | null)[]>();
     for (const ev of events) {
-      const d = new Date(ev.startDate);
-      if (isNaN(d.getTime())) continue;
-      const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-      map.set(key, (map.get(key) ?? 0) + 1);
+      const s = new Date(ev.startDate);
+      const e = new Date(ev.endDate);
+      if (isNaN(s.getTime()) || isNaN(e.getTime())) continue;
+      const sId = streamIdFor(ev);
+      let cursor = startOfDay(s);
+      const endDay = startOfDay(e);
+      // Safety cap: 366 days max so a malformed range can't lock the UI.
+      let guard = 366;
+      while (cursor.getTime() <= endDay.getTime() && guard-- > 0) {
+        const k = dayKey(cursor);
+        const list = map.get(k) ?? [];
+        if (!list.includes(sId)) list.push(sId);
+        map.set(k, list);
+        cursor.setDate(cursor.getDate() + 1);
+      }
     }
     return map;
-  }, [events]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [events, teams]);
 
   const selectedEvents = useMemo(() => {
     return events
       .filter((ev) => {
-        const d = new Date(ev.startDate);
-        return !isNaN(d.getTime()) && sameDay(d, selected);
+        const s = new Date(ev.startDate);
+        const e = new Date(ev.endDate);
+        if (isNaN(s.getTime()) || isNaN(e.getTime())) return false;
+        const sd = startOfDay(s).getTime();
+        const ed = startOfDay(e).getTime();
+        const target = startOfDay(selected).getTime();
+        return target >= sd && target <= ed;
       })
       .slice()
       .sort((a, b) => +new Date(a.startDate) - +new Date(b.startDate));
@@ -165,10 +213,11 @@ export default function CalendarScreen() {
         <View style={styles.grid}>
           {cells.map((day, i) => {
             if (!day) return <View key={i} style={styles.cell} />;
-            const key = `${day.getFullYear()}-${day.getMonth()}-${day.getDate()}`;
-            const count = eventsByDay.get(key) ?? 0;
+            const list = streamsByDay.get(dayKey(day)) ?? [];
             const isToday = sameDay(day, today);
             const isSelected = sameDay(day, selected);
+            const visible = list.slice(0, MAX_DOTS);
+            const overflow = list.length - visible.length;
             return (
               <TouchableOpacity
                 key={i}
@@ -189,8 +238,32 @@ export default function CalendarScreen() {
                 >
                   {day.getDate()}
                 </Text>
-                {count > 0 ? (
-                  <View style={[styles.dot, { backgroundColor: isSelected ? "#fff" : colors.primary }]} />
+                {visible.length > 0 ? (
+                  <View style={styles.dotRow}>
+                    {visible.map((sId, di) => (
+                      <View
+                        key={`${sId ?? "none"}-${di}`}
+                        style={[
+                          styles.dot,
+                          {
+                            backgroundColor: isSelected
+                              ? "#fff"
+                              : colorForStream(sId),
+                          },
+                        ]}
+                      />
+                    ))}
+                    {overflow > 0 ? (
+                      <Text
+                        style={[
+                          styles.overflowDot,
+                          { color: isSelected ? "#fff" : colors.mutedForeground },
+                        ]}
+                      >
+                        +{overflow}
+                      </Text>
+                    ) : null}
+                  </View>
                 ) : null}
               </TouchableOpacity>
             );
@@ -211,29 +284,41 @@ export default function CalendarScreen() {
             </Text>
           </View>
         ) : (
-          selectedEvents.map((ev) => (
-            <TouchableOpacity
-              key={ev.id}
-              style={[styles.evCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-              onPress={() => router.push({ pathname: "/event/[id]", params: { id: ev.id } })}
-              activeOpacity={0.8}
-            >
-              <View style={[styles.timeBox, { backgroundColor: colors.primary + "15" }]}>
-                <Text style={[styles.timeText, { color: colors.primary }]}>
-                  {ev.isAllDay ? "All day" : timeOf(ev.startDate)}
-                </Text>
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.evTitle, { color: colors.foreground }]} numberOfLines={1}>
-                  {ev.title}
-                </Text>
-                <Text style={[styles.evMeta, { color: colors.mutedForeground }]} numberOfLines={1}>
-                  {nameFor(ev)}
-                </Text>
-              </View>
-              <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
-            </TouchableOpacity>
-          ))
+          selectedEvents.map((ev) => {
+            const sId = streamIdFor(ev);
+            const accent = sId ? colorForStream(sId) : NEUTRAL_STREAM_COLOR;
+            return (
+              <TouchableOpacity
+                key={ev.id}
+                style={[
+                  styles.evCard,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                    borderLeftColor: accent,
+                    borderLeftWidth: 4,
+                  },
+                ]}
+                onPress={() => router.push({ pathname: "/event/[id]", params: { id: ev.id } })}
+                activeOpacity={0.8}
+              >
+                <View style={[styles.timeBox, { backgroundColor: accent + "15" }]}>
+                  <Text style={[styles.timeText, { color: accent }]}>
+                    {ev.isAllDay ? "All" : timeOf(ev.startDate)}
+                  </Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.evTitle, { color: colors.foreground }]} numberOfLines={1}>
+                    {ev.title}
+                  </Text>
+                  <Text style={[styles.evMeta, { color: colors.mutedForeground }]} numberOfLines={1}>
+                    {nameFor(ev)} · {rangeLabel(ev.startDate, ev.endDate, ev.isAllDay)}
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            );
+          })
         )}
       </ScrollView>
     </View>
@@ -271,7 +356,13 @@ const styles = StyleSheet.create({
     justifyContent: "center", borderRadius: 8,
   },
   cellNum: { fontSize: 14, fontFamily: "Inter_500Medium" },
-  dot: { width: 4, height: 4, borderRadius: 2, marginTop: 2 },
+  dotRow: {
+    flexDirection: "row", alignItems: "center", gap: 2, marginTop: 2,
+  },
+  dot: { width: 5, height: 5, borderRadius: 2.5 },
+  overflowDot: {
+    fontSize: 8, fontFamily: "Inter_700Bold", marginLeft: 1,
+  },
   sectionTitle: {
     fontSize: 14, fontFamily: "Inter_700Bold",
     marginTop: 16, marginBottom: 8, paddingHorizontal: 4,
@@ -282,7 +373,7 @@ const styles = StyleSheet.create({
     flexDirection: "row", alignItems: "center", gap: 10,
     padding: 12, borderWidth: 1, borderRadius: 10, marginBottom: 6,
   },
-  timeBox: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6 },
+  timeBox: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, minWidth: 48, alignItems: "center" },
   timeText: { fontSize: 12, fontFamily: "Inter_700Bold" },
   evTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   evMeta: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },

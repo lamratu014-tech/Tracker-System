@@ -30,16 +30,19 @@ const DAY_OFFSETS = [
   { label: "+2 wks", days: 14 },
 ];
 
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const TIME_RE = /^\d{2}:\d{2}$/;
+
 function dateFromOffset(days: number): string {
   const d = new Date();
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10);
 }
 
-function toIso(date: string, time: string, addHours = 0): string {
+function parseDateTime(date: string, time: string): Date | null {
+  if (!DATE_RE.test(date) || !TIME_RE.test(time)) return null;
   const d = new Date(`${date}T${time}:00`);
-  if (addHours) d.setHours(d.getHours() + addHours);
-  return d.toISOString();
+  return isNaN(d.getTime()) ? null : d;
 }
 
 export default function NewEventScreen() {
@@ -53,8 +56,11 @@ export default function NewEventScreen() {
 
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
-  const [date, setDate] = useState<string>(dateFromOffset(1));
-  const [time, setTime] = useState<string>("10:00");
+  const initialDate = dateFromOffset(1);
+  const [startDate, setStartDate] = useState<string>(initialDate);
+  const [startTime, setStartTime] = useState<string>("10:00");
+  const [endDate, setEndDate] = useState<string>(initialDate);
+  const [endTime, setEndTime] = useState<string>("11:00");
   const [linkedTeamId, setLinkedTeamId] = useState<string | null>(
     me?.role === "leader" && me.teamId ? me.teamId : null,
   );
@@ -66,6 +72,17 @@ export default function NewEventScreen() {
     if (me.role === "leader" && me.teamId) return teams.filter((t) => t.id === me.teamId);
     return [];
   }, [teams, me]);
+
+  const startDt = parseDateTime(startDate, startTime);
+  const endDt = parseDateTime(endDate, endTime);
+  const startValid = !!startDt;
+  const endValid = !!endDt;
+  const orderValid = !!(startDt && endDt && endDt.getTime() > startDt.getTime());
+  const dateError =
+    !startValid ? "Start date or time isn't valid (use YYYY-MM-DD and HH:MM)."
+    : !endValid ? "End date or time isn't valid (use YYYY-MM-DD and HH:MM)."
+    : !orderValid ? "End must be after start."
+    : null;
 
   const createEvent = useCreateEvent({
     mutation: {
@@ -84,31 +101,35 @@ export default function NewEventScreen() {
     );
   }
 
+  const canSave =
+    !!title.trim() &&
+    !dateError &&
+    (me.role === "admin" || !!linkedTeamId) &&
+    !createEvent.isPending;
+
   function save() {
     if (!title.trim()) return Alert.alert("Title required", "Please enter an event title.");
-    if (!date) return Alert.alert("Date required", "Pick a date.");
-    if (!time) return Alert.alert("Time required", "Pick a time.");
+    if (dateError) return Alert.alert("Invalid date or time", dateError);
     if (me!.role !== "admin" && !linkedTeamId) {
       return Alert.alert("Team required", "Pick a team for this event.");
     }
-    const startDate = toIso(date, time, 0);
-    const endDate = toIso(date, time, 1);
+    if (!startDt || !endDt) return;
     createEvent.mutate({
       data: {
         title: title.trim(),
         sharedDescription: desc.trim(),
-        startDate,
-        endDate,
+        startDate: startDt.toISOString(),
+        endDate: endDt.toISOString(),
         invitedTeamIds: linkedTeamId ? [linkedTeamId] : [],
       },
     });
   }
 
-  const dateLabel = new Date(`${date}T${time}:00`).toLocaleDateString([], {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
+  function applyDayOffset(days: number) {
+    const v = dateFromOffset(days);
+    setStartDate(v);
+    setEndDate(v);
+  }
 
   return (
     <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}>
@@ -133,16 +154,16 @@ export default function NewEventScreen() {
         numberOfLines={3}
       />
 
-      <Text style={[styles.label, { color: colors.mutedForeground }]}>Date * — {dateLabel}</Text>
+      <Text style={[styles.label, { color: colors.mutedForeground }]}>Quick pick (start day)</Text>
       <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
         {DAY_OFFSETS.map((o) => {
           const v = dateFromOffset(o.days);
-          const active = date === v;
+          const active = startDate === v;
           return (
             <TouchableOpacity
               key={o.label}
               style={[styles.chip, { borderColor: colors.border, backgroundColor: active ? colors.primary : colors.muted }]}
-              onPress={() => setDate(v)}
+              onPress={() => applyDayOffset(o.days)}
             >
               <Text style={[styles.chipText, { color: active ? "#fff" : colors.foreground }]}>{o.label}</Text>
             </TouchableOpacity>
@@ -150,18 +171,99 @@ export default function NewEventScreen() {
         })}
       </View>
 
-      <Text style={[styles.label, { color: colors.mutedForeground }]}>Time *</Text>
+      <View style={styles.row2}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.label, { color: colors.mutedForeground }]}>Start date *</Text>
+          <TextInput
+            style={[
+              styles.input,
+              { backgroundColor: colors.muted, color: colors.foreground, borderColor: startValid ? colors.border : colors.destructive },
+            ]}
+            value={startDate}
+            onChangeText={setStartDate}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.mutedForeground}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.label, { color: colors.mutedForeground }]}>Start time *</Text>
+          <TextInput
+            style={[
+              styles.input,
+              { backgroundColor: colors.muted, color: colors.foreground, borderColor: startValid ? colors.border : colors.destructive },
+            ]}
+            value={startTime}
+            onChangeText={setStartTime}
+            placeholder="HH:MM"
+            placeholderTextColor={colors.mutedForeground}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+      </View>
+
       <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
         {TIME_OPTIONS.map((t) => (
           <TouchableOpacity
-            key={t}
-            style={[styles.chip, { borderColor: colors.border, backgroundColor: time === t ? colors.primary : colors.muted }]}
-            onPress={() => setTime(t)}
+            key={`s-${t}`}
+            style={[styles.chip, { borderColor: colors.border, backgroundColor: startTime === t ? colors.primary : colors.muted }]}
+            onPress={() => setStartTime(t)}
           >
-            <Text style={[styles.chipText, { color: time === t ? "#fff" : colors.foreground }]}>{t}</Text>
+            <Text style={[styles.chipText, { color: startTime === t ? "#fff" : colors.foreground }]}>{t}</Text>
           </TouchableOpacity>
         ))}
       </View>
+
+      <View style={styles.row2}>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.label, { color: colors.mutedForeground }]}>End date *</Text>
+          <TextInput
+            style={[
+              styles.input,
+              { backgroundColor: colors.muted, color: colors.foreground, borderColor: endValid && orderValid ? colors.border : colors.destructive },
+            ]}
+            value={endDate}
+            onChangeText={setEndDate}
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor={colors.mutedForeground}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.label, { color: colors.mutedForeground }]}>End time *</Text>
+          <TextInput
+            style={[
+              styles.input,
+              { backgroundColor: colors.muted, color: colors.foreground, borderColor: endValid && orderValid ? colors.border : colors.destructive },
+            ]}
+            value={endTime}
+            onChangeText={setEndTime}
+            placeholder="HH:MM"
+            placeholderTextColor={colors.mutedForeground}
+            autoCapitalize="none"
+            autoCorrect={false}
+          />
+        </View>
+      </View>
+
+      <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+        {TIME_OPTIONS.map((t) => (
+          <TouchableOpacity
+            key={`e-${t}`}
+            style={[styles.chip, { borderColor: colors.border, backgroundColor: endTime === t ? colors.primary : colors.muted }]}
+            onPress={() => setEndTime(t)}
+          >
+            <Text style={[styles.chipText, { color: endTime === t ? "#fff" : colors.foreground }]}>{t}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {dateError ? (
+        <Text style={[styles.errorText, { color: colors.destructive }]}>{dateError}</Text>
+      ) : null}
 
       <Text style={[styles.label, { color: colors.mutedForeground }]}>Link to team</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
@@ -193,9 +295,9 @@ export default function NewEventScreen() {
           <Text style={[styles.btnText, { color: colors.foreground }]}>Cancel</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.btn, { backgroundColor: title.trim() && date && time ? colors.primary : colors.border }]}
+          style={[styles.btn, { backgroundColor: canSave ? colors.primary : colors.border }]}
           onPress={save}
-          disabled={!title.trim() || !date || !time || createEvent.isPending}
+          disabled={!canSave}
         >
           <Text style={[styles.btnText, { color: "#fff" }]}>Create Event</Text>
         </TouchableOpacity>
@@ -213,6 +315,8 @@ const styles = StyleSheet.create({
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, borderWidth: 1 },
   chipText: { fontSize: 13, fontFamily: "Inter_500Medium" },
   row: { flexDirection: "row", gap: 8, marginTop: 16 },
+  row2: { flexDirection: "row", gap: 8 },
   btn: { flex: 1, padding: 14, borderRadius: 10, alignItems: "center" },
   btnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
+  errorText: { fontSize: 12, fontFamily: "Inter_500Medium", marginTop: 4 },
 });
