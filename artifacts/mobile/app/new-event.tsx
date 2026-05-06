@@ -100,10 +100,18 @@ export default function NewEventScreen() {
   const startValid = !!startDt;
   const endValid = !!endDt;
   const orderValid = !!(startDt && endDt && endDt.getTime() > startDt.getTime());
+  const MAX_SPAN_MS = 7 * 24 * 60 * 60 * 1000;
+  const durationValid = !!(
+    startDt &&
+    endDt &&
+    orderValid &&
+    endDt.getTime() - startDt.getTime() <= MAX_SPAN_MS
+  );
   const dateError =
     !startValid ? "Start date or time isn't valid (use DD/MM/YYYY and HH:MM)."
     : !endValid ? "End date or time isn't valid (use DD/MM/YYYY and HH:MM)."
     : !orderValid ? "End must be after start."
+    : !durationValid ? "Events can span at most 7 days."
     : null;
 
   const createEvent = useCreateEvent({
