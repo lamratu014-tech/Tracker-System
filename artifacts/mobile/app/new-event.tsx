@@ -54,7 +54,7 @@ function parseDateTime(date: string, time: string): Date | null {
   const d = Number(dStr);
   const h = Number(hStr);
   const mi = Number(miStr);
-  if (!Number.isFinite(y) || y < 1970 || y > 9999) return null;
+  if (!Number.isFinite(y)) return null;
   if (mo < 1 || mo > 12) return null;
   if (d < 1 || d > daysInMonth(y, mo)) return null;
   if (h < 0 || h > 23) return null;
