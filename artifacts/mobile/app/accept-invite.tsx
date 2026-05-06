@@ -45,12 +45,12 @@ export default function AcceptInviteScreen() {
   const [preview, setPreview] = useState<InvitePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
-  // When the user finishes typing a 6-char code, fetch the invite preview
+  // When the user finishes typing a 16-char code, fetch the invite preview
   // so we can pre-fill their name and confirm the code is valid before
   // they pick a password.
   useEffect(() => {
     const trimmed = code.trim().toUpperCase();
-    if (trimmed.length !== 6) {
+    if (trimmed.length !== 16) {
       setPreview(null);
       setPreviewLoading(false);
       return;
@@ -113,7 +113,7 @@ export default function AcceptInviteScreen() {
           </View>
           <Text style={[styles.title, { color: colors.foreground }]}>Accept invite</Text>
           <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-            Enter the 6-character invite code your administrator sent you,
+            Enter the 16-character invite code your administrator sent you,
             then set a password.
           </Text>
 
@@ -131,11 +131,11 @@ export default function AcceptInviteScreen() {
             ]}
             value={code}
             onChangeText={(v) => { setCode(v.toUpperCase()); setError(null); }}
-            placeholder="ABC123"
+            placeholder="ABCD1234EFGH5678"
             placeholderTextColor={colors.mutedForeground}
             autoCapitalize="characters"
             autoCorrect={false}
-            maxLength={6}
+            maxLength={16}
             editable={!submitting}
             autoFocus
           />
@@ -215,8 +215,8 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, fontFamily: "Inter_500Medium", marginBottom: 6 },
   codeInput: {
     padding: 16, borderRadius: 10, borderWidth: 1,
-    fontSize: 22, fontFamily: "Inter_700Bold",
-    textAlign: "center", letterSpacing: 8,
+    fontSize: 14, fontFamily: "Inter_700Bold",
+    textAlign: "center", letterSpacing: 3,
   },
   input: { padding: 14, borderRadius: 10, borderWidth: 1, fontSize: 15, fontFamily: "Inter_400Regular" },
   helper: { marginTop: 6, fontSize: 12, fontFamily: "Inter_400Regular", textAlign: "center" },

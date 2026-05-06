@@ -194,7 +194,7 @@ paths:
       tags: [auth, invites]
       summary: Look up an invite by its token
       parameters:
-        - { in: path, name: token, required: true, schema: { type: string } }
+        - { in: path, name: token, required: true, schema: { type: string, minLength: 16, maxLength: 16 } }
       responses:
         "200":
           description: OK
@@ -972,7 +972,7 @@ components:
       type: object
       required: [token, password]
       properties:
-        token: { type: string, minLength: 1 }
+        token: { type: string, minLength: 16, maxLength: 16 }
         password: { type: string, minLength: 8 }
 
     ForgotPasswordBody:
@@ -1007,9 +1007,9 @@ components:
         acceptUrl: { type: string }
         code:
           type: string
-          description: 6-character invite code that the recipient enters to activate their account
-          minLength: 6
-          maxLength: 6
+          description: 16-character invite code that the recipient enters to activate their account
+          minLength: 16
+          maxLength: 16
 
     InvitePreview:
       type: object

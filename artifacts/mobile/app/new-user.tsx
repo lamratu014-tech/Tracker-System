@@ -374,5 +374,5 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32, paddingVertical: 20,
     borderRadius: 12, borderWidth: 1, marginTop: 24, marginBottom: 16,
   },
-  code: { fontSize: 32, fontFamily: "Inter_700Bold", letterSpacing: 8, textAlign: "center" },
+  code: { fontSize: 18, fontFamily: "Inter_700Bold", letterSpacing: 4, textAlign: "center" },
 });

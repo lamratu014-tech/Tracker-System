@@ -67,7 +67,10 @@ export interface SetupBody {
 }
 
 export interface AcceptInviteBody {
-  /** @minLength 1 */
+  /**
+   * @minLength 16
+   * @maxLength 16
+   */
   token: string;
   /** @minLength 8 */
   password: string;
@@ -98,9 +101,9 @@ export interface CreateInviteResponse {
   message: string;
   acceptUrl: string;
   /**
-   * 6-character invite code that the recipient enters to activate their account
-   * @minLength 6
-   * @maxLength 6
+   * 16-character invite code that the recipient enters to activate their account
+   * @minLength 16
+   * @maxLength 16
    */
   code: string;
 }

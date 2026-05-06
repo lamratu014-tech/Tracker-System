@@ -12,12 +12,13 @@ export function generateToken(bytes = 32): string {
   return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
 }
 
-// 6-char Crockford-ish alphabet (no I, O, 1, 0 to avoid confusion when
-// the recipient types the code by hand).
+// 16-char Crockford-ish alphabet (no I, O, 1, 0 to avoid visual confusion).
+// 32^16 ≈ 2^80 bits of entropy — completely impractical to brute-force online.
 const INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const INVITE_CODE_LENGTH = 16;
 
 export function generateInviteCode(): string {
-  const arr = new Uint8Array(6);
+  const arr = new Uint8Array(INVITE_CODE_LENGTH);
   crypto.getRandomValues(arr);
   return Array.from(arr, (b) => INVITE_ALPHABET[b % INVITE_ALPHABET.length]).join("");
 }

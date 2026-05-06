@@ -109,11 +109,16 @@ export const ResetPasswordResponse = zod.object({
 /**
  * @summary Activate an invited account
  */
+export const acceptInviteBodyTokenMin = 16;
+export const acceptInviteBodyTokenMax = 16;
 
 export const acceptInviteBodyPasswordMin = 8;
 
 export const AcceptInviteBody = zod.object({
-  token: zod.string().min(1),
+  token: zod
+    .string()
+    .min(acceptInviteBodyTokenMin)
+    .max(acceptInviteBodyTokenMax),
   password: zod.string().min(acceptInviteBodyPasswordMin),
 });
 
@@ -133,8 +138,14 @@ export const CreateInviteBody = zod.object({
 /**
  * @summary Look up an invite by its token
  */
+export const getInviteByTokenPathTokenMin = 16;
+export const getInviteByTokenPathTokenMax = 16;
+
 export const GetInviteByTokenParams = zod.object({
-  token: zod.coerce.string(),
+  token: zod.coerce
+    .string()
+    .min(getInviteByTokenPathTokenMin)
+    .max(getInviteByTokenPathTokenMax),
 });
 
 export const GetInviteByTokenResponse = zod.object({

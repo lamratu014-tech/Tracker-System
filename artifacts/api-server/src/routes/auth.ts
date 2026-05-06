@@ -34,10 +34,15 @@ function safeUser(u: typeof usersTable.$inferSelect) {
   return rest;
 }
 
-function getAppDomain(req: import("express").Request): string {
-  const host = req.get("host") ?? "localhost";
-  const proto = req.get("x-forwarded-proto") ?? req.protocol;
-  return `${proto}://${host}`;
+function getAppDomain(): string {
+  const configured = process.env["APP_DOMAIN"];
+  if (configured) {
+    return configured.replace(/\/$/, "");
+  }
+  // APP_DOMAIN must be set in production. Falling back to a placeholder
+  // prevents host-header poisoning: links will be non-functional but safe,
+  // rather than pointing to an attacker-supplied domain.
+  return "https://localhost";
 }
 
 router.get("/auth/me", requireAuth, async (req, res): Promise<void> => {
@@ -268,7 +273,7 @@ router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
     throw err;
   }
 
-  const acceptUrl = `${getAppDomain(req)}/accept-invite?token=${token}`;
+  const acceptUrl = `${getAppDomain()}/accept-invite?token=${token}`;
   req.log.info({ email }, "Invite created");
 
   // Email delivery is strictly best-effort — surfacing the code in-app
@@ -410,7 +415,7 @@ router.post("/auth/forgot-password", async (req, res): Promise<void> => {
 
   await db.insert(passwordResetsTable).values({ userId: user.id, token, expiresAt });
 
-  const resetUrl = `${getAppDomain(req)}/reset-password?token=${token}`;
+  const resetUrl = `${getAppDomain()}/reset-password?token=${token}`;
   req.log.info({ userId: user.id }, "Password reset token created");
 
   await sendPasswordResetEmail({ toEmail: user.email, toName: user.name, resetUrl });

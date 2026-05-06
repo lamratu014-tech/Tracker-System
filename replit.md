@@ -93,3 +93,5 @@ artifacts/mobile/app/
 - Don't pass `query: { enabled: x }` to a generated hook without also passing `queryKey: getXxxQueryKey(...)` — the strict `UseQueryOptions` requires it.
 - After any mutation, invalidate the relevant list/detail query keys so the UI refetches.
 - The `useListEvents` endpoint already applies server-side visibility filtering.
+- **`APP_DOMAIN` env var is required in production** — set it to the canonical HTTPS origin (e.g. `https://your-app.replit.app`). `getAppDomain()` in `artifacts/api-server/src/routes/auth.ts` reads this to build invite and password-reset links. Without it, emailed links point to `https://localhost` (safe fallback — no host-header poisoning, but links won't work until the var is set).
+- Invite codes are 16 characters (32-char alphabet, ≈ 2^80 entropy). The mobile accept-invite screen enforces `maxLength={16}` and only triggers the preview API call once 16 chars are entered. Server-side Zod schemas for `AcceptInviteBody` and `GetInviteByTokenParams` enforce exactly 16 chars, so legacy 6-char tokens already in the DB are rejected at the validation layer and cannot be redeemed.
