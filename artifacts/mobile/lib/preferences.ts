@@ -1,6 +1,9 @@
 import { Platform } from "react-native";
 
 const LAST_PROGRAMME_KEY = "ops-planning-last-programme-v1";
+const CALENDAR_FILTER_KEY = "ops-planning-calendar-filter-v1";
+
+export type CalendarProgrammeFilter = "all" | string[];
 
 let SecureStore: typeof import("expo-secure-store") | null = null;
 if (Platform.OS !== "web") {
@@ -39,4 +42,16 @@ export function getLastUsedProgrammeId(): Promise<string | null> {
 
 export function setLastUsedProgrammeId(id: string): Promise<void> {
   return writeKey(LAST_PROGRAMME_KEY, id);
+}
+
+export async function getCalendarProgrammeFilter(): Promise<CalendarProgrammeFilter> {
+  const raw = await readKey(CALENDAR_FILTER_KEY);
+  if (!raw || raw === "all") return "all";
+  const ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  return ids.length > 0 ? ids : "all";
+}
+
+export function setCalendarProgrammeFilter(value: CalendarProgrammeFilter): Promise<void> {
+  const serialised = value === "all" ? "all" : value.join(",");
+  return writeKey(CALENDAR_FILTER_KEY, serialised);
 }

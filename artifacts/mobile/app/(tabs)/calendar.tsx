@@ -2,10 +2,11 @@ import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
   useListEvents,
+  useListProgrammes,
   useListStreams,
   useListTeams,
 } from "@workspace/api-client-react";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ScrollView,
   StyleSheet,
@@ -19,6 +20,11 @@ import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
 import { useMe } from "@/lib/permissions";
+import {
+  type CalendarProgrammeFilter,
+  getCalendarProgrammeFilter,
+  setCalendarProgrammeFilter,
+} from "@/lib/preferences";
 import { colorForStream, NEUTRAL_STREAM_COLOR } from "@/lib/streamColors";
 
 const WEEKDAYS = ["S", "M", "T", "W", "T", "F", "S"];
@@ -81,10 +87,26 @@ export default function CalendarScreen() {
   const eventsQ = useListEvents();
   const streamsQ = useListStreams();
   const teamsQ = useListTeams();
+  const programmesQ = useListProgrammes();
 
   const events = eventsQ.data ?? [];
   const streams = streamsQ.data ?? [];
   const teams = teamsQ.data ?? [];
+  const programmes = programmesQ.data ?? [];
+
+  // Programmes the current user has visibility into — same rule as the
+  // Programme tab: a programme is visible if it contains at least one stream
+  // the user can see (admin sees all; overseer/leader see only their stream).
+  const visibleProgrammes = useMemo(() => {
+    const visibleStreams =
+      me?.role === "leader" || me?.role === "stream_overseer"
+        ? me.streamId
+          ? streams.filter((s) => s.id === me.streamId)
+          : []
+        : streams;
+    const ids = new Set(visibleStreams.map((s) => s.programmeId));
+    return programmes.filter((p) => ids.has(p.id));
+  }, [programmes, streams, me]);
 
   const today = new Date();
   const [viewYear, setViewYear] = useState(today.getFullYear());
@@ -93,11 +115,74 @@ export default function CalendarScreen() {
 
   const cells = useMemo(() => buildMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
 
+  // Programme filter — "all" or an array of selected programme ids.
+  // Hydrated once from persisted prefs; subsequent changes save back.
+  const [filter, setFilter] = useState<CalendarProgrammeFilter>("all");
+  const didHydrateFilter = useRef(false);
+  useEffect(() => {
+    if (didHydrateFilter.current) return;
+    didHydrateFilter.current = true;
+    void getCalendarProgrammeFilter().then(setFilter);
+  }, []);
+
+  function persistFilter(next: CalendarProgrammeFilter) {
+    setFilter(next);
+    void setCalendarProgrammeFilter(next);
+  }
+
+  // Drop any persisted programme ids the current user can no longer
+  // see (e.g. programme deleted, role changed, stream reassigned).
+  // Falls back to "all" when nothing remains.
+  useEffect(() => {
+    if (!didHydrateFilter.current || filter === "all" || visibleProgrammes.length === 0) return;
+    const valid = filter.filter((id) => visibleProgrammes.some((p) => p.id === id));
+    if (valid.length === 0) {
+      persistFilter("all");
+    } else if (valid.length !== filter.length) {
+      persistFilter(valid);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleProgrammes, filter]);
+
   function streamIdFor(ev: { invitedTeamIds: string[]; createdByTeamId?: string | null }): string | null {
     const teamId = ev.invitedTeamIds[0] ?? ev.createdByTeamId ?? null;
     if (!teamId) return null;
     const t = teams.find((x) => x.id === teamId);
     return t?.streamId ?? null;
+  }
+
+  // Programme ID for an event: event → first invited team (or createdByTeamId)
+  // → stream → programme. null = programme-wide (no team link).
+  function programmeIdFor(ev: { invitedTeamIds: string[]; createdByTeamId?: string | null }): string | null {
+    const sId = streamIdFor(ev);
+    if (!sId) return null;
+    const s = streams.find((x) => x.id === sId);
+    return s?.programmeId ?? null;
+  }
+
+  function eventPassesFilter(ev: { invitedTeamIds: string[]; createdByTeamId?: string | null }): boolean {
+    if (filter === "all") return true;
+    const pId = programmeIdFor(ev);
+    // Programme-wide events (pId === null) always show — they aren't owned
+    // by any single programme so narrowing should never hide them.
+    if (pId === null) return true;
+    return filter.includes(pId);
+  }
+
+  const filteredEvents = useMemo(
+    () => events.filter(eventPassesFilter),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [events, filter, streams, teams],
+  );
+
+  function toggleProgramme(id: string) {
+    if (filter === "all") {
+      persistFilter([id]);
+      return;
+    }
+    const has = filter.includes(id);
+    const next = has ? filter.filter((x) => x !== id) : [...filter, id];
+    persistFilter(next.length === 0 ? "all" : next);
   }
 
   // Map of dayKey -> ordered list of distinct stream ids (or null for programme-wide)
@@ -106,7 +191,7 @@ export default function CalendarScreen() {
   // every day in view without forcing an unbounded per-event walk.
   const streamsByDay = useMemo(() => {
     const map = new Map<string, (string | null)[]>();
-    const eventSpans = events.map((ev) => {
+    const eventSpans = filteredEvents.map((ev) => {
       const s = new Date(ev.startDate);
       const e = new Date(ev.endDate);
       if (isNaN(s.getTime()) || isNaN(e.getTime())) return null;
@@ -130,10 +215,10 @@ export default function CalendarScreen() {
     }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [events, teams, cells]);
+  }, [filteredEvents, teams, cells]);
 
   const selectedEvents = useMemo(() => {
-    return events
+    return filteredEvents
       .filter((ev) => {
         const s = new Date(ev.startDate);
         const e = new Date(ev.endDate);
@@ -145,7 +230,7 @@ export default function CalendarScreen() {
       })
       .slice()
       .sort((a, b) => +new Date(a.startDate) - +new Date(b.startDate));
-  }, [events, selected]);
+  }, [filteredEvents, selected]);
 
   function nameFor(ev: { invitedTeamIds: string[]; createdByTeamId?: string | null }): string {
     const teamId = ev.invitedTeamIds[0] ?? ev.createdByTeamId ?? null;
@@ -180,7 +265,9 @@ export default function CalendarScreen() {
           <View>
             <Text style={[styles.title, { color: colors.foreground }]}>Calendar</Text>
             <Text style={[styles.sub, { color: colors.mutedForeground }]}>
-              {events.length} event{events.length !== 1 ? "s" : ""}
+              {filter === "all"
+                ? `${events.length} event${events.length !== 1 ? "s" : ""}`
+                : `${filteredEvents.length} event${filteredEvents.length !== 1 ? "s" : ""} (of ${events.length})`}
             </Text>
           </View>
           <TouchableOpacity
@@ -194,6 +281,61 @@ export default function CalendarScreen() {
 
         {eventsQ.isError ? (
           <ErrorBanner error={eventsQ.error} onRetry={() => eventsQ.refetch()} />
+        ) : null}
+
+        {visibleProgrammes.length > 1 ? (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterRow}
+          >
+            <TouchableOpacity
+              onPress={() => persistFilter("all")}
+              style={[
+                styles.filterChip,
+                {
+                  backgroundColor: filter === "all" ? colors.primary : colors.muted,
+                  borderColor: filter === "all" ? colors.primary : colors.border,
+                },
+              ]}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.filterChipText,
+                  { color: filter === "all" ? "#fff" : colors.foreground },
+                ]}
+              >
+                All programmes
+              </Text>
+            </TouchableOpacity>
+            {visibleProgrammes.map((p) => {
+              const active = filter !== "all" && filter.includes(p.id);
+              return (
+                <TouchableOpacity
+                  key={p.id}
+                  onPress={() => toggleProgramme(p.id)}
+                  style={[
+                    styles.filterChip,
+                    {
+                      backgroundColor: active ? colors.primary : colors.muted,
+                      borderColor: active ? colors.primary : colors.border,
+                    },
+                  ]}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.filterChipText,
+                      { color: active ? "#fff" : colors.foreground },
+                    ]}
+                  >
+                    {p.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
         ) : null}
 
         <View style={[styles.monthBar, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -287,7 +429,9 @@ export default function CalendarScreen() {
           <View style={[styles.empty, { backgroundColor: colors.muted }]}>
             <Feather name="calendar" size={24} color={colors.mutedForeground} />
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
-              No events on this day.
+              {filter === "all"
+                ? "No events on this day."
+                : "No events on this day for the selected programmes. Programme-wide events would still appear here."}
             </Text>
           </View>
         ) : (
@@ -345,6 +489,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8,
   },
   headerBtnText: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  filterRow: { flexDirection: "row", gap: 6, paddingVertical: 6, paddingHorizontal: 2 },
+  filterChip: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: 16, borderWidth: 1 },
+  filterChipText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
   monthBar: {
     flexDirection: "row", alignItems: "center", padding: 10,
     borderRadius: 10, borderWidth: 1, marginBottom: 8,
