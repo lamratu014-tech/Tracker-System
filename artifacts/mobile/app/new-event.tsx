@@ -1,3 +1,4 @@
+import { Feather } from "@expo/vector-icons";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import {
@@ -7,7 +8,7 @@ import {
   useListStreams,
   useListTeams,
 } from "@workspace/api-client-react";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -19,6 +20,7 @@ import {
 } from "react-native";
 
 import { ErrorBanner } from "@/components/ErrorBanner";
+import { PickerSheet, type PickerSection } from "@/components/PickerSheet";
 import { useColors } from "@/hooks/useColors";
 import { useMe } from "@/lib/permissions";
 
@@ -36,8 +38,6 @@ function defaultTomorrow(): string {
 }
 
 function daysInMonth(year: number, month1: number): number {
-  // month1 is 1-12. new Date(year, month, 0) returns the last day of the
-  // previous month, so passing month1 gives us the last day of month1.
   return new Date(year, month1, 0).getDate();
 }
 
@@ -56,7 +56,6 @@ function parseDateTime(date: string, time: string): Date | null {
   if (h < 0 || h > 23) return null;
   if (mi < 0 || mi > 59) return null;
   const out = new Date(y, mo - 1, d, h, mi, 0, 0);
-  // Final sanity: re-read fields to confirm no normalization happened.
   if (
     out.getFullYear() !== y ||
     out.getMonth() !== mo - 1 ||
@@ -68,6 +67,8 @@ function parseDateTime(date: string, time: string): Date | null {
   }
   return out;
 }
+
+type Scope = "org" | "programme" | "team";
 
 export default function NewEventScreen() {
   const colors = useColors();
@@ -89,31 +90,17 @@ export default function NewEventScreen() {
   const [startTime, setStartTime] = useState<string>("10:00");
   const [endDate, setEndDate] = useState<string>(initialDate);
   const [endTime, setEndTime] = useState<string>("11:00");
-  // link mode: org-wide ({kind:"org"}), programme ({kind:"programme",id}),
-  // or team ({kind:"team",id}). Leaders default to their own team.
-  type LinkMode =
-    | { kind: "org" }
-    | { kind: "programme"; id: string }
-    | { kind: "team"; id: string };
-  const [link, setLink] = useState<LinkMode>(
-    me?.role === "leader" && me.teamId
-      ? { kind: "team", id: me.teamId }
-      : { kind: "org" },
+
+  // Initial scope: leader → team; everyone else → org (admin default).
+  // Overseer's auto-default to "programme" happens once data resolves.
+  const [scope, setScope] = useState<Scope>(
+    me?.role === "leader" ? "team" : "org",
   );
-  // Overseers should default to their own programme once it resolves
-  // (the user can still pick a team afterwards). We only auto-set when
-  // the link is still the meaningless org-wide placeholder.
-  const didDefaultProgramme = React.useRef(false);
-  React.useEffect(() => {
-    if (didDefaultProgramme.current) return;
-    if (me?.role !== "stream_overseer" || !me.streamId) return;
-    const myStream = streams.find((s) => s.id === me.streamId);
-    if (!myStream) return;
-    const prog = programmes.find((p) => p.id === myStream.programmeId);
-    if (!prog) return;
-    didDefaultProgramme.current = true;
-    if (link.kind === "org") setLink({ kind: "programme", id: prog.id });
-  }, [me, streams, programmes, link.kind]);
+  const [programmeId, setProgrammeId] = useState<string | undefined>(undefined);
+  const [teamId, setTeamId] = useState<string | undefined>(
+    me?.role === "leader" && me.teamId ? me.teamId : undefined,
+  );
+  const [pickerOpen, setPickerOpen] = useState<null | "programme" | "team">(null);
 
   const allowedTeams = useMemo(() => {
     if (!me) return [];
@@ -123,8 +110,6 @@ export default function NewEventScreen() {
     return [];
   }, [teams, me]);
 
-  // Programmes the actor may pick: admin = all; overseer = the single
-  // programme that contains their assigned stream.
   const allowedProgrammes = useMemo(() => {
     if (!me) return [];
     if (me.role === "admin") return programmes;
@@ -135,6 +120,120 @@ export default function NewEventScreen() {
     }
     return [];
   }, [programmes, streams, me]);
+
+  const allowedScopes: Scope[] = useMemo(() => {
+    if (!me) return [];
+    if (me.role === "admin") return ["org", "programme", "team"];
+    if (me.role === "stream_overseer") return ["programme", "team"];
+    if (me.role === "leader") return ["team"];
+    return [];
+  }, [me]);
+
+  // One-shot role-based defaults applied as soon as `me` resolves
+  // (useMe() returns null on first render). Won't overwrite later user
+  // interaction because we set the ref the first time we run.
+  const didDefault = useRef(false);
+  useEffect(() => {
+    if (didDefault.current) return;
+    if (!me) return;
+    if (me.role === "leader" && me.teamId) {
+      didDefault.current = true;
+      setScope("team");
+      setTeamId(me.teamId);
+      return;
+    }
+    if (me.role === "stream_overseer" && me.streamId) {
+      const myStream = streams.find((s) => s.id === me.streamId);
+      if (!myStream) return;
+      const prog = programmes.find((p) => p.id === myStream.programmeId);
+      if (!prog) return;
+      didDefault.current = true;
+      setScope("programme");
+      setProgrammeId(prog.id);
+      return;
+    }
+    if (me.role === "admin") {
+      // Admin's initial useState already gave us "org" — just lock it in.
+      didDefault.current = true;
+    }
+  }, [me, streams, programmes]);
+
+  // Auto-pick the only available item when a scope has exactly one option.
+  useEffect(() => {
+    if (scope === "programme" && allowedProgrammes.length === 1 && !programmeId) {
+      setProgrammeId(allowedProgrammes[0].id);
+    }
+    if (scope === "team" && allowedTeams.length === 1 && !teamId) {
+      setTeamId(allowedTeams[0].id);
+    }
+  }, [scope, allowedProgrammes, allowedTeams, programmeId, teamId]);
+
+  function changeScope(next: Scope) {
+    if (next === scope) return;
+    setScope(next);
+    // Clear the prior choice; auto-pick effect will fill in the only option.
+    if (next !== "programme") setProgrammeId(undefined);
+    if (next !== "team") setTeamId(undefined);
+  }
+
+  // Build picker sections.
+  const programmeSections: PickerSection[] = useMemo(() => {
+    const sorted = [...allowedProgrammes].sort((a, b) => a.name.localeCompare(b.name));
+    const streamCountFor = (pid: string) =>
+      streams.filter((s) => s.programmeId === pid).length;
+    return [
+      {
+        items: sorted.map((p) => {
+          const n = streamCountFor(p.id);
+          return {
+            id: p.id,
+            label: p.name,
+            sublabel: `${n} ${n === 1 ? "stream" : "streams"}`,
+          };
+        }),
+      },
+    ];
+  }, [allowedProgrammes, streams]);
+
+  const teamSections: PickerSection[] = useMemo(() => {
+    // Group teams by their stream. Teams with no stream go in "Unassigned".
+    const programmeName = (pid: string | null | undefined) =>
+      pid ? programmes.find((p) => p.id === pid)?.name ?? "Unknown programme" : null;
+
+    type Group = { streamName: string; programmeName: string | null; items: typeof allowedTeams };
+    const groups = new Map<string, Group>();
+    for (const team of allowedTeams) {
+      const sid = team.streamId ?? "__none__";
+      if (!groups.has(sid)) {
+        if (sid === "__none__") {
+          groups.set(sid, { streamName: "Unassigned", programmeName: null, items: [] });
+        } else {
+          const stream = streams.find((s) => s.id === sid);
+          groups.set(sid, {
+            streamName: stream?.name ?? "Unknown stream",
+            programmeName: programmeName(stream?.programmeId),
+            items: [],
+          });
+        }
+      }
+      groups.get(sid)!.items.push(team);
+    }
+    const sortedGroups = [...groups.values()].sort((a, b) =>
+      a.streamName.localeCompare(b.streamName),
+    );
+    return sortedGroups.map((g) => ({
+      header: g.programmeName ? `${g.streamName} · ${g.programmeName}` : g.streamName,
+      items: [...g.items]
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((t) => {
+          const stream = t.streamId ? streams.find((s) => s.id === t.streamId) : null;
+          const prog = stream ? programmeName(stream.programmeId) : null;
+          const sub =
+            stream && prog ? `${stream.name} · ${prog}` : stream ? stream.name : "Unassigned";
+          return { id: t.id, label: t.name, sublabel: sub };
+        }),
+    }));
+  }, [allowedTeams, streams, programmes]);
 
   const startDt = parseDateTime(startDate, startTime);
   const endDt = parseDateTime(endDate, endTime);
@@ -172,20 +271,25 @@ export default function NewEventScreen() {
     );
   }
 
-  // Leaders cannot pick org or programme; non-admins cannot pick org.
   const linkValid =
-    link.kind === "team" ||
-    (link.kind === "programme" && allowedProgrammes.some((p) => p.id === link.id)) ||
-    (link.kind === "org" && me.role === "admin");
+    (scope === "org" && me.role === "admin") ||
+    (scope === "programme" && !!programmeId && allowedProgrammes.some((p) => p.id === programmeId)) ||
+    (scope === "team" && !!teamId && allowedTeams.some((t) => t.id === teamId));
 
-  const canSave =
-    !!title.trim() && !dateError && linkValid && !createEvent.isPending;
+  const canSave = !!title.trim() && !dateError && linkValid && !createEvent.isPending;
 
   function save() {
     if (!title.trim()) return Alert.alert("Title required", "Please enter an event title.");
     if (dateError) return Alert.alert("Invalid date or time", dateError);
     if (!linkValid) {
-      return Alert.alert("Pick a link", "Choose a team, a programme, or org-wide.");
+      return Alert.alert(
+        "Pick a link",
+        scope === "programme"
+          ? "Choose a programme."
+          : scope === "team"
+            ? "Choose a team."
+            : "Choose org-wide, a programme, or a team.",
+      );
     }
     if (!startDt || !endDt) return;
     createEvent.mutate({
@@ -194,10 +298,22 @@ export default function NewEventScreen() {
         sharedDescription: desc.trim(),
         startDate: startDt.toISOString(),
         endDate: endDt.toISOString(),
-        invitedTeamIds: link.kind === "team" ? [link.id] : [],
-        programmeId: link.kind === "programme" ? link.id : null,
+        invitedTeamIds: scope === "team" && teamId ? [teamId] : [],
+        programmeId: scope === "programme" && programmeId ? programmeId : null,
       },
     });
+  }
+
+  const selectedProgramme = programmeId
+    ? allowedProgrammes.find((p) => p.id === programmeId)
+    : null;
+  const selectedTeam = teamId ? allowedTeams.find((t) => t.id === teamId) : null;
+
+  const programmeLocked = allowedProgrammes.length <= 1;
+  const teamLocked = allowedTeams.length <= 1;
+
+  function scopeLabel(s: Scope) {
+    return s === "org" ? "Org-wide" : s === "programme" ? "Programme" : "Team";
   }
 
   return (
@@ -298,44 +414,137 @@ export default function NewEventScreen() {
       ) : null}
 
       <Text style={[styles.label, { color: colors.mutedForeground }]}>Link this event to</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-        {me.role === "admin" ? (
+      <View style={styles.scopeRow}>
+        {allowedScopes.map((s) => {
+          const active = scope === s;
+          return (
+            <TouchableOpacity
+              key={s}
+              style={[
+                styles.chip,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: active ? colors.primary : colors.muted,
+                },
+              ]}
+              onPress={() => changeScope(s)}
+            >
+              <Text
+                style={[
+                  styles.chipText,
+                  { color: active ? "#fff" : colors.foreground },
+                ]}
+              >
+                {scopeLabel(s)}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {scope === "org" ? (
+        <Text style={[styles.caption, { color: colors.mutedForeground }]}>
+          Visible to everyone in the organisation.
+        </Text>
+      ) : null}
+
+      {scope === "programme" ? (
+        <>
           <TouchableOpacity
-            style={[styles.chip, { borderColor: colors.border, backgroundColor: link.kind === "org" ? colors.primary : colors.muted }]}
-            onPress={() => setLink({ kind: "org" })}
+            style={[
+              styles.trigger,
+              {
+                backgroundColor: colors.muted,
+                borderColor: colors.border,
+                opacity: programmeLocked ? 0.7 : 1,
+              },
+            ]}
+            onPress={() => {
+              if (!programmeLocked) setPickerOpen("programme");
+            }}
+            disabled={programmeLocked}
           >
-            <Text style={[styles.chipText, { color: link.kind === "org" ? "#fff" : colors.foreground }]}>Org-wide</Text>
+            <View style={{ flex: 1 }}>
+              <Text
+                style={[
+                  styles.triggerText,
+                  {
+                    color: selectedProgramme ? colors.foreground : colors.mutedForeground,
+                  },
+                ]}
+              >
+                {selectedProgramme ? selectedProgramme.name : "Tap to choose a programme…"}
+              </Text>
+            </View>
+            {!programmeLocked ? (
+              <Feather name="chevron-down" size={18} color={colors.mutedForeground} />
+            ) : null}
           </TouchableOpacity>
-        ) : null}
-        {allowedProgrammes.map((p) => {
-          const active = link.kind === "programme" && link.id === p.id;
-          return (
-            <TouchableOpacity
-              key={`prog-${p.id}`}
-              style={[styles.chip, { borderColor: colors.border, backgroundColor: active ? colors.primary : colors.muted }]}
-              onPress={() => setLink({ kind: "programme", id: p.id })}
-            >
-              <Text style={[styles.chipText, { color: active ? "#fff" : colors.foreground }]}>
-                Programme: {p.name}
+          {programmeLocked && allowedProgrammes.length === 1 ? (
+            <Text style={[styles.caption, { color: colors.mutedForeground }]}>
+              Only one programme available.
+            </Text>
+          ) : null}
+          {programmeLocked && allowedProgrammes.length === 0 ? (
+            <Text style={[styles.caption, { color: colors.destructive }]}>
+              No programmes available to you.
+            </Text>
+          ) : null}
+        </>
+      ) : null}
+
+      {scope === "team" ? (
+        <>
+          <TouchableOpacity
+            style={[
+              styles.trigger,
+              {
+                backgroundColor: colors.muted,
+                borderColor: colors.border,
+                opacity: teamLocked ? 0.7 : 1,
+              },
+            ]}
+            onPress={() => {
+              if (!teamLocked) setPickerOpen("team");
+            }}
+            disabled={teamLocked}
+          >
+            <View style={{ flex: 1 }}>
+              <Text
+                style={[
+                  styles.triggerText,
+                  { color: selectedTeam ? colors.foreground : colors.mutedForeground },
+                ]}
+              >
+                {selectedTeam ? selectedTeam.name : "Tap to choose a team…"}
               </Text>
-            </TouchableOpacity>
-          );
-        })}
-        {allowedTeams.map((team) => {
-          const active = link.kind === "team" && link.id === team.id;
-          return (
-            <TouchableOpacity
-              key={`team-${team.id}`}
-              style={[styles.chip, { borderColor: colors.border, backgroundColor: active ? colors.primary : colors.muted }]}
-              onPress={() => setLink({ kind: "team", id: team.id })}
-            >
-              <Text style={[styles.chipText, { color: active ? "#fff" : colors.foreground }]}>
-                {team.name}
-              </Text>
-            </TouchableOpacity>
-          );
-        })}
-      </ScrollView>
+              {selectedTeam?.streamId ? (
+                <Text style={[styles.triggerSub, { color: colors.mutedForeground }]}>
+                  {(() => {
+                    const stream = streams.find((s) => s.id === selectedTeam.streamId);
+                    if (!stream) return "";
+                    const prog = programmes.find((p) => p.id === stream.programmeId);
+                    return prog ? `${stream.name} · ${prog.name}` : stream.name;
+                  })()}
+                </Text>
+              ) : null}
+            </View>
+            {!teamLocked ? (
+              <Feather name="chevron-down" size={18} color={colors.mutedForeground} />
+            ) : null}
+          </TouchableOpacity>
+          {teamLocked && allowedTeams.length === 1 ? (
+            <Text style={[styles.caption, { color: colors.mutedForeground }]}>
+              Only one team available.
+            </Text>
+          ) : null}
+          {teamLocked && allowedTeams.length === 0 ? (
+            <Text style={[styles.caption, { color: colors.destructive }]}>
+              No teams available to you.
+            </Text>
+          ) : null}
+        </>
+      ) : null}
 
       {createEvent.isError ? <ErrorBanner error={createEvent.error} /> : null}
 
@@ -351,6 +560,25 @@ export default function NewEventScreen() {
           <Text style={[styles.btnText, { color: "#fff" }]}>Create Event</Text>
         </TouchableOpacity>
       </View>
+
+      <PickerSheet
+        visible={pickerOpen === "programme"}
+        onClose={() => setPickerOpen(null)}
+        title="Choose a programme"
+        sections={programmeSections}
+        selectedId={programmeId}
+        onSelect={(id) => setProgrammeId(id)}
+        searchPlaceholder="Search programmes…"
+      />
+      <PickerSheet
+        visible={pickerOpen === "team"}
+        onClose={() => setPickerOpen(null)}
+        title="Choose a team"
+        sections={teamSections}
+        selectedId={teamId}
+        onSelect={(id) => setTeamId(id)}
+        searchPlaceholder="Search teams or streams…"
+      />
     </ScrollView>
   );
 }
@@ -361,8 +589,20 @@ const styles = StyleSheet.create({
   label: { fontSize: 12, fontFamily: "Inter_500Medium", marginTop: 4 },
   input: { padding: 12, borderRadius: 10, borderWidth: 1, fontSize: 15, fontFamily: "Inter_400Regular" },
   multi: { minHeight: 80, textAlignVertical: "top" },
+  scopeRow: { flexDirection: "row", gap: 6 },
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, borderWidth: 1 },
   chipText: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  caption: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
+  trigger: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    gap: 8,
+  },
+  triggerText: { fontSize: 15, fontFamily: "Inter_500Medium" },
+  triggerSub: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
   row: { flexDirection: "row", gap: 8, marginTop: 16 },
   row2: { flexDirection: "row", gap: 8 },
   btn: { flex: 1, padding: 14, borderRadius: 10, alignItems: "center" },
