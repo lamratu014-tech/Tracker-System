@@ -19,7 +19,7 @@ services:
       - key: NODE_ENV
         value: production
       - key: NODE_VERSION
-        value: "20"
+        value: "22"
       - key: PNPM_VERSION
         value: "10"
       - key: DATABASE_URL
@@ -52,7 +52,7 @@ services:
         value: public, max-age=31536000, immutable
     envVars:
       - key: NODE_VERSION
-        value: "20"
+        value: "22"
       - key: PNPM_VERSION
         value: "10"
       - key: EXPO_PUBLIC_API_BASE_URL
