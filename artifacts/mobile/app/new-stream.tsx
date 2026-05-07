@@ -23,7 +23,7 @@ import {
   getLastUsedProgrammeId,
   setLastUsedProgrammeId,
 } from "@/lib/preferences";
-import { canManageEverything, useMe } from "@/lib/permissions";
+import { useMe } from "@/lib/permissions";
 
 export default function NewStreamScreen() {
   const colors = useColors();
@@ -31,13 +31,26 @@ export default function NewStreamScreen() {
   const qc = useQueryClient();
   const me = useMe();
   const programmesQ = useListProgrammes();
-  const programmes = programmesQ.data ?? [];
+  const allProgrammes = programmesQ.data ?? [];
+  // Programme overseers can only create streams within their own programme.
+  // Admins see every programme.
+  const programmes =
+    me?.role === "programme_overseer" && me.programmeId
+      ? allProgrammes.filter((p) => p.id === me.programmeId)
+      : allProgrammes;
   const [name, setName] = useState("");
   const [programmeId, setProgrammeId] = useState<string | null>(null);
 
-  // Pre-select most recently used programme (or first available).
+  const canCreate = me?.role === "admin" || me?.role === "programme_overseer";
+
+  // Pre-select most recently used programme (or first available). For PO,
+  // the only allowed option is their own programme.
   useEffect(() => {
     if (programmeId || programmes.length === 0) return;
+    if (me?.role === "programme_overseer" && me.programmeId) {
+      setProgrammeId(me.programmeId);
+      return;
+    }
     let cancelled = false;
     (async () => {
       const last = await getLastUsedProgrammeId();
@@ -48,7 +61,7 @@ export default function NewStreamScreen() {
     return () => {
       cancelled = true;
     };
-  }, [programmes, programmeId]);
+  }, [programmes, programmeId, me]);
 
   const createStream = useCreateStream({
     mutation: {
@@ -60,10 +73,12 @@ export default function NewStreamScreen() {
     },
   });
 
-  if (!canManageEverything(me)) {
+  if (!canCreate) {
     return (
       <View style={[styles.gateContainer, { backgroundColor: colors.background }]}>
-        <Text style={[styles.gate, { color: colors.mutedForeground }]}>Only admins can create streams.</Text>
+        <Text style={[styles.gate, { color: colors.mutedForeground }]}>
+          Only admins or programme overseers can create streams.
+        </Text>
       </View>
     );
   }

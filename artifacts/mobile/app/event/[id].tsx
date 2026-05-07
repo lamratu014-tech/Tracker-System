@@ -117,12 +117,19 @@ export default function EventDetailScreen() {
       { id: linkedTeam.id, streamId: linkedTeam.streamId },
       linkedStream?.programmeId ?? null,
     );
-  // For programme-linked events: stream overseers whose assigned stream
-  // sits inside the event's programme can also manage the event.
+  // For programme-linked events: programme overseers of the event's
+  // programme, and stream overseers whose assigned stream sits inside the
+  // event's programme, can also manage the event.
   const overseerOfProgramme = (() => {
-    if (!event.programmeId || me?.role !== "stream_overseer" || !me.streamId) return false;
-    const myStream = streams.find((s) => s.id === me.streamId);
-    return !!myStream && myStream.programmeId === event.programmeId;
+    if (!event.programmeId || !me) return false;
+    if (me.role === "programme_overseer") {
+      return !!me.programmeId && me.programmeId === event.programmeId;
+    }
+    if (me.role === "stream_overseer" && me.streamId) {
+      const myStream = streams.find((s) => s.id === me.streamId);
+      return !!myStream && myStream.programmeId === event.programmeId;
+    }
+    return false;
   })();
   const canDelete =
     isAdmin || isCreator || overseerOfStream || overseerOrLeaderOfTeam || overseerOfProgramme;
