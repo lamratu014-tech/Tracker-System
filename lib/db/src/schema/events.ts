@@ -1,6 +1,7 @@
 import { pgTable, text, boolean, timestamp } from "drizzle-orm/pg-core";
 import { teamsTable } from "./teams";
 import { projectsTable } from "./projects";
+import { programmesTable } from "./programmes";
 import { usersTable } from "./users";
 
 export const eventsTable = pgTable("events", {
@@ -20,6 +21,9 @@ export const eventsTable = pgTable("events", {
     .notNull()
     .default("pending"),
   projectId: text("project_id").references(() => projectsTable.id, {
+    onDelete: "set null",
+  }),
+  programmeId: text("programme_id").references(() => programmesTable.id, {
     onDelete: "set null",
   }),
   createdByTeamId: text("created_by_team_id").references(() => teamsTable.id, {

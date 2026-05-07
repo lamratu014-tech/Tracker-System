@@ -151,20 +151,31 @@ export default function CalendarScreen() {
     return t?.streamId ?? null;
   }
 
-  // Programme ID for an event: event → first invited team (or createdByTeamId)
-  // → stream → programme. null = programme-wide (no team link).
-  function programmeIdFor(ev: { invitedTeamIds: string[]; createdByTeamId?: string | null }): string | null {
+  // Programme ID for an event. Priority:
+  //   1. explicit ev.programmeId (programme-linked event)
+  //   2. team → stream → programme (team-linked event)
+  //   3. null = truly org-wide (no team and no programme link)
+  function programmeIdFor(ev: {
+    invitedTeamIds: string[];
+    createdByTeamId?: string | null;
+    programmeId?: string | null;
+  }): string | null {
+    if (ev.programmeId) return ev.programmeId;
     const sId = streamIdFor(ev);
     if (!sId) return null;
     const s = streams.find((x) => x.id === sId);
     return s?.programmeId ?? null;
   }
 
-  function eventPassesFilter(ev: { invitedTeamIds: string[]; createdByTeamId?: string | null }): boolean {
+  function eventPassesFilter(ev: {
+    invitedTeamIds: string[];
+    createdByTeamId?: string | null;
+    programmeId?: string | null;
+  }): boolean {
     if (filter === "all") return true;
     const pId = programmeIdFor(ev);
-    // Programme-wide events (pId === null) always show — they aren't owned
-    // by any single programme so narrowing should never hide them.
+    // Truly org-wide events (no programme resolvable) always show — they
+    // aren't owned by any single programme so narrowing shouldn't hide them.
     if (pId === null) return true;
     return filter.includes(pId);
   }
@@ -232,13 +243,23 @@ export default function CalendarScreen() {
       .sort((a, b) => +new Date(a.startDate) - +new Date(b.startDate));
   }, [filteredEvents, selected]);
 
-  function nameFor(ev: { invitedTeamIds: string[]; createdByTeamId?: string | null }): string {
+  function nameFor(ev: {
+    invitedTeamIds: string[];
+    createdByTeamId?: string | null;
+    programmeId?: string | null;
+  }): string {
     const teamId = ev.invitedTeamIds[0] ?? ev.createdByTeamId ?? null;
-    if (!teamId) return "Programme-wide";
-    const t = teams.find((x) => x.id === teamId);
-    if (!t) return "—";
-    const s = streams.find((x) => x.id === t.streamId);
-    return s ? `${s.name} · ${t.name}` : t.name;
+    if (teamId) {
+      const t = teams.find((x) => x.id === teamId);
+      if (!t) return "—";
+      const s = streams.find((x) => x.id === t.streamId);
+      return s ? `${s.name} · ${t.name}` : t.name;
+    }
+    if (ev.programmeId) {
+      const p = programmes.find((x) => x.id === ev.programmeId);
+      return p ? `Programme: ${p.name}` : "Programme";
+    }
+    return "Org-wide";
   }
 
   function prevMonth() {
@@ -431,7 +452,7 @@ export default function CalendarScreen() {
             <Text style={[styles.emptyText, { color: colors.mutedForeground }]}>
               {filter === "all"
                 ? "No events on this day."
-                : "No events on this day for the selected programmes. Programme-wide events would still appear here."}
+                : "No events on this day for the selected programmes. Org-wide events would still appear here."}
             </Text>
           </View>
         ) : (

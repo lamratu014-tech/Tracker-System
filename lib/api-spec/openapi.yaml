@@ -1326,6 +1326,7 @@ components:
         isAllDay: { type: boolean }
         status: { $ref: "#/components/schemas/EventStatus" }
         projectId: { type: string, nullable: true }
+        programmeId: { type: string, nullable: true }
         createdByTeamId: { type: string, nullable: true }
         createdByUserId: { type: string, nullable: true }
         invitedTeamIds:
@@ -1356,6 +1357,7 @@ components:
         isAllDay: { type: boolean }
         status: { $ref: "#/components/schemas/EventStatus" }
         projectId: { type: string, nullable: true }
+        programmeId: { type: string, nullable: true }
         invitedTeamIds:
           type: array
           items: { type: string }
@@ -1373,6 +1375,7 @@ components:
         isAllDay: { type: boolean }
         status: { $ref: "#/components/schemas/EventStatus" }
         projectId: { type: string, nullable: true }
+        programmeId: { type: string, nullable: true }
         invitedTeamIds:
           type: array
           items: { type: string }

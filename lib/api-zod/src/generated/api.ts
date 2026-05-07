@@ -670,6 +670,7 @@ export const ListEventsResponseItem = zod
     isAllDay: zod.boolean(),
     status: zod.enum(["pending", "approved", "rejected"]),
     projectId: zod.string().nullish(),
+    programmeId: zod.string().nullish(),
     createdByTeamId: zod.string().nullish(),
     createdByUserId: zod.string().nullish(),
     invitedTeamIds: zod.array(zod.string()),
@@ -694,6 +695,7 @@ export const CreateEventBody = zod.object({
   isAllDay: zod.boolean().optional(),
   status: zod.enum(["pending", "approved", "rejected"]).optional(),
   projectId: zod.string().nullish(),
+  programmeId: zod.string().nullish(),
   invitedTeamIds: zod.array(zod.string()).optional(),
 });
 
@@ -714,6 +716,7 @@ export const GetEventResponse = zod
     isAllDay: zod.boolean(),
     status: zod.enum(["pending", "approved", "rejected"]),
     projectId: zod.string().nullish(),
+    programmeId: zod.string().nullish(),
     createdByTeamId: zod.string().nullish(),
     createdByUserId: zod.string().nullish(),
     invitedTeamIds: zod.array(zod.string()),
@@ -741,6 +744,7 @@ export const UpdateEventBody = zod.object({
   isAllDay: zod.boolean().optional(),
   status: zod.enum(["pending", "approved", "rejected"]).optional(),
   projectId: zod.string().nullish(),
+  programmeId: zod.string().nullish(),
   invitedTeamIds: zod.array(zod.string()).optional(),
 });
 
@@ -756,6 +760,7 @@ export const UpdateEventResponse = zod.object({
   isAllDay: zod.boolean(),
   status: zod.enum(["pending", "approved", "rejected"]),
   projectId: zod.string().nullish(),
+  programmeId: zod.string().nullish(),
   createdByTeamId: zod.string().nullish(),
   createdByUserId: zod.string().nullish(),
   invitedTeamIds: zod.array(zod.string()),

@@ -10,7 +10,11 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth, requireManager } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
-import { userCanAccessTeam } from "../lib/permissions";
+import {
+  userCanAccessTeam,
+  userCanAccessProgramme,
+  userCanManageProgramme,
+} from "../lib/permissions";
 
 const router = Router();
 
@@ -29,7 +33,18 @@ router.get("/events", requireAuth, async (req, res): Promise<void> => {
   for (const event of allEvents) {
     const invitedTeamIds = allInvitations.filter((i) => i.eventId === event.id).map((i) => i.teamId);
 
+    // Org-wide events (no team and no programme link) are visible to everyone.
+    if (!event.createdByTeamId && !event.programmeId) {
+      result.push({ ...event, invitedTeamIds, visibility: "full" });
+      continue;
+    }
+
     if (await userCanAccessTeam(user, event.createdByTeamId)) {
+      result.push({ ...event, invitedTeamIds, visibility: "full" });
+      continue;
+    }
+
+    if (event.programmeId && (await userCanAccessProgramme(user, event.programmeId))) {
       result.push({ ...event, invitedTeamIds, visibility: "full" });
       continue;
     }
@@ -59,7 +74,17 @@ router.get("/events/:id", requireAuth, async (req, res): Promise<void> => {
   const invitations = await db.select().from(eventInvitationsTable).where(eq(eventInvitationsTable.eventId, params.data.id));
   const invitedTeamIds = invitations.map((i) => i.teamId);
 
+  if (!event.createdByTeamId && !event.programmeId) {
+    res.json({ ...event, invitedTeamIds, visibility: "full" });
+    return;
+  }
+
   if (await userCanAccessTeam(user, event.createdByTeamId)) {
+    res.json({ ...event, invitedTeamIds, visibility: "full" });
+    return;
+  }
+
+  if (event.programmeId && (await userCanAccessProgramme(user, event.programmeId))) {
     res.json({ ...event, invitedTeamIds, visibility: "full" });
     return;
   }
@@ -83,7 +108,37 @@ router.post("/events", requireManager, async (req, res): Promise<void> => {
   const parsed = CreateEventBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  const { invitedTeamIds = [], ...eventData } = parsed.data;
+  const { invitedTeamIds = [], programmeId, ...eventData } = parsed.data;
+
+  // Determine intended scope. Three modes:
+  //   1. team-linked    → invitedTeamIds[0] set, no programmeId
+  //   2. programme-linked → programmeId set, no team
+  //   3. org-wide        → neither
+  const teamScopeId = invitedTeamIds[0] ?? null;
+
+  if (teamScopeId && programmeId) {
+    res.status(400).json({ error: "An event can't be linked to both a team and a programme" });
+    return;
+  }
+
+  // Authorise the chosen scope.
+  if (teamScopeId) {
+    if (!(await userCanAccessTeam(user, teamScopeId))) {
+      res.status(403).json({ error: "You can't create events for that team" });
+      return;
+    }
+  } else if (programmeId) {
+    if (!(await userCanManageProgramme(user, programmeId))) {
+      res.status(403).json({ error: "You can't create events for that programme" });
+      return;
+    }
+  } else {
+    // Org-wide is admin-only.
+    if (user.role !== "admin") {
+      res.status(403).json({ error: "Only admins can create org-wide events" });
+      return;
+    }
+  }
 
   const [event] = await db.insert(eventsTable).values({
     title: eventData.title,
@@ -94,9 +149,10 @@ router.post("/events", requireManager, async (req, res): Promise<void> => {
     isAllDay: eventData.isAllDay,
     status: eventData.status,
     projectId: eventData.projectId,
+    programmeId: programmeId ?? null,
     startDate: new Date(eventData.startDate),
     endDate: new Date(eventData.endDate),
-    createdByTeamId: user.teamId,
+    createdByTeamId: teamScopeId,
     createdByUserId: user.id,
   }).returning();
 
@@ -118,7 +174,15 @@ router.patch("/events/:id", requireManager, async (req, res): Promise<void> => {
   const [existing] = await db.select().from(eventsTable).where(eq(eventsTable.id, params.data.id)).limit(1);
   if (!existing) { res.status(404).json({ error: "Event not found" }); return; }
 
-  if (!(await userCanAccessTeam(user, existing.createdByTeamId))) {
+  // Allow management by team-scope OR programme-scope managers, plus admins
+  // for org-wide events.
+  const canByTeam = await userCanAccessTeam(user, existing.createdByTeamId);
+  const canByProgramme = existing.programmeId
+    ? await userCanManageProgramme(user, existing.programmeId)
+    : false;
+  const canByOrg =
+    !existing.createdByTeamId && !existing.programmeId && user.role === "admin";
+  if (!canByTeam && !canByProgramme && !canByOrg) {
     res.status(403).json({ error: "Access denied" });
     return;
   }
@@ -126,7 +190,44 @@ router.patch("/events/:id", requireManager, async (req, res): Promise<void> => {
   const parsed = UpdateEventBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  const { invitedTeamIds, ...eventData } = parsed.data;
+  const { invitedTeamIds, programmeId, ...eventData } = parsed.data;
+
+  // Compute the resulting scope after this patch is applied so we can
+  // enforce the "exactly one of team / programme / org" rule and the
+  // associated authorisation, instead of trusting the existing row.
+  const nextTeamScopeId =
+    invitedTeamIds !== undefined
+      ? (invitedTeamIds[0] ?? null)
+      : existing.createdByTeamId;
+  const nextProgrammeId =
+    "programmeId" in parsed.data
+      ? (programmeId ?? null)
+      : existing.programmeId;
+
+  if (nextTeamScopeId && nextProgrammeId) {
+    res.status(400).json({ error: "An event can't be linked to both a team and a programme" });
+    return;
+  }
+
+  // Re-authorise the resulting scope (a manager can't downgrade a
+  // team/programme event into org-wide unless they're admin).
+  if (nextTeamScopeId) {
+    if (!(await userCanAccessTeam(user, nextTeamScopeId))) {
+      res.status(403).json({ error: "You can't link this event to that team" });
+      return;
+    }
+  } else if (nextProgrammeId) {
+    if (!(await userCanManageProgramme(user, nextProgrammeId))) {
+      res.status(403).json({ error: "You can't link this event to that programme" });
+      return;
+    }
+  } else {
+    // Resulting scope is org-wide → admin only.
+    if (user.role !== "admin") {
+      res.status(403).json({ error: "Only admins can make events org-wide" });
+      return;
+    }
+  }
 
   const patch: Partial<typeof eventsTable.$inferInsert> = {};
   if ("title" in eventData) patch.title = eventData.title;
@@ -137,6 +238,13 @@ router.patch("/events/:id", requireManager, async (req, res): Promise<void> => {
   if ("isAllDay" in eventData) patch.isAllDay = eventData.isAllDay;
   if ("status" in eventData) patch.status = eventData.status;
   if ("projectId" in eventData) patch.projectId = eventData.projectId ?? null;
+  // Mirror the resulting scope: the patch is the source of truth, so when
+  // invitedTeamIds clears the team link we also clear createdByTeamId, and
+  // setting a programmeId implicitly clears any leftover team ownership.
+  if (invitedTeamIds !== undefined || "programmeId" in parsed.data) {
+    patch.createdByTeamId = nextTeamScopeId;
+    patch.programmeId = nextProgrammeId;
+  }
   if ("startDate" in eventData && eventData.startDate) patch.startDate = new Date(eventData.startDate);
   if ("endDate" in eventData && eventData.endDate) patch.endDate = new Date(eventData.endDate);
 
@@ -164,7 +272,13 @@ router.delete("/events/:id", requireManager, async (req, res): Promise<void> => 
   const [existing] = await db.select().from(eventsTable).where(eq(eventsTable.id, params.data.id)).limit(1);
   if (!existing) { res.status(404).json({ error: "Event not found" }); return; }
 
-  if (!(await userCanAccessTeam(user, existing.createdByTeamId))) {
+  const canByTeam = await userCanAccessTeam(user, existing.createdByTeamId);
+  const canByProgramme = existing.programmeId
+    ? await userCanManageProgramme(user, existing.programmeId)
+    : false;
+  const canByOrg =
+    !existing.createdByTeamId && !existing.programmeId && user.role === "admin";
+  if (!canByTeam && !canByProgramme && !canByOrg) {
     res.status(403).json({ error: "Access denied" });
     return;
   }

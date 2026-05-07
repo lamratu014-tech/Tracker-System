@@ -3,6 +3,8 @@ import { useRouter } from "expo-router";
 import {
   getListEventsQueryKey,
   useCreateEvent,
+  useListProgrammes,
+  useListStreams,
   useListTeams,
 } from "@workspace/api-client-react";
 import React, { useMemo, useState } from "react";
@@ -75,6 +77,10 @@ export default function NewEventScreen() {
 
   const teamsQ = useListTeams();
   const teams = teamsQ.data ?? [];
+  const programmesQ = useListProgrammes();
+  const programmes = programmesQ.data ?? [];
+  const streamsQ = useListStreams();
+  const streams = streamsQ.data ?? [];
 
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
@@ -83,8 +89,16 @@ export default function NewEventScreen() {
   const [startTime, setStartTime] = useState<string>("10:00");
   const [endDate, setEndDate] = useState<string>(initialDate);
   const [endTime, setEndTime] = useState<string>("11:00");
-  const [linkedTeamId, setLinkedTeamId] = useState<string | null>(
-    me?.role === "leader" && me.teamId ? me.teamId : null,
+  // link mode: org-wide ({kind:"org"}), programme ({kind:"programme",id}),
+  // or team ({kind:"team",id}). Leaders default to their own team.
+  type LinkMode =
+    | { kind: "org" }
+    | { kind: "programme"; id: string }
+    | { kind: "team"; id: string };
+  const [link, setLink] = useState<LinkMode>(
+    me?.role === "leader" && me.teamId
+      ? { kind: "team", id: me.teamId }
+      : { kind: "org" },
   );
 
   const allowedTeams = useMemo(() => {
@@ -94,6 +108,19 @@ export default function NewEventScreen() {
     if (me.role === "leader" && me.teamId) return teams.filter((t) => t.id === me.teamId);
     return [];
   }, [teams, me]);
+
+  // Programmes the actor may pick: admin = all; overseer = the single
+  // programme that contains their assigned stream.
+  const allowedProgrammes = useMemo(() => {
+    if (!me) return [];
+    if (me.role === "admin") return programmes;
+    if (me.role === "stream_overseer" && me.streamId) {
+      const myStream = streams.find((s) => s.id === me.streamId);
+      if (!myStream) return [];
+      return programmes.filter((p) => p.id === myStream.programmeId);
+    }
+    return [];
+  }, [programmes, streams, me]);
 
   const startDt = parseDateTime(startDate, startTime);
   const endDt = parseDateTime(endDate, endTime);
@@ -131,17 +158,20 @@ export default function NewEventScreen() {
     );
   }
 
+  // Leaders cannot pick org or programme; non-admins cannot pick org.
+  const linkValid =
+    link.kind === "team" ||
+    (link.kind === "programme" && allowedProgrammes.some((p) => p.id === link.id)) ||
+    (link.kind === "org" && me.role === "admin");
+
   const canSave =
-    !!title.trim() &&
-    !dateError &&
-    (me.role === "admin" || !!linkedTeamId) &&
-    !createEvent.isPending;
+    !!title.trim() && !dateError && linkValid && !createEvent.isPending;
 
   function save() {
     if (!title.trim()) return Alert.alert("Title required", "Please enter an event title.");
     if (dateError) return Alert.alert("Invalid date or time", dateError);
-    if (me!.role !== "admin" && !linkedTeamId) {
-      return Alert.alert("Team required", "Pick a team for this event.");
+    if (!linkValid) {
+      return Alert.alert("Pick a link", "Choose a team, a programme, or org-wide.");
     }
     if (!startDt || !endDt) return;
     createEvent.mutate({
@@ -150,7 +180,8 @@ export default function NewEventScreen() {
         sharedDescription: desc.trim(),
         startDate: startDt.toISOString(),
         endDate: endDt.toISOString(),
-        invitedTeamIds: linkedTeamId ? [linkedTeamId] : [],
+        invitedTeamIds: link.kind === "team" ? [link.id] : [],
+        programmeId: link.kind === "programme" ? link.id : null,
       },
     });
   }
@@ -252,27 +283,44 @@ export default function NewEventScreen() {
         <Text style={[styles.errorText, { color: colors.destructive }]}>{dateError}</Text>
       ) : null}
 
-      <Text style={[styles.label, { color: colors.mutedForeground }]}>Link to team</Text>
+      <Text style={[styles.label, { color: colors.mutedForeground }]}>Link to</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
         {me.role === "admin" ? (
           <TouchableOpacity
-            style={[styles.chip, { borderColor: colors.border, backgroundColor: linkedTeamId === null ? colors.primary : colors.muted }]}
-            onPress={() => setLinkedTeamId(null)}
+            style={[styles.chip, { borderColor: colors.border, backgroundColor: link.kind === "org" ? colors.primary : colors.muted }]}
+            onPress={() => setLink({ kind: "org" })}
           >
-            <Text style={[styles.chipText, { color: linkedTeamId === null ? "#fff" : colors.foreground }]}>Programme-wide</Text>
+            <Text style={[styles.chipText, { color: link.kind === "org" ? "#fff" : colors.foreground }]}>Org-wide</Text>
           </TouchableOpacity>
         ) : null}
-        {allowedTeams.map((team) => (
-          <TouchableOpacity
-            key={team.id}
-            style={[styles.chip, { borderColor: colors.border, backgroundColor: linkedTeamId === team.id ? colors.primary : colors.muted }]}
-            onPress={() => setLinkedTeamId(team.id)}
-          >
-            <Text style={[styles.chipText, { color: linkedTeamId === team.id ? "#fff" : colors.foreground }]}>
-              {team.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
+        {allowedProgrammes.map((p) => {
+          const active = link.kind === "programme" && link.id === p.id;
+          return (
+            <TouchableOpacity
+              key={`prog-${p.id}`}
+              style={[styles.chip, { borderColor: colors.border, backgroundColor: active ? colors.primary : colors.muted }]}
+              onPress={() => setLink({ kind: "programme", id: p.id })}
+            >
+              <Text style={[styles.chipText, { color: active ? "#fff" : colors.foreground }]}>
+                Programme: {p.name}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+        {allowedTeams.map((team) => {
+          const active = link.kind === "team" && link.id === team.id;
+          return (
+            <TouchableOpacity
+              key={`team-${team.id}`}
+              style={[styles.chip, { borderColor: colors.border, backgroundColor: active ? colors.primary : colors.muted }]}
+              onPress={() => setLink({ kind: "team", id: team.id })}
+            >
+              <Text style={[styles.chipText, { color: active ? "#fff" : colors.foreground }]}>
+                {team.name}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </ScrollView>
 
       {createEvent.isError ? <ErrorBanner error={createEvent.error} /> : null}

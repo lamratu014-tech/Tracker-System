@@ -6,6 +6,8 @@ import {
   getListEventsQueryKey,
   useDeleteEvent,
   useGetEvent,
+  useListProgrammes,
+  useListStreams,
   useListTeams,
   useListUsers,
   useUpdateEvent,
@@ -54,8 +56,12 @@ export default function EventDetailScreen() {
   const event = eventQ.data ?? null;
   const teamsQ = useListTeams();
   const usersQ = useListUsers();
+  const programmesQ = useListProgrammes();
+  const streamsQ = useListStreams();
   const teams = teamsQ.data ?? [];
   const users = usersQ.data ?? [];
+  const programmes = programmesQ.data ?? [];
+  const streams = streamsQ.data ?? [];
 
   const deleteEvent = useDeleteEvent({
     mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListEventsQueryKey() }) },
@@ -103,7 +109,15 @@ export default function EventDetailScreen() {
   const overseerOfStream = !!linkedStreamId && canManageStream(me, linkedStreamId);
   const overseerOrLeaderOfTeam =
     !!linkedTeam && canManageTeam(me, { id: linkedTeam.id, streamId: linkedTeam.streamId });
-  const canDelete = isAdmin || isCreator || overseerOfStream || overseerOrLeaderOfTeam;
+  // For programme-linked events: stream overseers whose assigned stream
+  // sits inside the event's programme can also manage the event.
+  const overseerOfProgramme = (() => {
+    if (!event.programmeId || me?.role !== "stream_overseer" || !me.streamId) return false;
+    const myStream = streams.find((s) => s.id === me.streamId);
+    return !!myStream && myStream.programmeId === event.programmeId;
+  })();
+  const canDelete =
+    isAdmin || isCreator || overseerOfStream || overseerOrLeaderOfTeam || overseerOfProgramme;
   const canEdit = canDelete;
 
   function startEditing() {
@@ -134,10 +148,13 @@ export default function EventDetailScreen() {
     );
   }
 
-  let linkedLabel = "Programme-wide";
+  // Three link modes: team-linked > programme-linked > org-wide.
+  let linkedLabel = "Org-wide";
   if (linkedTeam) {
     linkedLabel = linkedTeam.name;
-    // We don't have stream name without an extra fetch; show stream id-less label.
+  } else if (event.programmeId) {
+    const prog = programmes.find((p) => p.id === event.programmeId);
+    linkedLabel = prog ? `Programme: ${prog.name}` : "Programme";
   }
 
   const creator = event.createdByUserId

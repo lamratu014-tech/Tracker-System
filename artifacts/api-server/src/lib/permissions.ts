@@ -1,4 +1,4 @@
-import { db, teamsTable, usersTable } from "@workspace/db";
+import { db, teamsTable, usersTable, streamsTable } from "@workspace/db";
 import type { User } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
@@ -95,6 +95,68 @@ export async function userCanAssignAsLeader(
   }
 
   return { ok: false, status: 403, error: "Access denied" };
+}
+
+/**
+ * True when `user` may read events scoped to a given programme.
+ *  - admin            → always
+ *  - stream_overseer  → the programme that contains their assigned stream
+ *  - leader           → the programme that contains their team's stream
+ */
+export async function userCanAccessProgramme(
+  user: User,
+  programmeId: string | null | undefined
+): Promise<boolean> {
+  if (user.role === "admin") return true;
+  if (!programmeId) return false;
+  if (user.role === "stream_overseer") {
+    if (!user.streamId) return false;
+    const [stream] = await db
+      .select({ programmeId: streamsTable.programmeId })
+      .from(streamsTable)
+      .where(eq(streamsTable.id, user.streamId))
+      .limit(1);
+    return !!stream && stream.programmeId === programmeId;
+  }
+  if (user.role === "leader") {
+    if (!user.teamId) return false;
+    const [team] = await db
+      .select({ streamId: teamsTable.streamId })
+      .from(teamsTable)
+      .where(eq(teamsTable.id, user.teamId))
+      .limit(1);
+    if (!team?.streamId) return false;
+    const [stream] = await db
+      .select({ programmeId: streamsTable.programmeId })
+      .from(streamsTable)
+      .where(eq(streamsTable.id, team.streamId))
+      .limit(1);
+    return !!stream && stream.programmeId === programmeId;
+  }
+  return false;
+}
+
+/**
+ * True when `user` may *manage* (create/update/delete) entities scoped to a
+ * programme — admins always, stream overseers for their own programme.
+ * Leaders cannot manage programme-scoped entities.
+ */
+export async function userCanManageProgramme(
+  user: User,
+  programmeId: string | null | undefined
+): Promise<boolean> {
+  if (user.role === "admin") return true;
+  if (!programmeId) return false;
+  if (user.role === "stream_overseer") {
+    if (!user.streamId) return false;
+    const [stream] = await db
+      .select({ programmeId: streamsTable.programmeId })
+      .from(streamsTable)
+      .where(eq(streamsTable.id, user.streamId))
+      .limit(1);
+    return !!stream && stream.programmeId === programmeId;
+  }
+  return false;
 }
 
 /** Returns the list of teamIds visible to `user` (admin = all). */

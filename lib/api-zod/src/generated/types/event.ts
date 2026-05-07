@@ -19,6 +19,7 @@ export interface Event {
   isAllDay: boolean;
   status: EventStatus;
   projectId?: string | null;
+  programmeId?: string | null;
   createdByTeamId?: string | null;
   createdByUserId?: string | null;
   invitedTeamIds: string[];

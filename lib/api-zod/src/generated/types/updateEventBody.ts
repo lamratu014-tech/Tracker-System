@@ -19,5 +19,6 @@ export interface UpdateEventBody {
   isAllDay?: boolean;
   status?: EventStatus;
   projectId?: string | null;
+  programmeId?: string | null;
   invitedTeamIds?: string[];
 }
