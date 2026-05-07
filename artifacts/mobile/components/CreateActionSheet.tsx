@@ -25,15 +25,14 @@ const ALL: Action[] = [
   { key: "team", label: "New Team", icon: "users", href: "/new-team" },
   { key: "user", label: "Invite User", icon: "user-plus", href: "/new-user" },
   { key: "project", label: "New Project", icon: "folder-plus", href: "/new-project" },
-  { key: "milestone", label: "New Milestone", icon: "flag", href: "/new-milestone" },
   { key: "event", label: "New Event", icon: "calendar", href: "/new-event" },
 ];
 
 const ROLE_ACTIONS: Record<Role, string[]> = {
-  admin: ["stream", "team", "user", "project", "milestone", "event"],
-  programme_overseer: ["stream", "team", "user", "project", "milestone", "event"],
-  stream_overseer: ["team", "project", "milestone", "event"],
-  leader: ["project", "milestone", "event"],
+  admin: ["stream", "team", "user", "project", "event"],
+  programme_overseer: ["stream", "team", "user", "project", "event"],
+  stream_overseer: ["team", "project", "event"],
+  leader: ["project", "event"],
 };
 
 interface Props {

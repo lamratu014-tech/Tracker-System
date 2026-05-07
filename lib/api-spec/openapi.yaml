@@ -1208,7 +1208,7 @@ components:
 
     Project:
       type: object
-      required: [id, teamId, title, description, status, color, phase, notes, tags, createdAt, updatedAt]
+      required: [id, teamId, title, description, status, color, phase, notes, tags, sharedTeamIds, createdAt, updatedAt]
       properties:
         id: { type: string }
         teamId: { type: string }
@@ -1220,6 +1220,9 @@ components:
         dueDate: { type: string, format: date-time, nullable: true }
         notes: { type: string }
         tags:
+          type: array
+          items: { type: string }
+        sharedTeamIds:
           type: array
           items: { type: string }
         createdAt: { type: string, format: date-time }
@@ -1247,6 +1250,9 @@ components:
         tags:
           type: array
           items: { type: string }
+        sharedTeamIds:
+          type: array
+          items: { type: string }
 
     UpdateProjectBody:
       type: object
@@ -1259,6 +1265,9 @@ components:
         dueDate: { type: string, format: date-time, nullable: true }
         notes: { type: string }
         tags:
+          type: array
+          items: { type: string }
+        sharedTeamIds:
           type: array
           items: { type: string }
 

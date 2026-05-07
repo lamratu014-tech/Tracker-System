@@ -1,6 +1,31 @@
-import { db, teamsTable, usersTable, streamsTable } from "@workspace/db";
+import { db, teamsTable, usersTable, streamsTable, projectTeamsTable } from "@workspace/db";
 import type { User } from "@workspace/db";
 import { eq } from "drizzle-orm";
+
+/**
+ * True when `user` may *read* a project. A project is readable by anyone
+ * who can access the owner team OR any of its shared teams.
+ */
+export async function userCanReadProject(
+  user: User,
+  ownerTeamId: string,
+  sharedTeamIds: string[],
+): Promise<boolean> {
+  if (await userCanAccessTeam(user, ownerTeamId)) return true;
+  for (const tid of sharedTeamIds) {
+    if (await userCanAccessTeam(user, tid)) return true;
+  }
+  return false;
+}
+
+/** Fetch shared teamIds for a project. */
+export async function getProjectSharedTeamIds(projectId: string): Promise<string[]> {
+  const rows = await db
+    .select({ teamId: projectTeamsTable.teamId })
+    .from(projectTeamsTable)
+    .where(eq(projectTeamsTable.projectId, projectId));
+  return rows.map((r) => r.teamId);
+}
 
 /**
  * Look up the programmeId for a stream, or null if the stream is missing.

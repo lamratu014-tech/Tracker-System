@@ -1,6 +1,6 @@
 import { Router } from "express";
-import { db, projectsTable, teamsTable, streamsTable } from "@workspace/db";
-import { eq, inArray } from "drizzle-orm";
+import { db, projectsTable, projectTeamsTable, teamsTable, streamsTable } from "@workspace/db";
+import { eq, inArray, or } from "drizzle-orm";
 import {
   CreateProjectBody,
   UpdateProjectBody,
@@ -10,7 +10,7 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth, requireManager } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
-import { userCanAccessTeam } from "../lib/permissions";
+import { userCanAccessTeam, getProjectSharedTeamIds } from "../lib/permissions";
 
 const router = Router();
 
@@ -30,67 +30,119 @@ const projectColumns = {
   teamName: teamsTable.name,
 };
 
+type RawProject = typeof projectsTable.$inferSelect & { teamName?: string | null };
+
+async function attachSharedTeamIds<T extends { id: string }>(
+  rows: T[],
+): Promise<(T & { sharedTeamIds: string[] })[]> {
+  if (rows.length === 0) return [];
+  const ids = rows.map((r) => r.id);
+  const links = await db
+    .select({ projectId: projectTeamsTable.projectId, teamId: projectTeamsTable.teamId })
+    .from(projectTeamsTable)
+    .where(inArray(projectTeamsTable.projectId, ids));
+  const map = new Map<string, string[]>();
+  for (const l of links) {
+    const arr = map.get(l.projectId) ?? [];
+    arr.push(l.teamId);
+    map.set(l.projectId, arr);
+  }
+  return rows.map((r) => ({ ...r, sharedTeamIds: map.get(r.id) ?? [] }));
+}
+
+/**
+ * Validate sharedTeamIds: each must exist, must not equal owner, and must be
+ * in the same stream as the owner team. Returns null on success, otherwise an
+ * error message.
+ */
+async function validateSharedTeamIds(
+  ownerTeamId: string,
+  sharedTeamIds: string[],
+): Promise<string | null> {
+  if (sharedTeamIds.length === 0) return null;
+  const unique = Array.from(new Set(sharedTeamIds));
+  if (unique.includes(ownerTeamId)) return "Owner team cannot be in sharedTeamIds";
+  const [owner] = await db
+    .select({ streamId: teamsTable.streamId })
+    .from(teamsTable)
+    .where(eq(teamsTable.id, ownerTeamId))
+    .limit(1);
+  if (!owner) return "Owner team not found";
+  if (!owner.streamId) return "Owner team has no stream; cannot share";
+  const found = await db
+    .select({ id: teamsTable.id, streamId: teamsTable.streamId })
+    .from(teamsTable)
+    .where(inArray(teamsTable.id, unique));
+  if (found.length !== unique.length) return "One or more shared teams not found";
+  for (const t of found) {
+    if (t.streamId !== owner.streamId) {
+      return "Shared teams must belong to the same stream as the owner team";
+    }
+  }
+  return null;
+}
+
 router.get("/projects", requireAuth, async (req, res): Promise<void> => {
   const user = req.authUser!;
 
-  const baseQuery = db
-    .select(projectColumns)
-    .from(projectsTable)
-    .leftJoin(teamsTable, eq(projectsTable.teamId, teamsTable.id));
-
+  let rows: RawProject[];
   if (user.role === "admin") {
-    res.json(await baseQuery.orderBy(projectsTable.createdAt));
-    return;
-  }
-
-  if (user.role === "programme_overseer" && user.programmeId) {
-    const teamIds = (
-      await db
-        .select({ id: teamsTable.id })
-        .from(teamsTable)
-        .innerJoin(streamsTable, eq(teamsTable.streamId, streamsTable.id))
-        .where(eq(streamsTable.programmeId, user.programmeId))
-    ).map((t) => t.id);
-    if (!teamIds.length) { res.json([]); return; }
-    res.json(
-      await db
-        .select(projectColumns)
-        .from(projectsTable)
-        .leftJoin(teamsTable, eq(projectsTable.teamId, teamsTable.id))
-        .where(inArray(projectsTable.teamId, teamIds))
-        .orderBy(projectsTable.createdAt)
-    );
-    return;
-  }
-
-  if (user.role === "stream_overseer" && user.streamId) {
-    const teamIds = (
-      await db
-        .select({ id: teamsTable.id })
-        .from(teamsTable)
-        .where(eq(teamsTable.streamId, user.streamId))
-    ).map((t) => t.id);
-    if (!teamIds.length) { res.json([]); return; }
-    res.json(
-      await db
-        .select(projectColumns)
-        .from(projectsTable)
-        .leftJoin(teamsTable, eq(projectsTable.teamId, teamsTable.id))
-        .where(inArray(projectsTable.teamId, teamIds))
-        .orderBy(projectsTable.createdAt)
-    );
-    return;
-  }
-
-  if (!user.teamId) { res.json([]); return; }
-  res.json(
-    await db
+    rows = await db
       .select(projectColumns)
       .from(projectsTable)
       .leftJoin(teamsTable, eq(projectsTable.teamId, teamsTable.id))
-      .where(eq(projectsTable.teamId, user.teamId))
-      .orderBy(projectsTable.createdAt)
-  );
+      .orderBy(projectsTable.createdAt);
+  } else {
+    let visibleTeamIds: string[] = [];
+    if (user.role === "programme_overseer" && user.programmeId) {
+      visibleTeamIds = (
+        await db
+          .select({ id: teamsTable.id })
+          .from(teamsTable)
+          .innerJoin(streamsTable, eq(teamsTable.streamId, streamsTable.id))
+          .where(eq(streamsTable.programmeId, user.programmeId))
+      ).map((t) => t.id);
+    } else if (user.role === "stream_overseer" && user.streamId) {
+      visibleTeamIds = (
+        await db
+          .select({ id: teamsTable.id })
+          .from(teamsTable)
+          .where(eq(teamsTable.streamId, user.streamId))
+      ).map((t) => t.id);
+    } else if (user.teamId) {
+      visibleTeamIds = [user.teamId];
+    }
+
+    if (visibleTeamIds.length === 0) {
+      res.json([]);
+      return;
+    }
+
+    // Owner OR shared visibility, distinct.
+    const sharedProjectIds = (
+      await db
+        .selectDistinct({ id: projectTeamsTable.projectId })
+        .from(projectTeamsTable)
+        .where(inArray(projectTeamsTable.teamId, visibleTeamIds))
+    ).map((r) => r.id);
+
+    rows = await db
+      .select(projectColumns)
+      .from(projectsTable)
+      .leftJoin(teamsTable, eq(projectsTable.teamId, teamsTable.id))
+      .where(
+        sharedProjectIds.length > 0
+          ? or(
+              inArray(projectsTable.teamId, visibleTeamIds),
+              inArray(projectsTable.id, sharedProjectIds),
+            )
+          : inArray(projectsTable.teamId, visibleTeamIds),
+      )
+      .orderBy(projectsTable.createdAt);
+  }
+
+  const enriched = await attachSharedTeamIds(rows);
+  res.json(enriched);
 });
 
 router.get("/projects/:id", requireAuth, async (req, res): Promise<void> => {
@@ -107,12 +159,20 @@ router.get("/projects/:id", requireAuth, async (req, res): Promise<void> => {
 
   if (!project) { res.status(404).json({ error: "Project not found" }); return; }
 
+  const sharedTeamIds = await getProjectSharedTeamIds(project.id);
+
   if (!(await userCanAccessTeam(user, project.teamId))) {
-    res.status(403).json({ error: "Access denied" });
-    return;
+    let allowed = false;
+    for (const tid of sharedTeamIds) {
+      if (await userCanAccessTeam(user, tid)) { allowed = true; break; }
+    }
+    if (!allowed) {
+      res.status(403).json({ error: "Access denied" });
+      return;
+    }
   }
 
-  res.json(project);
+  res.json({ ...project, sharedTeamIds });
 });
 
 router.post("/projects", requireManager, async (req, res): Promise<void> => {
@@ -125,20 +185,32 @@ router.post("/projects", requireManager, async (req, res): Promise<void> => {
     return;
   }
 
-  const [project] = await db.insert(projectsTable).values({
-    teamId: parsed.data.teamId,
-    title: parsed.data.title,
-    description: parsed.data.description,
-    status: parsed.data.status,
-    color: parsed.data.color,
-    phase: parsed.data.phase,
-    notes: parsed.data.notes,
-    tags: parsed.data.tags,
-    dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : undefined,
-  }).returning();
+  const sharedTeamIds = parsed.data.sharedTeamIds ?? [];
+  const validationError = await validateSharedTeamIds(parsed.data.teamId, sharedTeamIds);
+  if (validationError) { res.status(400).json({ error: validationError }); return; }
+
+  const project = await db.transaction(async (tx) => {
+    const [created] = await tx.insert(projectsTable).values({
+      teamId: parsed.data.teamId,
+      title: parsed.data.title,
+      description: parsed.data.description,
+      status: parsed.data.status,
+      color: parsed.data.color,
+      phase: parsed.data.phase,
+      notes: parsed.data.notes,
+      tags: parsed.data.tags,
+      dueDate: parsed.data.dueDate ? new Date(parsed.data.dueDate) : undefined,
+    }).returning();
+    if (sharedTeamIds.length > 0) {
+      await tx.insert(projectTeamsTable).values(
+        sharedTeamIds.map((teamId) => ({ projectId: created.id, teamId })),
+      );
+    }
+    return created;
+  });
 
   await logActivity({ user, actionType: "create", entityType: "project", entityId: project.id, entityTitle: project.title, teamId: project.teamId });
-  res.status(201).json(project);
+  res.status(201).json({ ...project, sharedTeamIds });
 });
 
 router.patch("/projects/:id", requireManager, async (req, res): Promise<void> => {
@@ -167,10 +239,31 @@ router.patch("/projects/:id", requireManager, async (req, res): Promise<void> =>
   if ("tags" in parsed.data) patch.tags = parsed.data.tags;
   if ("dueDate" in parsed.data) patch.dueDate = parsed.data.dueDate ? new Date(parsed.data.dueDate) : null;
 
-  const [project] = await db.update(projectsTable).set(patch).where(eq(projectsTable.id, params.data.id)).returning();
+  let nextSharedTeamIds: string[] | null = null;
+  if ("sharedTeamIds" in parsed.data && parsed.data.sharedTeamIds !== undefined) {
+    nextSharedTeamIds = parsed.data.sharedTeamIds;
+    const validationError = await validateSharedTeamIds(existing.teamId, nextSharedTeamIds);
+    if (validationError) { res.status(400).json({ error: validationError }); return; }
+  }
 
+  const project = await db.transaction(async (tx) => {
+    const [updated] = Object.keys(patch).length > 0
+      ? await tx.update(projectsTable).set(patch).where(eq(projectsTable.id, params.data.id)).returning()
+      : [existing];
+    if (nextSharedTeamIds !== null) {
+      await tx.delete(projectTeamsTable).where(eq(projectTeamsTable.projectId, params.data.id));
+      if (nextSharedTeamIds.length > 0) {
+        await tx.insert(projectTeamsTable).values(
+          nextSharedTeamIds.map((teamId) => ({ projectId: params.data.id, teamId })),
+        );
+      }
+    }
+    return updated;
+  });
+
+  const sharedTeamIds = await getProjectSharedTeamIds(project.id);
   await logActivity({ user, actionType: "update", entityType: "project", entityId: project.id, entityTitle: project.title, teamId: project.teamId });
-  res.json(project);
+  res.json({ ...project, sharedTeamIds });
 });
 
 router.delete("/projects/:id", requireManager, async (req, res): Promise<void> => {

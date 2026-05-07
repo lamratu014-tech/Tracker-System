@@ -17,4 +17,5 @@ export interface UpdateProjectBody {
   dueDate?: Date | null;
   notes?: string;
   tags?: string[];
+  sharedTeamIds?: string[];
 }

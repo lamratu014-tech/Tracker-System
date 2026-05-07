@@ -51,6 +51,28 @@ export default function NewProjectScreen() {
   const [teamId, setTeamId] = useState<string>(initialTeamId);
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
+  const [sharedTeamIds, setSharedTeamIds] = useState<string[]>([]);
+
+  const ownerTeam = teams.find((t) => t.id === teamId) ?? null;
+  const peerTeams = useMemo(
+    () =>
+      ownerTeam && ownerTeam.streamId
+        ? teams.filter((t) => t.id !== ownerTeam.id && t.streamId === ownerTeam.streamId)
+        : [],
+    [teams, ownerTeam],
+  );
+
+  function toggleShared(id: string) {
+    setSharedTeamIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
+  }
+
+  function pickOwner(id: string) {
+    setTeamId(id);
+    // Reset shared selection when owner changes — peers are stream-scoped.
+    setSharedTeamIds([]);
+  }
 
   const createProject = useCreateProject({
     mutation: {
@@ -83,7 +105,7 @@ export default function NewProjectScreen() {
       return Alert.alert("Not allowed", "You don't have permission to add a project to this team.");
     }
     createProject.mutate({
-      data: { teamId, title: title.trim(), description: desc.trim() },
+      data: { teamId, title: title.trim(), description: desc.trim(), sharedTeamIds },
     });
   }
 
@@ -110,13 +132,13 @@ export default function NewProjectScreen() {
         numberOfLines={3}
       />
 
-      <Text style={[styles.label, { color: colors.mutedForeground }]}>Team *</Text>
+      <Text style={[styles.label, { color: colors.mutedForeground }]}>Owner team *</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
         {allowedTeams.map((team) => (
           <TouchableOpacity
             key={team.id}
             style={[styles.chip, { borderColor: colors.border, backgroundColor: teamId === team.id ? colors.primary : colors.muted }]}
-            onPress={() => setTeamId(team.id)}
+            onPress={() => pickOwner(team.id)}
           >
             <Text style={[styles.chipText, { color: teamId === team.id ? "#fff" : colors.foreground }]}>
               {team.name}
@@ -124,6 +146,41 @@ export default function NewProjectScreen() {
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      {ownerTeam && peerTeams.length > 0 ? (
+        <>
+          <Text style={[styles.label, { color: colors.mutedForeground }]}>
+            Share with other teams in this stream (optional)
+          </Text>
+          <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+            {peerTeams.map((team) => {
+              const active = sharedTeamIds.includes(team.id);
+              return (
+                <TouchableOpacity
+                  key={team.id}
+                  style={[
+                    styles.chip,
+                    {
+                      borderColor: active ? colors.primary : colors.border,
+                      backgroundColor: active ? colors.primary + "22" : colors.muted,
+                    },
+                  ]}
+                  onPress={() => toggleShared(team.id)}
+                >
+                  <Text
+                    style={[
+                      styles.chipText,
+                      { color: active ? colors.primary : colors.foreground },
+                    ]}
+                  >
+                    {active ? "✓ " : ""}{team.name}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </>
+      ) : null}
 
       {createProject.isError ? <ErrorBanner error={createProject.error} /> : null}
 

@@ -524,6 +524,7 @@ export const ListProjectsResponseItem = zod
     dueDate: zod.coerce.date().nullish(),
     notes: zod.string(),
     tags: zod.array(zod.string()),
+    sharedTeamIds: zod.array(zod.string()),
     createdAt: zod.coerce.date(),
     updatedAt: zod.coerce.date(),
   })
@@ -546,6 +547,7 @@ export const CreateProjectBody = zod.object({
   dueDate: zod.coerce.date().nullish(),
   notes: zod.string().optional(),
   tags: zod.array(zod.string()).optional(),
+  sharedTeamIds: zod.array(zod.string()).optional(),
 });
 
 export const GetProjectParams = zod.object({
@@ -564,6 +566,7 @@ export const GetProjectResponse = zod
     dueDate: zod.coerce.date().nullish(),
     notes: zod.string(),
     tags: zod.array(zod.string()),
+    sharedTeamIds: zod.array(zod.string()),
     createdAt: zod.coerce.date(),
     updatedAt: zod.coerce.date(),
   })
@@ -588,6 +591,7 @@ export const UpdateProjectBody = zod.object({
   dueDate: zod.coerce.date().nullish(),
   notes: zod.string().optional(),
   tags: zod.array(zod.string()).optional(),
+  sharedTeamIds: zod.array(zod.string()).optional(),
 });
 
 export const UpdateProjectResponse = zod.object({
@@ -601,6 +605,7 @@ export const UpdateProjectResponse = zod.object({
   dueDate: zod.coerce.date().nullish(),
   notes: zod.string(),
   tags: zod.array(zod.string()),
+  sharedTeamIds: zod.array(zod.string()),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
 });

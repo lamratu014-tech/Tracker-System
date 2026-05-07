@@ -1,13 +1,14 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
+  getGetProjectQueryKey,
+  getGetTeamQueryKey,
   getListProjectMilestonesQueryKey,
   useCreateMilestone,
-  useListProjects,
-  useListStreams,
-  useListTeams,
+  useGetProject,
+  useGetTeam,
 } from "@workspace/api-client-react";
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -20,15 +21,18 @@ import {
 
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { useColors } from "@/hooks/useColors";
-import { canCreateForTeam, useMe } from "@/lib/permissions";
+import { useCanManageTeam } from "@/lib/permissions";
 
-const DAY_OFFSETS = [
+const DAY_OFFSETS: { label: string; days: number }[] = [
   { label: "Today", days: 0 },
-  { label: "+1 wk", days: 7 },
-  { label: "+2 wks", days: 14 },
-  { label: "+1 mo", days: 30 },
-  { label: "+3 mo", days: 90 },
+  { label: "Tomorrow", days: 1 },
+  { label: "In 2 days", days: 2 },
+  { label: "In 3 days", days: 3 },
+  { label: "In 1 week", days: 7 },
+  { label: "In 2 weeks", days: 14 },
 ];
+
+const DEFAULT_OFFSET = 1;
 
 function isoFromDays(days: number): string {
   const d = new Date();
@@ -41,38 +45,25 @@ export default function NewMilestoneScreen() {
   const colors = useColors();
   const router = useRouter();
   const qc = useQueryClient();
-  const params = useLocalSearchParams<{ projectId?: string }>();
-  const me = useMe();
+  const { projectId } = useLocalSearchParams<{ projectId?: string }>();
 
-  const projectsQ = useListProjects();
-  const teamsQ = useListTeams();
-  const streamsQ = useListStreams();
-  const projects = projectsQ.data ?? [];
-  const teams = teamsQ.data ?? [];
-  const streams = streamsQ.data ?? [];
+  const projectQ = useGetProject(projectId ?? "", {
+    query: { enabled: !!projectId, queryKey: getGetProjectQueryKey(projectId ?? "") },
+  });
+  const project = projectQ.data ?? null;
 
-  const programmeIdFor = (streamId?: string | null) =>
-    streamId ? streams.find((s) => s.id === streamId)?.programmeId ?? null : null;
+  const teamQ = useGetTeam(project?.teamId ?? "", {
+    query: {
+      enabled: !!project?.teamId,
+      queryKey: getGetTeamQueryKey(project?.teamId ?? ""),
+    },
+  });
+  const team = teamQ.data ?? null;
 
-  const allowedProjects = useMemo(() => {
-    return projects.filter((p) => {
-      const team = teams.find((t) => t.id === p.teamId);
-      return canCreateForTeam(
-        me,
-        team ? { id: team.id, streamId: team.streamId } : null,
-        programmeIdFor(team?.streamId),
-      );
-    });
-  }, [projects, teams, streams, me]);
+  const canEdit = useCanManageTeam(team ? { id: team.id, streamId: team.streamId } : null);
 
-  const initialProjectId =
-    params.projectId && allowedProjects.some((p) => p.id === params.projectId)
-      ? params.projectId
-      : allowedProjects[0]?.id ?? "";
-
-  const [projectId, setProjectId] = useState<string>(initialProjectId);
   const [title, setTitle] = useState("");
-  const [date, setDate] = useState<string>(isoFromDays(7));
+  const [offsetDays, setOffsetDays] = useState<number>(DEFAULT_OFFSET);
 
   const createMilestone = useCreateMilestone({
     mutation: {
@@ -85,39 +76,72 @@ export default function NewMilestoneScreen() {
     },
   });
 
-  if (allowedProjects.length === 0 && !projectsQ.isLoading) {
+  if (!projectId) {
     return (
       <View style={[styles.gate, { backgroundColor: colors.background }]}>
-        <Text style={{ color: colors.mutedForeground }}>You don't have a project to add a milestone to.</Text>
+        <Text style={{ color: colors.foreground, fontFamily: "Inter_600SemiBold", fontSize: 16 }}>
+          Pick a project first
+        </Text>
+        <Text style={{ color: colors.mutedForeground, textAlign: "center", marginTop: 6 }}>
+          Milestones are added from a project's detail screen.
+        </Text>
+        <TouchableOpacity
+          style={[styles.btn, { backgroundColor: colors.primary, marginTop: 16, alignSelf: "stretch" }]}
+          onPress={() => router.back()}
+        >
+          <Text style={[styles.btnText, { color: "#fff" }]}>Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (projectQ.isLoading) {
+    return (
+      <View style={[styles.gate, { backgroundColor: colors.background }]}>
+        <Text style={{ color: colors.mutedForeground }}>Loading…</Text>
+      </View>
+    );
+  }
+
+  if (!project) {
+    return (
+      <View style={[styles.gate, { backgroundColor: colors.background }]}>
+        <Text style={{ color: colors.mutedForeground }}>Project not found.</Text>
+      </View>
+    );
+  }
+
+  if (!canEdit) {
+    return (
+      <View style={[styles.gate, { backgroundColor: colors.background }]}>
+        <Text style={{ color: colors.mutedForeground }}>
+          You don't have permission to add a milestone here.
+        </Text>
       </View>
     );
   }
 
   function save() {
     if (!title.trim()) return Alert.alert("Title required", "Please enter a milestone title.");
-    if (!projectId) return Alert.alert("Project required", "Pick a project.");
-    if (!date) return Alert.alert("Date required", "Pick a date.");
-    const project = projects.find((p) => p.id === projectId);
-    const team = project ? teams.find((t) => t.id === project.teamId) : null;
-    if (
-      !canCreateForTeam(
-        me,
-        team ? { id: team.id, streamId: team.streamId } : null,
-        programmeIdFor(team?.streamId),
-      )
-    ) {
-      return Alert.alert("Not allowed", "You can't add a milestone to this team.");
-    }
-    createMilestone.mutate({ data: { projectId, title: title.trim(), date } });
+    createMilestone.mutate({
+      data: { projectId: projectId!, title: title.trim(), date: isoFromDays(offsetDays) },
+    });
   }
 
-  const dl = new Date(date);
-  const dlLabel = isNaN(dl.getTime())
-    ? "—"
-    : dl.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  const dl = new Date(isoFromDays(offsetDays));
+  const dlLabel = dl.toLocaleDateString([], {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
 
   return (
     <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}>
+      <Text style={[styles.crumb, { color: colors.mutedForeground }]}>
+        {team?.name ? `${team.name} · ` : ""}{project.title}
+      </Text>
+
       <Text style={[styles.label, { color: colors.mutedForeground }]}>Milestone title *</Text>
       <TextInput
         style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border }]}
@@ -128,32 +152,28 @@ export default function NewMilestoneScreen() {
         autoFocus
       />
 
-      <Text style={[styles.label, { color: colors.mutedForeground }]}>Project *</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-        {allowedProjects.map((p) => (
-          <TouchableOpacity
-            key={p.id}
-            style={[styles.chip, { borderColor: colors.border, backgroundColor: projectId === p.id ? colors.primary : colors.muted }]}
-            onPress={() => setProjectId(p.id)}
-          >
-            <Text style={[styles.chipText, { color: projectId === p.id ? "#fff" : colors.foreground }]}>
-              {p.teamName ? `${p.teamName} · ` : ""}{p.title}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      <Text style={[styles.label, { color: colors.mutedForeground }]}>Date * — {dlLabel}</Text>
+      <Text style={[styles.label, { color: colors.mutedForeground }]}>Due — {dlLabel}</Text>
       <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
-        {DAY_OFFSETS.map((o) => (
-          <TouchableOpacity
-            key={o.label}
-            style={[styles.chip, { borderColor: colors.border, backgroundColor: colors.muted }]}
-            onPress={() => setDate(isoFromDays(o.days))}
-          >
-            <Text style={[styles.chipText, { color: colors.foreground }]}>{o.label}</Text>
-          </TouchableOpacity>
-        ))}
+        {DAY_OFFSETS.map((o) => {
+          const active = offsetDays === o.days;
+          return (
+            <TouchableOpacity
+              key={o.label}
+              style={[
+                styles.chip,
+                {
+                  borderColor: active ? colors.primary : colors.border,
+                  backgroundColor: active ? colors.primary : colors.muted,
+                },
+              ]}
+              onPress={() => setOffsetDays(o.days)}
+            >
+              <Text style={[styles.chipText, { color: active ? "#fff" : colors.foreground }]}>
+                {o.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
       {createMilestone.isError ? <ErrorBanner error={createMilestone.error} /> : null}
@@ -163,9 +183,9 @@ export default function NewMilestoneScreen() {
           <Text style={[styles.btnText, { color: colors.foreground }]}>Cancel</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.btn, { backgroundColor: title.trim() && projectId ? colors.primary : colors.border }]}
+          style={[styles.btn, { backgroundColor: title.trim() ? colors.primary : colors.border }]}
           onPress={save}
-          disabled={!title.trim() || !projectId || createMilestone.isPending}
+          disabled={!title.trim() || createMilestone.isPending}
         >
           <Text style={[styles.btnText, { color: "#fff" }]}>Create</Text>
         </TouchableOpacity>
@@ -176,7 +196,8 @@ export default function NewMilestoneScreen() {
 
 const styles = StyleSheet.create({
   container: { padding: 20, gap: 10 },
-  gate: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20 },
+  gate: { flex: 1, alignItems: "center", justifyContent: "center", padding: 20, gap: 6 },
+  crumb: { fontSize: 12, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 },
   label: { fontSize: 12, fontFamily: "Inter_500Medium", marginTop: 4 },
   input: { padding: 12, borderRadius: 10, borderWidth: 1, fontSize: 15, fontFamily: "Inter_400Regular" },
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, borderWidth: 1 },

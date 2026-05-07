@@ -13,6 +13,7 @@ import {
   useGetStream,
   useGetTeam,
   useListProjectMilestones,
+  useListTeams,
   useSetMilestoneStatus,
   useUpdateProject,
 } from "@workspace/api-client-react";
@@ -75,6 +76,22 @@ export default function ProjectDetailScreen() {
   });
   const stream = streamQ.data ?? null;
 
+  const teamsQ = useListTeams();
+  const allTeams = teamsQ.data ?? [];
+
+  const peerTeams = useMemo(
+    () =>
+      team && team.streamId
+        ? allTeams.filter((t) => t.id !== team.id && t.streamId === team.streamId)
+        : [],
+    [allTeams, team],
+  );
+  const teamNameById = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const t of allTeams) m.set(t.id, t.name);
+    return m;
+  }, [allTeams]);
+
   const milestonesQ = useListProjectMilestones(id ?? "", {
     query: { enabled: !!id, queryKey: getListProjectMilestonesQueryKey(id ?? "") },
   });
@@ -85,12 +102,14 @@ export default function ProjectDetailScreen() {
   const [editing, setEditing] = useState(false);
   const [draftTitle, setDraftTitle] = useState("");
   const [draftDesc, setDraftDesc] = useState("");
+  const [draftSharedTeamIds, setDraftSharedTeamIds] = useState<string[]>([]);
   const [filter, setFilter] = useState<FilterKey>("all");
 
   useEffect(() => {
     if (project && !editing) {
       setDraftTitle(project.title);
       setDraftDesc(project.description ?? "");
+      setDraftSharedTeamIds(project.sharedTeamIds ?? []);
     }
   }, [project, editing]);
 
@@ -143,10 +162,23 @@ export default function ProjectDetailScreen() {
     );
   }
 
+  function toggleDraftShared(tid: string) {
+    setDraftSharedTeamIds((prev) =>
+      prev.includes(tid) ? prev.filter((x) => x !== tid) : [...prev, tid],
+    );
+  }
+
   function save() {
     if (!draftTitle.trim()) return;
     updateProject.mutate(
-      { id: project!.id, data: { title: draftTitle.trim(), description: draftDesc.trim() } },
+      {
+        id: project!.id,
+        data: {
+          title: draftTitle.trim(),
+          description: draftDesc.trim(),
+          sharedTeamIds: draftSharedTeamIds,
+        },
+      },
       { onSuccess: () => setEditing(false) },
     );
   }
@@ -168,6 +200,8 @@ export default function ProjectDetailScreen() {
   const filtered = applyFilter(milestones, filter)
     .slice()
     .sort((a, b) => +new Date(a.date) - +new Date(b.date));
+
+  const sharedTeamIds = project.sharedTeamIds ?? [];
 
   return (
     <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}>
@@ -203,25 +237,100 @@ export default function ProjectDetailScreen() {
         </>
       )}
 
+      {/* Shared teams display / editor */}
+      {editing ? (
+        peerTeams.length > 0 ? (
+          <View style={{ gap: 6 }}>
+            <Text style={[styles.sharedLabel, { color: colors.mutedForeground }]}>
+              Shared with
+            </Text>
+            <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+              {peerTeams.map((t) => {
+                const active = draftSharedTeamIds.includes(t.id);
+                return (
+                  <TouchableOpacity
+                    key={t.id}
+                    onPress={() => toggleDraftShared(t.id)}
+                    style={[
+                      styles.sharedChip,
+                      {
+                        borderColor: active ? colors.primary : colors.border,
+                        backgroundColor: active ? colors.primary + "22" : colors.muted,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.sharedChipText,
+                        { color: active ? colors.primary : colors.foreground },
+                      ]}
+                    >
+                      {active ? "✓ " : ""}{t.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        ) : null
+      ) : sharedTeamIds.length > 0 ? (
+        <View style={{ gap: 4 }}>
+          <Text style={[styles.sharedLabel, { color: colors.mutedForeground }]}>
+            Shared with
+          </Text>
+          <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap" }}>
+            {sharedTeamIds.map((tid) => (
+              <View
+                key={tid}
+                style={[
+                  styles.sharedChip,
+                  { backgroundColor: colors.primary + "15", borderColor: colors.primary + "33" },
+                ]}
+              >
+                <Feather name="share-2" size={11} color={colors.primary} />
+                <Text style={[styles.sharedChipText, { color: colors.primary }]}>
+                  {teamNameById.get(tid) ?? tid}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
+
       {canEdit ? (
         <View style={styles.actions}>
           <TouchableOpacity
             style={[styles.actionBtn, { backgroundColor: colors.muted }]}
             onPress={() => {
               if (editing) save();
-              else { setDraftTitle(project.title); setDraftDesc(project.description ?? ""); setEditing(true); }
+              else {
+                setDraftTitle(project.title);
+                setDraftDesc(project.description ?? "");
+                setDraftSharedTeamIds(project.sharedTeamIds ?? []);
+                setEditing(true);
+              }
             }}
           >
             <Feather name={editing ? "check" : "edit-2"} size={14} color={colors.primary} />
             <Text style={[styles.actionText, { color: colors.primary }]}>{editing ? "Save" : "Edit"}</Text>
           </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.actionBtn, { backgroundColor: "#FEE2E2" }]}
-            onPress={confirmDelete}
-          >
-            <Feather name="trash-2" size={14} color="#DC2626" />
-            <Text style={[styles.actionText, { color: "#DC2626" }]}>Delete</Text>
-          </TouchableOpacity>
+          {editing ? (
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: colors.muted }]}
+              onPress={() => setEditing(false)}
+            >
+              <Feather name="x" size={14} color={colors.mutedForeground} />
+              <Text style={[styles.actionText, { color: colors.mutedForeground }]}>Cancel</Text>
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity
+              style={[styles.actionBtn, { backgroundColor: "#FEE2E2" }]}
+              onPress={confirmDelete}
+            >
+              <Feather name="trash-2" size={14} color="#DC2626" />
+              <Text style={[styles.actionText, { color: "#DC2626" }]}>Delete</Text>
+            </TouchableOpacity>
+          )}
         </View>
       ) : null}
 
@@ -307,4 +416,7 @@ const styles = StyleSheet.create({
   tab: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1 },
   tabText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
   empty: { padding: 16, borderRadius: 10, alignItems: "center" },
+  sharedLabel: { fontSize: 11, fontFamily: "Inter_500Medium", textTransform: "uppercase", letterSpacing: 0.5 },
+  sharedChip: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 14, borderWidth: 1 },
+  sharedChipText: { fontSize: 12, fontFamily: "Inter_500Medium" },
 });

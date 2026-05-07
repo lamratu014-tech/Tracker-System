@@ -106,6 +106,13 @@ export default function TeamDetailScreen() {
     () => (projectsQ.data ?? []).filter((p) => p.teamId === id),
     [projectsQ.data, id],
   );
+  const sharedProjects = useMemo(
+    () =>
+      (projectsQ.data ?? []).filter(
+        (p) => p.teamId !== id && (p.sharedTeamIds ?? []).includes(id ?? ""),
+      ),
+    [projectsQ.data, id],
+  );
 
   const canEdit = useCanManageTeam(
     team ? { id: team.id, streamId: team.streamId } : null,
@@ -440,6 +447,33 @@ export default function TeamDetailScreen() {
           </TouchableOpacity>
         ))
       )}
+
+      {sharedProjects.length > 0 ? (
+        <>
+          <View style={styles.sectionRow}>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Shared with us</Text>
+          </View>
+          {sharedProjects.map((p) => (
+            <TouchableOpacity
+              key={p.id}
+              style={[styles.row, { backgroundColor: colors.card, borderColor: colors.border }]}
+              onPress={() => router.push({ pathname: "/project/[id]", params: { id: p.id } })}
+              activeOpacity={0.8}
+            >
+              <View style={[styles.iconBox, { backgroundColor: colors.primary + "15" }]}>
+                <Feather name="share-2" size={16} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.rowTitle, { color: colors.foreground }]}>{p.title}</Text>
+                <Text style={[styles.rowMeta, { color: colors.mutedForeground }]} numberOfLines={1}>
+                  Owned by {p.teamName ?? "another team"}
+                </Text>
+              </View>
+              <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          ))}
+        </>
+      ) : null}
 
       <View style={styles.sectionRow}>
         <Text style={[styles.sectionTitle, { color: colors.foreground }]}>

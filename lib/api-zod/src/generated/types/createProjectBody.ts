@@ -19,4 +19,5 @@ export interface CreateProjectBody {
   dueDate?: Date | null;
   notes?: string;
   tags?: string[];
+  sharedTeamIds?: string[];
 }

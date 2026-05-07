@@ -60,6 +60,7 @@ function RootLayoutNav() {
         <Stack.Screen name="new-user" options={{ title: "Invite User", presentation: "modal", headerBackTitle: "Cancel" }} />
         <Stack.Screen name="new-project" options={{ title: "New Project", presentation: "modal", headerBackTitle: "Cancel" }} />
         <Stack.Screen name="new-milestone" options={{ title: "New Milestone", presentation: "modal", headerBackTitle: "Cancel" }} />
+        <Stack.Screen name="milestones" options={{ title: "Milestones", headerBackTitle: "Back" }} />
         <Stack.Screen name="new-event" options={{ title: "New Event", presentation: "modal", headerBackTitle: "Cancel" }} />
       </Stack>
     </AuthGate>

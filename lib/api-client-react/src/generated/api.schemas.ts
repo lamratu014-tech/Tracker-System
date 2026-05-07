@@ -253,6 +253,7 @@ export interface Project {
   dueDate?: string | null;
   notes: string;
   tags: string[];
+  sharedTeamIds: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -273,6 +274,7 @@ export interface CreateProjectBody {
   dueDate?: string | null;
   notes?: string;
   tags?: string[];
+  sharedTeamIds?: string[];
 }
 
 export interface UpdateProjectBody {
@@ -285,6 +287,7 @@ export interface UpdateProjectBody {
   dueDate?: string | null;
   notes?: string;
   tags?: string[];
+  sharedTeamIds?: string[];
 }
 
 export interface Milestone {

@@ -47,27 +47,20 @@ export default function DashboardScreen() {
   const eventsQ = useListEvents();
   const projects = projectsQ.data ?? [];
 
-  const visibleProjects = useMemo(() => {
-    if (!me) return [];
-    if (me.role === "admin") return projects;
-    if (me.role === "leader") return projects.filter((p) => p.teamId === me.teamId);
-    // stream_overseer needs team→stream mapping; server already filters projects by RBAC if applicable.
-    // Falling back to showing all projects; the server is the source of truth.
-    return projects;
-  }, [projects, me]);
-
+  // The server already scopes /projects per role (owner team OR shared teams),
+  // so trust that list directly — re-filtering client-side hides shared projects.
   const milestoneQueries = useQueries({
-    queries: visibleProjects.map((p) => getListProjectMilestonesQueryOptions(p.id)),
+    queries: projects.map((p) => getListProjectMilestonesQueryOptions(p.id)),
   });
 
   const rows: Row[] = useMemo(() => {
     const out: Row[] = [];
-    visibleProjects.forEach((p, i) => {
+    projects.forEach((p, i) => {
       const ms = milestoneQueries[i]?.data ?? [];
       for (const m of ms) out.push({ ms: m, project: p });
     });
     return out;
-  }, [visibleProjects, milestoneQueries]);
+  }, [projects, milestoneQueries]);
 
   const events = eventsQ.data ?? [];
 
@@ -108,10 +101,34 @@ export default function DashboardScreen() {
         ) : null}
 
         <View style={styles.tiles}>
-          <Tile label="Total" value={stats.total} color={colors.primary} icon="flag" />
-          <Tile label="Today" value={stats.today} color="#F59E0B" icon="clock" />
-          <Tile label="Overdue" value={stats.overdue} color="#DC2626" icon="alert-triangle" />
-          <Tile label="Done" value={stats.completed} color="#059669" icon="check-circle" />
+          <Tile
+            label="Total"
+            value={stats.total}
+            color={colors.primary}
+            icon="flag"
+            onPress={() => router.push({ pathname: "/milestones", params: { filter: "all" } })}
+          />
+          <Tile
+            label="Today"
+            value={stats.today}
+            color="#F59E0B"
+            icon="clock"
+            onPress={() => router.push({ pathname: "/milestones", params: { filter: "today" } })}
+          />
+          <Tile
+            label="Overdue"
+            value={stats.overdue}
+            color="#DC2626"
+            icon="alert-triangle"
+            onPress={() => router.push({ pathname: "/milestones", params: { filter: "overdue" } })}
+          />
+          <Tile
+            label="Done"
+            value={stats.completed}
+            color="#059669"
+            icon="check-circle"
+            onPress={() => router.push({ pathname: "/milestones", params: { filter: "completed" } })}
+          />
         </View>
 
         {projectsQ.isLoading || milestonesLoading ? <LoadingRow /> : null}
@@ -185,16 +202,23 @@ export default function DashboardScreen() {
   );
 }
 
-function Tile({ label, value, color, icon }: { label: string; value: number; color: string; icon: string }) {
+function Tile({
+  label, value, color, icon, onPress,
+}: { label: string; value: number; color: string; icon: string; onPress?: () => void }) {
   const colors = useColors();
   return (
-    <View style={[styles.tile, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <TouchableOpacity
+      style={[styles.tile, { backgroundColor: colors.card, borderColor: colors.border }]}
+      activeOpacity={0.8}
+      onPress={onPress}
+      disabled={!onPress}
+    >
       <View style={[styles.tileIcon, { backgroundColor: color + "22" }]}>
         <Feather name={icon as never} size={14} color={color} />
       </View>
       <Text style={[styles.tileVal, { color: colors.foreground }]}>{value}</Text>
       <Text style={[styles.tileLabel, { color: colors.mutedForeground }]}>{label}</Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 

@@ -12,7 +12,7 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth, requireManager } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
-import { userCanAccessTeam } from "../lib/permissions";
+import { userCanAccessTeam, userCanReadProject, getProjectSharedTeamIds } from "../lib/permissions";
 
 const router = Router();
 
@@ -23,7 +23,8 @@ router.get("/projects/:projectId/milestones", requireAuth, async (req, res): Pro
 
   const [project] = await db.select().from(projectsTable).where(eq(projectsTable.id, params.data.projectId)).limit(1);
   if (!project) { res.status(404).json({ error: "Project not found" }); return; }
-  if (!(await userCanAccessTeam(user, project.teamId))) {
+  const sharedTeamIds = await getProjectSharedTeamIds(project.id);
+  if (!(await userCanReadProject(user, project.teamId, sharedTeamIds))) {
     res.status(403).json({ error: "Access denied" });
     return;
   }

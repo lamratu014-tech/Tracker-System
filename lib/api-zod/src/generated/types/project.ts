@@ -18,6 +18,7 @@ export interface Project {
   dueDate?: Date | null;
   notes: string;
   tags: string[];
+  sharedTeamIds: string[];
   createdAt: Date;
   updatedAt: Date;
 }

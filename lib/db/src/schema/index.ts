@@ -7,6 +7,7 @@ export * from "./streams";
 export * from "./teams";
 export * from "./personnel";
 export * from "./projects";
+export * from "./projectTeams";
 export * from "./tasks";
 export * from "./milestones";
 export * from "./events";
