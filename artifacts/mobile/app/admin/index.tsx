@@ -27,6 +27,7 @@ import {
 import React, { useMemo, useState } from "react";
 import {
   Alert,
+  Keyboard,
   Platform,
   ScrollView,
   StyleSheet,
@@ -90,10 +91,22 @@ export default function AdminPanelScreen() {
   const invalidateProgrammes = () =>
     qc.invalidateQueries({ queryKey: getListProgrammesQueryKey() });
   const createProgramme = useCreateProgramme({
-    mutation: { onSuccess: invalidateProgrammes },
+    mutation: {
+      onSuccess: invalidateProgrammes,
+      onError: (err: unknown) => {
+        const e = err as { message?: string };
+        Alert.alert("Couldn't create programme", e?.message ?? "Unknown error");
+      },
+    },
   });
   const updateProgramme = useUpdateProgramme({
-    mutation: { onSuccess: invalidateProgrammes },
+    mutation: {
+      onSuccess: invalidateProgrammes,
+      onError: (err: unknown) => {
+        const e = err as { message?: string };
+        Alert.alert("Couldn't rename programme", e?.message ?? "Unknown error");
+      },
+    },
   });
   const deleteProgramme = useDeleteProgramme({
     mutation: {
@@ -140,8 +153,13 @@ export default function AdminPanelScreen() {
   }
 
   function addProgramme() {
+    if (createProgramme.isPending) return;
     const trimmed = newProgrammeName.trim();
-    if (!trimmed) return;
+    if (!trimmed) {
+      Alert.alert("Name required", "Please enter a programme name.");
+      return;
+    }
+    Keyboard.dismiss();
     createProgramme.mutate(
       { data: { name: trimmed } },
       { onSuccess: () => setNewProgrammeName("") },
@@ -383,14 +401,22 @@ export default function AdminPanelScreen() {
                 returnKeyType="done"
               />
               <TouchableOpacity
-                style={[styles.smallBtn, { backgroundColor: newProgrammeName.trim() ? colors.primary : colors.border }]}
-                onPress={addProgramme}
-                disabled={!newProgrammeName.trim() || createProgramme.isPending}
+                style={[styles.smallBtn, { backgroundColor: newProgrammeName.trim() && !createProgramme.isPending ? colors.primary : colors.border }]}
+                onPressIn={addProgramme}
+                disabled={createProgramme.isPending}
               >
                 <Feather name="plus" size={12} color="#fff" />
-                <Text style={[styles.smallBtnText, { color: "#fff" }]}>Add</Text>
+                <Text style={[styles.smallBtnText, { color: "#fff" }]}>
+                  {createProgramme.isPending ? "Adding…" : "Add"}
+                </Text>
               </TouchableOpacity>
             </View>
+            {createProgramme.isError ? (
+              <ErrorBanner error={createProgramme.error} />
+            ) : null}
+            {updateProgramme.isError ? (
+              <ErrorBanner error={updateProgramme.error} />
+            ) : null}
             {programmesQ.isLoading ? <LoadingRow /> : null}
             {programmes.length === 0 && !programmesQ.isLoading ? (
               <View style={[styles.empty, { backgroundColor: colors.muted }]}>
