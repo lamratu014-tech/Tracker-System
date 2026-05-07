@@ -139,8 +139,10 @@ export async function userCanAssignAsLeader(
     if (teamProgrammeId !== actor.programmeId) {
       return { ok: false, status: 403, error: "Team is outside your programme" };
     }
-    if (target.role === "admin" || target.role === "programme_overseer") {
-      return { ok: false, status: 403, error: "You cannot reassign that account" };
+    // PO may install any non-admin user from inside their programme as a
+    // leader (including another programme_overseer of the same programme).
+    if (target.role === "admin") {
+      return { ok: false, status: 403, error: "You cannot reassign an admin account" };
     }
     if (target.programmeId && target.programmeId !== actor.programmeId) {
       return { ok: false, status: 403, error: "Target user is in a different programme" };

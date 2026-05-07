@@ -89,13 +89,15 @@ export default function NewUserScreen() {
         ? (["stream_overseer", "leader"] as Role[])
         : [];
 
-  const visibleStreams = useMemo(
-    () =>
-      isOverseer && me?.streamId
-        ? serverStreams.filter((s) => s.id === me.streamId)
-        : serverStreams,
-    [isOverseer, me?.streamId, serverStreams],
-  );
+  const visibleStreams = useMemo(() => {
+    if (isOverseer && me?.streamId) {
+      return serverStreams.filter((s) => s.id === me.streamId);
+    }
+    if (isProgrammeOverseer && me?.programmeId) {
+      return serverStreams.filter((s) => s.programmeId === me.programmeId);
+    }
+    return serverStreams;
+  }, [isOverseer, isProgrammeOverseer, me?.streamId, me?.programmeId, serverStreams]);
 
   // Teams for the leader-invite path are loaded per-stream from the API
   // once a stream is picked; this guarantees teamId originates from

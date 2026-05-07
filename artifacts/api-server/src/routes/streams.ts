@@ -67,15 +67,23 @@ router.get("/streams/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(stream);
 });
 
-// POST /streams — admin or programme_overseer of the target programme
+// POST /streams — admin or programme_overseer of the target programme.
+// Stream-level overseers and leaders are explicitly *not* allowed to create
+// new streams, even though `requireManager` would otherwise admit them.
 router.post("/streams", requireManager, async (req, res): Promise<void> => {
+  const actor = req.authUser!;
+  if (actor.role !== "admin" && actor.role !== "programme_overseer") {
+    res.status(403).json({ error: "Only admins or programme overseers can create streams" });
+    return;
+  }
+
   const parsed = CreateStreamBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   const [programme] = await db.select().from(programmesTable).where(eq(programmesTable.id, parsed.data.programmeId)).limit(1);
   if (!programme) { res.status(404).json({ error: "Programme not found" }); return; }
 
-  if (!(await userCanManageProgramme(req.authUser!, parsed.data.programmeId))) {
+  if (!(await userCanManageProgramme(actor, parsed.data.programmeId))) {
     res.status(403).json({ error: "You can only create streams in your own programme" });
     return;
   }
