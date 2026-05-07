@@ -91,10 +91,12 @@ export default function NewEventScreen() {
   const [endDate, setEndDate] = useState<string>(initialDate);
   const [endTime, setEndTime] = useState<string>("11:00");
 
-  // Initial scope: leader → team; everyone else → org (admin default).
-  // Overseer's auto-default to "programme" happens once data resolves.
+  // Initial scope: leader → team; admin → org; everyone else picks "programme"
+  // once data resolves (the role-based default effect below sets the right
+  // scope/programme). Default to "programme" for non-admins so we don't briefly
+  // surface a disallowed "org" scope.
   const [scope, setScope] = useState<Scope>(
-    me?.role === "leader" ? "team" : "org",
+    me?.role === "leader" ? "team" : me?.role === "admin" ? "org" : "programme",
   );
   const [programmeId, setProgrammeId] = useState<string | undefined>(undefined);
   const [teamId, setTeamId] = useState<string | undefined>(
@@ -105,14 +107,24 @@ export default function NewEventScreen() {
   const allowedTeams = useMemo(() => {
     if (!me) return [];
     if (me.role === "admin") return teams;
+    if (me.role === "programme_overseer" && me.programmeId) {
+      // Teams whose stream sits inside the PO's programme.
+      const programmeStreamIds = new Set(
+        streams.filter((s) => s.programmeId === me.programmeId).map((s) => s.id),
+      );
+      return teams.filter((t) => t.streamId && programmeStreamIds.has(t.streamId));
+    }
     if (me.role === "stream_overseer") return teams.filter((t) => t.streamId === me.streamId);
     if (me.role === "leader" && me.teamId) return teams.filter((t) => t.id === me.teamId);
     return [];
-  }, [teams, me]);
+  }, [teams, streams, me]);
 
   const allowedProgrammes = useMemo(() => {
     if (!me) return [];
     if (me.role === "admin") return programmes;
+    if (me.role === "programme_overseer" && me.programmeId) {
+      return programmes.filter((p) => p.id === me.programmeId);
+    }
     if (me.role === "stream_overseer" && me.streamId) {
       const myStream = streams.find((s) => s.id === me.streamId);
       if (!myStream) return [];
@@ -124,8 +136,14 @@ export default function NewEventScreen() {
   const allowedScopes: Scope[] = useMemo(() => {
     if (!me) return [];
     const scopes: Scope[] = [];
+    // Org-wide events are admin-only by server policy.
     if (me.role === "admin") scopes.push("org");
-    if ((me.role === "admin" || me.role === "stream_overseer") && allowedProgrammes.length > 0) {
+    if (
+      (me.role === "admin" ||
+        me.role === "programme_overseer" ||
+        me.role === "stream_overseer") &&
+      allowedProgrammes.length > 0
+    ) {
       scopes.push("programme");
     }
     if (allowedTeams.length > 0) scopes.push("team");
@@ -143,6 +161,14 @@ export default function NewEventScreen() {
       didDefault.current = true;
       setScope("team");
       setTeamId(me.teamId);
+      return;
+    }
+    if (me.role === "programme_overseer" && me.programmeId) {
+      const prog = programmes.find((p) => p.id === me.programmeId);
+      if (!prog) return;
+      didDefault.current = true;
+      setScope("programme");
+      setProgrammeId(prog.id);
       return;
     }
     if (me.role === "stream_overseer" && me.streamId) {
