@@ -1,6 +1,7 @@
 import { Feather } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import {
+  useListProgrammes,
   useListProjects,
   useListStreams,
   useListTeams,
@@ -32,10 +33,12 @@ export default function ProgrammeScreen() {
   const insets = useSafeAreaInsets();
   const me = useMe();
 
+  const programmesQ = useListProgrammes();
   const streamsQ = useListStreams();
   const teamsQ = useListTeams();
   const projectsQ = useListProjects();
   const usersQ = useListUsers();
+  const programmes = programmesQ.data ?? [];
   const streams = streamsQ.data ?? [];
   const teams = teamsQ.data ?? [];
   const projects = projectsQ.data ?? [];
@@ -89,7 +92,24 @@ export default function ProgrammeScreen() {
   }
 
   const isAdmin = canManageEverything(me);
-  const loading = streamsQ.isLoading || teamsQ.isLoading;
+  const loading = streamsQ.isLoading || teamsQ.isLoading || programmesQ.isLoading;
+
+  // Group visible streams by programme. Programmes with no visible
+  // streams are skipped (overseers/leaders only see their own stream's
+  // programme). When there is exactly one programme, hide the header
+  // so the tab looks identical to before.
+  const grouped = useMemo(() => {
+    const byId = new Map<string, typeof visibleStreams>();
+    for (const s of visibleStreams) {
+      const arr = byId.get(s.programmeId) ?? [];
+      arr.push(s);
+      byId.set(s.programmeId, arr);
+    }
+    return programmes
+      .filter((p) => (byId.get(p.id) ?? []).length > 0)
+      .map((p) => ({ programme: p, streams: byId.get(p.id) ?? [] }));
+  }, [programmes, visibleStreams]);
+  const showProgrammeHeaders = programmes.length > 1;
 
   return (
     <ScrollView
@@ -128,112 +148,126 @@ export default function ProgrammeScreen() {
           </Text>
         </View>
       ) : (
-        visibleStreams.map((stream) => {
-          const expanded = expandedStreamId === stream.id;
-          const allTeamsHere = teamsByStream.get(stream.id) ?? [];
-          const visibleTeamsHere = allTeamsHere.filter(
-            (t) => teamVisibility(me, t) !== "hidden",
-          );
-          const canAddTeamHere = canManageStream(me, stream.id);
-          return (
-            <View
-              key={stream.id}
-              style={[styles.streamCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-            >
-              <TouchableOpacity
-                style={styles.streamHeader}
-                onPress={() => toggle(stream.id)}
-                activeOpacity={0.85}
-              >
-                <Feather
-                  name={expanded ? "chevron-down" : "chevron-right"}
-                  size={18}
-                  color={colors.mutedForeground}
-                />
-                <View style={[styles.streamDot, { backgroundColor: colors.primary }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.streamName, { color: colors.foreground }]}>{stream.name}</Text>
-                  <Text style={[styles.streamMeta, { color: colors.mutedForeground }]}>
-                    {visibleTeamsHere.length} team{visibleTeamsHere.length !== 1 ? "s" : ""}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  hitSlop={8}
-                  onPress={() => router.push({ pathname: "/stream/[id]", params: { id: stream.id } })}
-                  style={styles.openBtn}
+        grouped.map(({ programme, streams: progStreams }) => (
+          <View key={programme.id} style={{ marginBottom: showProgrammeHeaders ? 8 : 0 }}>
+            {showProgrammeHeaders ? (
+              <View style={styles.programmeHeader}>
+                <Text style={[styles.programmeName, { color: colors.foreground }]}>
+                  {programme.name}
+                </Text>
+                <Text style={[styles.programmeMeta, { color: colors.mutedForeground }]}>
+                  {progStreams.length} stream{progStreams.length !== 1 ? "s" : ""}
+                </Text>
+              </View>
+            ) : null}
+            {progStreams.map((stream) => {
+              const expanded = expandedStreamId === stream.id;
+              const allTeamsHere = teamsByStream.get(stream.id) ?? [];
+              const visibleTeamsHere = allTeamsHere.filter(
+                (t) => teamVisibility(me, t) !== "hidden",
+              );
+              const canAddTeamHere = canManageStream(me, stream.id);
+              return (
+                <View
+                  key={stream.id}
+                  style={[styles.streamCard, { backgroundColor: colors.card, borderColor: colors.border }]}
                 >
-                  <Feather name="external-link" size={15} color={colors.primary} />
-                </TouchableOpacity>
-              </TouchableOpacity>
-
-              {expanded ? (
-                <View style={styles.streamBody}>
-                  {visibleTeamsHere.length === 0 ? (
-                    <Text style={[styles.muted, { color: colors.mutedForeground }]}>
-                      No teams in this stream yet.
-                    </Text>
-                  ) : (
-                    visibleTeamsHere.map((team) => {
-                      const vis = teamVisibility(me, team);
-                      const leader = team.leaderId
-                        ? users.find((u) => u.id === team.leaderId)
-                        : null;
-                      const leaderLabel = leader?.name ?? "Unassigned";
-                      if (vis === "locked") {
-                        return (
-                          <View
-                            key={team.id}
-                            style={[styles.teamRow, { borderColor: colors.border, opacity: 0.85 }]}
-                          >
-                            <View style={[styles.teamIcon, { backgroundColor: colors.muted }]}>
-                              <Feather name="users" size={14} color={colors.mutedForeground} />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                              <Text style={[styles.teamName, { color: colors.foreground }]}>{team.name}</Text>
-                              <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
-                                Leader: {leaderLabel}
-                              </Text>
-                            </View>
-                            <Feather name="lock" size={14} color={colors.mutedForeground} />
-                          </View>
-                        );
-                      }
-                      const pCount = projectsByTeam.get(team.id) ?? 0;
-                      return (
-                        <TouchableOpacity
-                          key={team.id}
-                          style={[styles.teamRow, { borderColor: colors.border }]}
-                          onPress={() => router.push({ pathname: "/team/[id]", params: { id: team.id } })}
-                          activeOpacity={0.7}
-                        >
-                          <View style={[styles.teamIcon, { backgroundColor: colors.primary + "15" }]}>
-                            <Feather name="users" size={14} color={colors.primary} />
-                          </View>
-                          <View style={{ flex: 1 }}>
-                            <Text style={[styles.teamName, { color: colors.foreground }]}>{team.name}</Text>
-                            <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
-                              {pCount} project{pCount !== 1 ? "s" : ""}
-                            </Text>
-                          </View>
-                          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
-                        </TouchableOpacity>
-                      );
-                    })
-                  )}
-                  {canAddTeamHere ? (
+                  <TouchableOpacity
+                    style={styles.streamHeader}
+                    onPress={() => toggle(stream.id)}
+                    activeOpacity={0.85}
+                  >
+                    <Feather
+                      name={expanded ? "chevron-down" : "chevron-right"}
+                      size={18}
+                      color={colors.mutedForeground}
+                    />
+                    <View style={[styles.streamDot, { backgroundColor: colors.primary }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.streamName, { color: colors.foreground }]}>{stream.name}</Text>
+                      <Text style={[styles.streamMeta, { color: colors.mutedForeground }]}>
+                        {visibleTeamsHere.length} team{visibleTeamsHere.length !== 1 ? "s" : ""}
+                      </Text>
+                    </View>
                     <TouchableOpacity
-                      style={[styles.addInline, { borderColor: colors.border }]}
-                      onPress={() => router.push({ pathname: "/new-team", params: { streamId: stream.id } })}
+                      hitSlop={8}
+                      onPress={() => router.push({ pathname: "/stream/[id]", params: { id: stream.id } })}
+                      style={styles.openBtn}
                     >
-                      <Feather name="plus" size={14} color={colors.primary} />
-                      <Text style={[styles.addInlineText, { color: colors.primary }]}>Add team</Text>
+                      <Feather name="external-link" size={15} color={colors.primary} />
                     </TouchableOpacity>
+                  </TouchableOpacity>
+
+                  {expanded ? (
+                    <View style={styles.streamBody}>
+                      {visibleTeamsHere.length === 0 ? (
+                        <Text style={[styles.muted, { color: colors.mutedForeground }]}>
+                          No teams in this stream yet.
+                        </Text>
+                      ) : (
+                        visibleTeamsHere.map((team) => {
+                          const vis = teamVisibility(me, team);
+                          const leader = team.leaderId
+                            ? users.find((u) => u.id === team.leaderId)
+                            : null;
+                          const leaderLabel = leader?.name ?? "Unassigned";
+                          if (vis === "locked") {
+                            return (
+                              <View
+                                key={team.id}
+                                style={[styles.teamRow, { borderColor: colors.border, opacity: 0.85 }]}
+                              >
+                                <View style={[styles.teamIcon, { backgroundColor: colors.muted }]}>
+                                  <Feather name="users" size={14} color={colors.mutedForeground} />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={[styles.teamName, { color: colors.foreground }]}>{team.name}</Text>
+                                  <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
+                                    Leader: {leaderLabel}
+                                  </Text>
+                                </View>
+                                <Feather name="lock" size={14} color={colors.mutedForeground} />
+                              </View>
+                            );
+                          }
+                          const pCount = projectsByTeam.get(team.id) ?? 0;
+                          return (
+                            <TouchableOpacity
+                              key={team.id}
+                              style={[styles.teamRow, { borderColor: colors.border }]}
+                              onPress={() => router.push({ pathname: "/team/[id]", params: { id: team.id } })}
+                              activeOpacity={0.7}
+                            >
+                              <View style={[styles.teamIcon, { backgroundColor: colors.primary + "15" }]}>
+                                <Feather name="users" size={14} color={colors.primary} />
+                              </View>
+                              <View style={{ flex: 1 }}>
+                                <Text style={[styles.teamName, { color: colors.foreground }]}>{team.name}</Text>
+                                <Text style={[styles.teamMeta, { color: colors.mutedForeground }]}>
+                                  {pCount} project{pCount !== 1 ? "s" : ""}
+                                </Text>
+                              </View>
+                              <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+                            </TouchableOpacity>
+                          );
+                        })
+                      )}
+                      {canAddTeamHere ? (
+                        <TouchableOpacity
+                          style={[styles.addInline, { borderColor: colors.border }]}
+                          onPress={() => router.push({ pathname: "/new-team", params: { streamId: stream.id } })}
+                        >
+                          <Feather name="plus" size={14} color={colors.primary} />
+                          <Text style={[styles.addInlineText, { color: colors.primary }]}>Add team</Text>
+                        </TouchableOpacity>
+                      ) : null}
+                    </View>
                   ) : null}
                 </View>
-              ) : null}
-            </View>
-          );
-        })
+              );
+            })}
+          </View>
+        ))
       )}
     </ScrollView>
   );
@@ -249,6 +283,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8,
   },
   headerBtnText: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
+  programmeHeader: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", paddingHorizontal: 4, paddingTop: 6, paddingBottom: 6 },
+  programmeName: { fontSize: 13, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.6 },
+  programmeMeta: { fontSize: 11, fontFamily: "Inter_400Regular" },
   empty: { padding: 32, alignItems: "center", borderRadius: 12, gap: 8 },
   emptyText: { fontSize: 13, fontFamily: "Inter_400Regular", textAlign: "center" },
   streamCard: { borderWidth: 1, borderRadius: 12, marginBottom: 8, overflow: "hidden" },

@@ -140,6 +140,16 @@ export interface Programme {
   updatedAt: string;
 }
 
+export interface CreateProgrammeBody {
+  /** @minLength 1 */
+  name: string;
+}
+
+export interface UpdateProgrammeBody {
+  /** @minLength 1 */
+  name: string;
+}
+
 export interface Stream {
   id: string;
   name: string;

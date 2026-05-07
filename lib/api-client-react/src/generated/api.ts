@@ -28,6 +28,7 @@ import type {
   CreateInviteResponse,
   CreateMemberBody,
   CreateMilestoneBody,
+  CreateProgrammeBody,
   CreateProjectBody,
   CreateStreamBody,
   CreateTeamBody,
@@ -59,6 +60,7 @@ import type {
   UpdateEventBody,
   UpdateMemberBody,
   UpdateMilestoneBody,
+  UpdateProgrammeBody,
   UpdateProjectBody,
   UpdateStreamBody,
   UpdateTeamBody,
@@ -1525,29 +1527,29 @@ export const useDeleteUser = <
   return useMutation(getDeleteUserMutationOptions(options));
 };
 
-export const getGetProgrammeUrl = () => {
+export const getListProgrammesUrl = () => {
   return `/api/programmes`;
 };
 
-export const getProgramme = async (
+export const listProgrammes = async (
   options?: RequestInit,
-): Promise<Programme> => {
-  return customFetch<Programme>(getGetProgrammeUrl(), {
+): Promise<Programme[]> => {
+  return customFetch<Programme[]>(getListProgrammesUrl(), {
     ...options,
     method: "GET",
   });
 };
 
-export const getGetProgrammeQueryKey = () => {
+export const getListProgrammesQueryKey = () => {
   return [`/api/programmes`] as const;
 };
 
-export const getGetProgrammeQueryOptions = <
-  TData = Awaited<ReturnType<typeof getProgramme>>,
+export const getListProgrammesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listProgrammes>>,
   TError = ErrorType<unknown>,
 >(options?: {
   query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getProgramme>>,
+    Awaited<ReturnType<typeof listProgrammes>>,
     TError,
     TData
   >;
@@ -1555,36 +1557,36 @@ export const getGetProgrammeQueryOptions = <
 }) => {
   const { query: queryOptions, request: requestOptions } = options ?? {};
 
-  const queryKey = queryOptions?.queryKey ?? getGetProgrammeQueryKey();
+  const queryKey = queryOptions?.queryKey ?? getListProgrammesQueryKey();
 
-  const queryFn: QueryFunction<Awaited<ReturnType<typeof getProgramme>>> = ({
+  const queryFn: QueryFunction<Awaited<ReturnType<typeof listProgrammes>>> = ({
     signal,
-  }) => getProgramme({ signal, ...requestOptions });
+  }) => listProgrammes({ signal, ...requestOptions });
 
   return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
-    Awaited<ReturnType<typeof getProgramme>>,
+    Awaited<ReturnType<typeof listProgrammes>>,
     TError,
     TData
   > & { queryKey: QueryKey };
 };
 
-export type GetProgrammeQueryResult = NonNullable<
-  Awaited<ReturnType<typeof getProgramme>>
+export type ListProgrammesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listProgrammes>>
 >;
-export type GetProgrammeQueryError = ErrorType<unknown>;
+export type ListProgrammesQueryError = ErrorType<unknown>;
 
-export function useGetProgramme<
-  TData = Awaited<ReturnType<typeof getProgramme>>,
+export function useListProgrammes<
+  TData = Awaited<ReturnType<typeof listProgrammes>>,
   TError = ErrorType<unknown>,
 >(options?: {
   query?: UseQueryOptions<
-    Awaited<ReturnType<typeof getProgramme>>,
+    Awaited<ReturnType<typeof listProgrammes>>,
     TError,
     TData
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
-  const queryOptions = getGetProgrammeQueryOptions(options);
+  const queryOptions = getListProgrammesQueryOptions(options);
 
   const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
     queryKey: QueryKey;
@@ -1592,6 +1594,247 @@ export function useGetProgramme<
 
   return { ...query, queryKey: queryOptions.queryKey };
 }
+
+export const getCreateProgrammeUrl = () => {
+  return `/api/programmes`;
+};
+
+export const createProgramme = async (
+  createProgrammeBody: CreateProgrammeBody,
+  options?: RequestInit,
+): Promise<Programme> => {
+  return customFetch<Programme>(getCreateProgrammeUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createProgrammeBody),
+  });
+};
+
+export const getCreateProgrammeMutationOptions = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProgramme>>,
+    TError,
+    { data: BodyType<CreateProgrammeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createProgramme>>,
+  TError,
+  { data: BodyType<CreateProgrammeBody> },
+  TContext
+> => {
+  const mutationKey = ["createProgramme"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createProgramme>>,
+    { data: BodyType<CreateProgrammeBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createProgramme(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateProgrammeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createProgramme>>
+>;
+export type CreateProgrammeMutationBody = BodyType<CreateProgrammeBody>;
+export type CreateProgrammeMutationError = ErrorType<unknown>;
+
+export const useCreateProgramme = <
+  TError = ErrorType<unknown>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createProgramme>>,
+    TError,
+    { data: BodyType<CreateProgrammeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createProgramme>>,
+  TError,
+  { data: BodyType<CreateProgrammeBody> },
+  TContext
+> => {
+  return useMutation(getCreateProgrammeMutationOptions(options));
+};
+
+export const getUpdateProgrammeUrl = (id: string) => {
+  return `/api/programmes/${id}`;
+};
+
+export const updateProgramme = async (
+  id: string,
+  updateProgrammeBody: UpdateProgrammeBody,
+  options?: RequestInit,
+): Promise<Programme> => {
+  return customFetch<Programme>(getUpdateProgrammeUrl(id), {
+    ...options,
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(updateProgrammeBody),
+  });
+};
+
+export const getUpdateProgrammeMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProgramme>>,
+    TError,
+    { id: string; data: BodyType<UpdateProgrammeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof updateProgramme>>,
+  TError,
+  { id: string; data: BodyType<UpdateProgrammeBody> },
+  TContext
+> => {
+  const mutationKey = ["updateProgramme"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof updateProgramme>>,
+    { id: string; data: BodyType<UpdateProgrammeBody> }
+  > = (props) => {
+    const { id, data } = props ?? {};
+
+    return updateProgramme(id, data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type UpdateProgrammeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof updateProgramme>>
+>;
+export type UpdateProgrammeMutationBody = BodyType<UpdateProgrammeBody>;
+export type UpdateProgrammeMutationError = ErrorType<NotFoundResponse>;
+
+export const useUpdateProgramme = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof updateProgramme>>,
+    TError,
+    { id: string; data: BodyType<UpdateProgrammeBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof updateProgramme>>,
+  TError,
+  { id: string; data: BodyType<UpdateProgrammeBody> },
+  TContext
+> => {
+  return useMutation(getUpdateProgrammeMutationOptions(options));
+};
+
+export const getDeleteProgrammeUrl = (id: string) => {
+  return `/api/programmes/${id}`;
+};
+
+export const deleteProgramme = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteProgrammeUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteProgrammeMutationOptions = <
+  TError = ErrorType<NotFoundResponse | ConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteProgramme>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteProgramme>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteProgramme"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteProgramme>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteProgramme(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteProgrammeMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteProgramme>>
+>;
+
+export type DeleteProgrammeMutationError = ErrorType<
+  NotFoundResponse | ConflictResponse
+>;
+
+export const useDeleteProgramme = <
+  TError = ErrorType<NotFoundResponse | ConflictResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteProgramme>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteProgramme>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteProgrammeMutationOptions(options));
+};
 
 export const getListStreamsUrl = () => {
   return `/api/streams`;

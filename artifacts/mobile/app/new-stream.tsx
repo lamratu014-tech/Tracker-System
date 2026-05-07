@@ -3,9 +3,9 @@ import { useRouter } from "expo-router";
 import {
   getListStreamsQueryKey,
   useCreateStream,
-  useGetProgramme,
+  useListProgrammes,
 } from "@workspace/api-client-react";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Alert,
   ScrollView,
@@ -19,6 +19,10 @@ import {
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
+import {
+  getLastUsedProgrammeId,
+  setLastUsedProgrammeId,
+} from "@/lib/preferences";
 import { canManageEverything, useMe } from "@/lib/permissions";
 
 export default function NewStreamScreen() {
@@ -26,13 +30,30 @@ export default function NewStreamScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const me = useMe();
-  const programmeQ = useGetProgramme();
-  const programme = programmeQ.data ?? null;
+  const programmesQ = useListProgrammes();
+  const programmes = programmesQ.data ?? [];
   const [name, setName] = useState("");
+  const [programmeId, setProgrammeId] = useState<string | null>(null);
+
+  // Pre-select most recently used programme (or first available).
+  useEffect(() => {
+    if (programmeId || programmes.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      const last = await getLastUsedProgrammeId();
+      if (cancelled) return;
+      const match = last && programmes.find((p) => p.id === last);
+      setProgrammeId(match ? match.id : programmes[0].id);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [programmes, programmeId]);
 
   const createStream = useCreateStream({
     mutation: {
       onSuccess: () => {
+        if (programmeId) void setLastUsedProgrammeId(programmeId);
         qc.invalidateQueries({ queryKey: getListStreamsQueryKey() });
         router.back();
       },
@@ -50,8 +71,8 @@ export default function NewStreamScreen() {
   function save() {
     const trimmed = name.trim();
     if (!trimmed) return Alert.alert("Name required", "Please enter a stream name.");
-    if (!programme) return Alert.alert("Loading", "Please wait for the programme to load.");
-    createStream.mutate({ data: { name: trimmed, programmeId: programme.id } });
+    if (!programmeId) return Alert.alert("Programme required", "Pick a programme first.");
+    createStream.mutate({ data: { name: trimmed, programmeId } });
   }
 
   return (
@@ -65,16 +86,48 @@ export default function NewStreamScreen() {
         placeholderTextColor={colors.mutedForeground}
         autoFocus
       />
-      {programmeQ.isLoading ? <LoadingRow inline label="Loading programme…" /> : null}
+
+      <Text style={[styles.label, { color: colors.mutedForeground }]}>Programme *</Text>
+      {programmesQ.isLoading ? (
+        <LoadingRow inline label="Loading programmes…" />
+      ) : programmes.length === 0 ? (
+        <Text style={[styles.gate, { color: colors.mutedForeground }]}>
+          No programmes yet. Create one from the Admin tab.
+        </Text>
+      ) : (
+        <View style={styles.chips}>
+          {programmes.map((p) => {
+            const selected = p.id === programmeId;
+            return (
+              <TouchableOpacity
+                key={p.id}
+                onPress={() => setProgrammeId(p.id)}
+                style={[
+                  styles.chip,
+                  {
+                    backgroundColor: selected ? colors.primary : colors.muted,
+                    borderColor: selected ? colors.primary : colors.border,
+                  },
+                ]}
+              >
+                <Text style={[styles.chipText, { color: selected ? "#fff" : colors.foreground }]}>
+                  {p.name}
+                </Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+      )}
+
       {createStream.isError ? <ErrorBanner error={createStream.error} /> : null}
       <View style={styles.row}>
         <TouchableOpacity style={[styles.btn, { backgroundColor: colors.muted }]} onPress={() => router.back()}>
           <Text style={[styles.btnText, { color: colors.foreground }]}>Cancel</Text>
         </TouchableOpacity>
         <TouchableOpacity
-          style={[styles.btn, { backgroundColor: name.trim() && programme ? colors.primary : colors.border }]}
+          style={[styles.btn, { backgroundColor: name.trim() && programmeId ? colors.primary : colors.border }]}
           onPress={save}
-          disabled={!name.trim() || !programme || createStream.isPending}
+          disabled={!name.trim() || !programmeId || createStream.isPending}
         >
           <Text style={[styles.btnText, { color: "#fff" }]}>Create</Text>
         </TouchableOpacity>
@@ -89,6 +142,9 @@ const styles = StyleSheet.create({
   gate: { fontSize: 14, fontFamily: "Inter_400Regular" },
   label: { fontSize: 12, fontFamily: "Inter_500Medium" },
   input: { padding: 12, borderRadius: 10, borderWidth: 1, fontSize: 15, fontFamily: "Inter_400Regular" },
+  chips: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
+  chipText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   row: { flexDirection: "row", gap: 8, marginTop: 8 },
   btn: { flex: 1, padding: 14, borderRadius: 10, alignItems: "center" },
   btnText: { fontSize: 15, fontFamily: "Inter_600SemiBold" },

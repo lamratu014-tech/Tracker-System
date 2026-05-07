@@ -314,7 +314,7 @@ paths:
   # ─── Programmes ───────────────────────────────────────────────────────
   /programmes:
     get:
-      operationId: getProgramme
+      operationId: listProgrammes
       tags: [programmes]
       security: [{ bearerAuth: [] }]
       responses:
@@ -322,7 +322,54 @@ paths:
           description: OK
           content:
             application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Programme" }
+    post:
+      operationId: createProgramme
+      tags: [programmes]
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateProgrammeBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
               schema: { $ref: "#/components/schemas/Programme" }
+
+  /programmes/{id}:
+    patch:
+      operationId: updateProgramme
+      tags: [programmes]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/UpdateProgrammeBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Programme" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      operationId: deleteProgramme
+      tags: [programmes]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
 
   # ─── Streams ──────────────────────────────────────────────────────────
   /streams:
@@ -1048,6 +1095,18 @@ components:
         name: { type: string }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
+
+    CreateProgrammeBody:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
+
+    UpdateProgrammeBody:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1 }
 
     Stream:
       type: object

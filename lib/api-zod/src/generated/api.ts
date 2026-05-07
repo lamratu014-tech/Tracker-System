@@ -269,11 +269,35 @@ export const DeleteUserParams = zod.object({
   id: zod.coerce.string(),
 });
 
-export const GetProgrammeResponse = zod.object({
+export const ListProgrammesResponseItem = zod.object({
   id: zod.string(),
   name: zod.string(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date(),
+});
+export const ListProgrammesResponse = zod.array(ListProgrammesResponseItem);
+
+export const CreateProgrammeBody = zod.object({
+  name: zod.string().min(1),
+});
+
+export const UpdateProgrammeParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const UpdateProgrammeBody = zod.object({
+  name: zod.string().min(1),
+});
+
+export const UpdateProgrammeResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+export const DeleteProgrammeParams = zod.object({
+  id: zod.coerce.string(),
 });
 
 export const ListStreamsResponseItem = zod.object({

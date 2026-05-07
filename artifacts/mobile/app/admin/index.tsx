@@ -3,20 +3,25 @@ import { useQueries, useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "expo-router";
 import {
   getListEventsQueryKey,
+  getListProgrammesQueryKey,
   getListStreamsQueryKey,
   getListTeamMembersQueryKey,
   getListTeamMembersQueryOptions,
   getListTeamsQueryKey,
   getListUsersQueryKey,
+  useCreateProgramme,
   useDeleteEvent,
   useDeleteMember,
+  useDeleteProgramme,
   useDeleteStream,
   useDeleteTeam,
   useDeleteUser,
   useListEvents,
+  useListProgrammes,
   useListStreams,
   useListTeams,
   useListUsers,
+  useUpdateProgramme,
   useUpdateUserRole,
 } from "@workspace/api-client-react";
 import React, { useMemo, useState } from "react";
@@ -26,6 +31,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -36,7 +42,7 @@ import { useColors } from "@/hooks/useColors";
 import { useMe } from "@/lib/permissions";
 import type { Role } from "@/models/types";
 
-type AdminTab = "structure" | "users" | "members" | "events";
+type AdminTab = "structure" | "programmes" | "users" | "members" | "events";
 
 const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
@@ -70,14 +76,77 @@ export default function AdminPanelScreen() {
   const me = useMe();
 
   const usersQ = useListUsers();
+  const programmesQ = useListProgrammes();
   const streamsQ = useListStreams();
   const teamsQ = useListTeams();
   const eventsQ = useListEvents();
 
   const users = usersQ.data ?? [];
+  const programmes = programmesQ.data ?? [];
   const streams = streamsQ.data ?? [];
   const teams = teamsQ.data ?? [];
   const events = eventsQ.data ?? [];
+
+  const invalidateProgrammes = () =>
+    qc.invalidateQueries({ queryKey: getListProgrammesQueryKey() });
+  const createProgramme = useCreateProgramme({
+    mutation: { onSuccess: invalidateProgrammes },
+  });
+  const updateProgramme = useUpdateProgramme({
+    mutation: { onSuccess: invalidateProgrammes },
+  });
+  const deleteProgramme = useDeleteProgramme({
+    mutation: {
+      onSuccess: invalidateProgrammes,
+      onError: (err: unknown) => {
+        const e = err as { status?: number; message?: string };
+        if (e?.status === 409) {
+          Alert.alert(
+            "Cannot delete",
+            "This programme still has streams. Remove the streams first.",
+          );
+        } else {
+          Alert.alert("Error", e?.message ?? "Failed to delete programme");
+        }
+      },
+    },
+  });
+  const [newProgrammeName, setNewProgrammeName] = useState("");
+  const streamCountByProgramme = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const s of streams) m.set(s.programmeId, (m.get(s.programmeId) ?? 0) + 1);
+    return m;
+  }, [streams]);
+
+  function promptRename(p: { id: string; name: string }) {
+    if (Platform.OS === "web") {
+      const next = window.prompt("Rename programme", p.name);
+      if (next && next.trim() && next.trim() !== p.name) {
+        updateProgramme.mutate({ id: p.id, data: { name: next.trim() } });
+      }
+      return;
+    }
+    Alert.prompt(
+      "Rename programme",
+      p.name,
+      (next) => {
+        if (next && next.trim() && next.trim() !== p.name) {
+          updateProgramme.mutate({ id: p.id, data: { name: next.trim() } });
+        }
+      },
+      "plain-text",
+      p.name,
+    );
+  }
+
+  function addProgramme() {
+    const trimmed = newProgrammeName.trim();
+    if (!trimmed) return;
+    createProgramme.mutate(
+      { data: { name: trimmed } },
+      { onSuccess: () => setNewProgrammeName("") },
+    );
+  }
 
   const updateUserRole = useUpdateUserRole({
     mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListUsersQueryKey() }) },
@@ -172,7 +241,7 @@ export default function AdminPanelScreen() {
         style={[styles.tabs, { backgroundColor: colors.card, borderBottomColor: colors.border }]}
         contentContainerStyle={{ flexGrow: 1 }}
       >
-        {(["structure", "users", "members", "events"] as AdminTab[]).map((t) => (
+        {(["structure", "programmes", "users", "members", "events"] as AdminTab[]).map((t) => (
           <TouchableOpacity
             key={t}
             style={[styles.tab, tab === t && { borderBottomColor: colors.primary }]}
@@ -286,6 +355,79 @@ export default function AdminPanelScreen() {
                         )}
                       </View>
                     ) : null}
+                  </View>
+                );
+              })
+            )}
+          </>
+        ) : null}
+
+        {tab === "programmes" ? (
+          <>
+            <View style={styles.sectionRow}>
+              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+                Programmes ({programmes.length})
+              </Text>
+            </View>
+            {programmesQ.isError ? (
+              <ErrorBanner error={programmesQ.error} onRetry={() => programmesQ.refetch()} />
+            ) : null}
+            <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: "row", gap: 8, alignItems: "center" }]}>
+              <TextInput
+                style={[styles.input, { backgroundColor: colors.muted, color: colors.foreground, borderColor: colors.border, flex: 1 }]}
+                value={newProgrammeName}
+                onChangeText={setNewProgrammeName}
+                placeholder="New programme name"
+                placeholderTextColor={colors.mutedForeground}
+                onSubmitEditing={addProgramme}
+                returnKeyType="done"
+              />
+              <TouchableOpacity
+                style={[styles.smallBtn, { backgroundColor: newProgrammeName.trim() ? colors.primary : colors.border }]}
+                onPress={addProgramme}
+                disabled={!newProgrammeName.trim() || createProgramme.isPending}
+              >
+                <Feather name="plus" size={12} color="#fff" />
+                <Text style={[styles.smallBtnText, { color: "#fff" }]}>Add</Text>
+              </TouchableOpacity>
+            </View>
+            {programmesQ.isLoading ? <LoadingRow /> : null}
+            {programmes.length === 0 && !programmesQ.isLoading ? (
+              <View style={[styles.empty, { backgroundColor: colors.muted }]}>
+                <Text style={{ color: colors.mutedForeground }}>No programmes yet.</Text>
+              </View>
+            ) : (
+              programmes.map((p) => {
+                const count = streamCountByProgramme.get(p.id) ?? 0;
+                return (
+                  <View key={p.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 10 }]}>
+                    <View style={[styles.dot, { backgroundColor: colors.primary }]} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={[styles.cardTitle, { color: colors.foreground }]}>{p.name}</Text>
+                      <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
+                        {count} stream{count !== 1 ? "s" : ""}
+                      </Text>
+                    </View>
+                    <TouchableOpacity style={styles.iconBtn} onPress={() => promptRename(p)}>
+                      <Feather name="edit-2" size={14} color={colors.primary} />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.iconBtn}
+                      onPress={() => {
+                        if (count > 0) {
+                          Alert.alert(
+                            "Cannot delete",
+                            "This programme still has streams. Remove the streams first.",
+                          );
+                          return;
+                        }
+                        confirm(`Delete programme "${p.name}"?`, () =>
+                          deleteProgramme.mutate({ id: p.id }),
+                        );
+                      }}
+                    >
+                      <Feather name="trash-2" size={14} color="#DC2626" />
+                    </TouchableOpacity>
                   </View>
                 );
               })
@@ -512,4 +654,5 @@ const styles = StyleSheet.create({
   dateBox: { width: 40, height: 40, borderRadius: 8, alignItems: "center", justifyContent: "center" },
   dateBoxDay: { fontSize: 16, fontFamily: "Inter_700Bold" },
   dateBoxMo: { fontSize: 9, fontFamily: "Inter_600SemiBold", textTransform: "uppercase" },
+  input: { padding: 10, borderRadius: 8, borderWidth: 1, fontSize: 14, fontFamily: "Inter_400Regular" },
 });
