@@ -13,10 +13,11 @@ import {
   useGetStream,
   useGetTeam,
   useListProjectMilestones,
-  useListTeams,
+  useListStreamTeams,
   useSetMilestoneStatus,
   useUpdateProject,
 } from "@workspace/api-client-react";
+import { getListStreamTeamsQueryKey } from "@workspace/api-client-react";
 import type { Milestone } from "@workspace/api-client-react";
 import React, { useEffect, useMemo, useState } from "react";
 import {
@@ -76,21 +77,25 @@ export default function ProjectDetailScreen() {
   });
   const stream = streamQ.data ?? null;
 
-  const teamsQ = useListTeams();
-  const allTeams = teamsQ.data ?? [];
+  // Stream-scoped teams so leaders (whose /teams call only returns their own
+  // team) can still see peer team names in the share UI and shared chips.
+  const streamTeamsQ = useListStreamTeams(team?.streamId ?? "", {
+    query: {
+      enabled: !!team?.streamId,
+      queryKey: getListStreamTeamsQueryKey(team?.streamId ?? ""),
+    },
+  });
+  const streamTeams = streamTeamsQ.data ?? [];
 
   const peerTeams = useMemo(
-    () =>
-      team && team.streamId
-        ? allTeams.filter((t) => t.id !== team.id && t.streamId === team.streamId)
-        : [],
-    [allTeams, team],
+    () => (team ? streamTeams.filter((t) => t.id !== team.id) : []),
+    [streamTeams, team],
   );
   const teamNameById = useMemo(() => {
     const m = new Map<string, string>();
-    for (const t of allTeams) m.set(t.id, t.name);
+    for (const t of streamTeams) m.set(t.id, t.name);
     return m;
-  }, [allTeams]);
+  }, [streamTeams]);
 
   const milestonesQ = useListProjectMilestones(id ?? "", {
     query: { enabled: !!id, queryKey: getListProjectMilestonesQueryKey(id ?? "") },

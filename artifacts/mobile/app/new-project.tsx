@@ -2,8 +2,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   getListProjectsQueryKey,
+  getListStreamTeamsQueryKey,
   useCreateProject,
   useListStreams,
+  useListStreamTeams,
   useListTeams,
 } from "@workspace/api-client-react";
 import React, { useMemo, useState } from "react";
@@ -54,12 +56,20 @@ export default function NewProjectScreen() {
   const [sharedTeamIds, setSharedTeamIds] = useState<string[]>([]);
 
   const ownerTeam = teams.find((t) => t.id === teamId) ?? null;
+  // Use the stream-scoped teams endpoint so leaders (whose /teams call only
+  // returns their own team) can still see peer teams in the same stream.
+  const streamTeamsQ = useListStreamTeams(ownerTeam?.streamId ?? "", {
+    query: {
+      enabled: !!ownerTeam?.streamId,
+      queryKey: getListStreamTeamsQueryKey(ownerTeam?.streamId ?? ""),
+    },
+  });
   const peerTeams = useMemo(
     () =>
-      ownerTeam && ownerTeam.streamId
-        ? teams.filter((t) => t.id !== ownerTeam.id && t.streamId === ownerTeam.streamId)
+      ownerTeam
+        ? (streamTeamsQ.data ?? []).filter((t) => t.id !== ownerTeam.id)
         : [],
-    [teams, ownerTeam],
+    [streamTeamsQ.data, ownerTeam],
   );
 
   function toggleShared(id: string) {

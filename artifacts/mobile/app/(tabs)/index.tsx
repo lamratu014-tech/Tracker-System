@@ -134,7 +134,13 @@ export default function DashboardScreen() {
         {projectsQ.isLoading || milestonesLoading ? <LoadingRow /> : null}
 
         {overdueItems.length > 0 ? (
-          <Section title="Overdue">
+          <Section
+            title="Overdue"
+            action={{
+              label: "See all",
+              onPress: () => router.push({ pathname: "/milestones", params: { filter: "overdue" } }),
+            }}
+          >
             {overdueItems.map((x) => (
               <Row
                 key={x.ms.id}
@@ -212,6 +218,9 @@ function Tile({
       activeOpacity={0.8}
       onPress={onPress}
       disabled={!onPress}
+      accessibilityRole={onPress ? "button" : undefined}
+      accessibilityLabel={`${label}: ${value} ${value === 1 ? "milestone" : "milestones"}`}
+      accessibilityHint={onPress ? `Open the ${label.toLowerCase()} milestones list` : undefined}
     >
       <View style={[styles.tileIcon, { backgroundColor: color + "22" }]}>
         <Feather name={icon as never} size={14} color={color} />
@@ -222,11 +231,22 @@ function Tile({
   );
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({
+  title, children, action,
+}: { title: string; children: React.ReactNode; action?: { label: string; onPress: () => void } }) {
   const colors = useColors();
   return (
     <View style={{ marginTop: 20 }}>
-      <Text style={[styles.sectionTitle, { color: colors.foreground }]}>{title}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+        <Text style={[styles.sectionTitle, { color: colors.foreground, marginBottom: 0 }]}>{title}</Text>
+        {action ? (
+          <TouchableOpacity onPress={action.onPress} accessibilityRole="link">
+            <Text style={{ color: colors.primary, fontFamily: "Inter_600SemiBold", fontSize: 12 }}>
+              {action.label} ›
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
       {children}
     </View>
   );

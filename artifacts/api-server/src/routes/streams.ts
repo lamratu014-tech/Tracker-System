@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, streamsTable, teamsTable, programmesTable } from "@workspace/db";
-import { and, eq, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import {
   CreateStreamBody,
   UpdateStreamBody,
@@ -11,7 +11,7 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth, requireManager } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
-import { userCanAccessStream, userCanManageProgramme, userCanReadStream, visibleTeamIdsFor } from "../lib/permissions";
+import { userCanAccessStream, userCanManageProgramme, userCanReadStream } from "../lib/permissions";
 
 const router = Router();
 
@@ -150,23 +150,14 @@ router.get("/streams/:id/teams", requireAuth, async (req, res): Promise<void> =>
     return;
   }
 
-  const visibleIds = await visibleTeamIdsFor(user);
-  let teams: (typeof teamsTable.$inferSelect)[] = [];
-  if (visibleIds === "all") {
-    teams = await db
-      .select()
-      .from(teamsTable)
-      .where(eq(teamsTable.streamId, params.data.id))
-      .orderBy(teamsTable.name);
-  } else if (visibleIds.length > 0) {
-    teams = await db
-      .select()
-      .from(teamsTable)
-      .where(and(eq(teamsTable.streamId, params.data.id), inArray(teamsTable.id, visibleIds)))
-      .orderBy(teamsTable.name);
-  } else {
-    teams = [];
-  }
+  // Anyone who can read the stream may enumerate every team inside it.
+  // Team *mutation* is still gated separately per-team. This is what enables
+  // a leader to choose peer teams when sharing a project across the stream.
+  const teams = await db
+    .select()
+    .from(teamsTable)
+    .where(eq(teamsTable.streamId, params.data.id))
+    .orderBy(teamsTable.name);
   res.json(teams);
 });
 

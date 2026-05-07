@@ -1,6 +1,6 @@
 import { Feather } from "@expo/vector-icons";
 import { useQueries } from "@tanstack/react-query";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import {
   getListProjectMilestonesQueryOptions,
   useListProjects,
@@ -22,12 +22,12 @@ import { isDueToday, isOverdue } from "@/models/types";
 
 type FilterKey = "all" | "today" | "upcoming" | "overdue" | "completed";
 
-const FILTERS: { key: FilterKey; label: string }[] = [
-  { key: "all", label: "All" },
-  { key: "today", label: "Today" },
-  { key: "upcoming", label: "Upcoming" },
-  { key: "overdue", label: "Overdue" },
-  { key: "completed", label: "Completed" },
+const FILTERS: { key: FilterKey; label: string; headerTitle: string }[] = [
+  { key: "all", label: "All", headerTitle: "All Milestones" },
+  { key: "today", label: "Today", headerTitle: "Due Today" },
+  { key: "upcoming", label: "Upcoming", headerTitle: "Upcoming Milestones" },
+  { key: "overdue", label: "Overdue", headerTitle: "Overdue Milestones" },
+  { key: "completed", label: "Completed", headerTitle: "Completed Milestones" },
 ];
 
 interface Row {
@@ -108,8 +108,12 @@ export default function MilestonesScreen() {
 
   const milestonesLoading = milestoneQueries.some((q) => q.isLoading);
 
+  const headerTitle =
+    FILTERS.find((f) => f.key === filter)?.headerTitle ?? "Milestones";
+
   return (
     <ScrollView style={{ backgroundColor: colors.background }} contentContainerStyle={styles.container}>
+      <Stack.Screen options={{ title: headerTitle }} />
       {projectsQ.isError ? (
         <ErrorBanner error={projectsQ.error} onRetry={() => projectsQ.refetch()} />
       ) : null}
