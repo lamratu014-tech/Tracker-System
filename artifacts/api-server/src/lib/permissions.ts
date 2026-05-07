@@ -104,6 +104,7 @@ export async function userCanAssignAsLeader(
       role: usersTable.role,
       programmeId: usersTable.programmeId,
       streamId: usersTable.streamId,
+      teamId: usersTable.teamId,
     })
     .from(usersTable)
     .where(eq(usersTable.id, targetUserId))
@@ -144,8 +145,27 @@ export async function userCanAssignAsLeader(
     if (target.role === "admin") {
       return { ok: false, status: 403, error: "You cannot reassign an admin account" };
     }
-    if (target.programmeId && target.programmeId !== actor.programmeId) {
-      return { ok: false, status: 403, error: "Target user is in a different programme" };
+    // Resolve the target's effective programme. We must not rely solely on
+    // target.programmeId — many users (stream_overseer, leader) have it null
+    // and live inside a programme via their stream/team. Without this chain
+    // a PO could otherwise assign a stream_overseer from a different
+    // programme as leader of one of their own teams.
+    let targetProgrammeId: string | null = target.programmeId ?? null;
+    if (!targetProgrammeId && target.streamId) {
+      targetProgrammeId = await getStreamProgrammeId(target.streamId);
+    }
+    if (!targetProgrammeId && target.teamId) {
+      const [tt] = await db
+        .select({ streamId: teamsTable.streamId })
+        .from(teamsTable)
+        .where(eq(teamsTable.id, target.teamId))
+        .limit(1);
+      if (tt?.streamId) {
+        targetProgrammeId = await getStreamProgrammeId(tt.streamId);
+      }
+    }
+    if (!targetProgrammeId || targetProgrammeId !== actor.programmeId) {
+      return { ok: false, status: 403, error: "Target user is outside your programme" };
     }
     return { ok: true };
   }
