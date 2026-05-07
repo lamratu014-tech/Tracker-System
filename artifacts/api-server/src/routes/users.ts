@@ -95,6 +95,11 @@ async function actorCanCreateUser(
   if (!actor.programmeId) return false;
   if (target.role === "admin" || target.role === "programme_overseer") return false;
 
+  // PO must explicitly scope the new user into their programme via at least
+  // one of programmeId / streamId / teamId. Fully unscoped creation is
+  // reserved for admin.
+  if (!target.programmeId && !target.streamId && !target.teamId) return false;
+
   // Resolve which programme the new user would belong to.
   if (target.programmeId && target.programmeId !== actor.programmeId) return false;
   if (target.streamId) {
