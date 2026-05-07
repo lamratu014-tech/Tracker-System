@@ -100,6 +100,20 @@ export default function NewEventScreen() {
       ? { kind: "team", id: me.teamId }
       : { kind: "org" },
   );
+  // Overseers should default to their own programme once it resolves
+  // (the user can still pick a team afterwards). We only auto-set when
+  // the link is still the meaningless org-wide placeholder.
+  const didDefaultProgramme = React.useRef(false);
+  React.useEffect(() => {
+    if (didDefaultProgramme.current) return;
+    if (me?.role !== "stream_overseer" || !me.streamId) return;
+    const myStream = streams.find((s) => s.id === me.streamId);
+    if (!myStream) return;
+    const prog = programmes.find((p) => p.id === myStream.programmeId);
+    if (!prog) return;
+    didDefaultProgramme.current = true;
+    if (link.kind === "org") setLink({ kind: "programme", id: prog.id });
+  }, [me, streams, programmes, link.kind]);
 
   const allowedTeams = useMemo(() => {
     if (!me) return [];
@@ -283,7 +297,7 @@ export default function NewEventScreen() {
         <Text style={[styles.errorText, { color: colors.destructive }]}>{dateError}</Text>
       ) : null}
 
-      <Text style={[styles.label, { color: colors.mutedForeground }]}>Link to</Text>
+      <Text style={[styles.label, { color: colors.mutedForeground }]}>Link this event to</Text>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
         {me.role === "admin" ? (
           <TouchableOpacity
