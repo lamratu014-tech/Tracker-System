@@ -21,7 +21,9 @@ export function MilestoneRow({ milestone, canEdit, onToggleCompleted, onDelete }
 
   function toggle() {
     if (!canEdit || !onToggleCompleted) return;
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (Platform.OS !== "web") {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    }
     onToggleCompleted(!completed);
   }
 

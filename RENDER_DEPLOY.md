@@ -185,3 +185,33 @@ on `ops-planning-api`. Set it to the SPA URL and restart the service.
 **Free Postgres about to expire** — Render shows a banner 14 days out.
 `pg_dump` to back up, then either upgrade the existing DB or create a fresh
 one and `pg_restore` into it.
+
+---
+
+## Web platform shims
+
+The Expo app targets iOS, Android, and web from the same codebase. These
+native-only modules need explicit handling so the web bundle (the Render
+static site) doesn't crash:
+
+- `expo-secure-store` — `lib/auth/storage.ts` lazy-requires it only when
+  `Platform.OS !== "web"` and falls back to `window.localStorage` on web.
+- `react-native-keyboard-controller` — `components/KeyboardAwareScrollViewCompat.tsx`
+  swaps in a plain `ScrollView` on web; `KeyboardProvider` from
+  `app/_layout.tsx` is a no-op on web and is safe to leave mounted.
+- `expo-glass-effect` — `app/(tabs)/_layout.tsx` calls
+  `isLiquidGlassAvailable()`, which the web build of the package returns
+  `false` for, so the iOS-only `NativeTabs` path is never taken on web.
+- `expo-symbols` — `SymbolView` is only rendered inside `Platform.OS === "ios"`
+  branches; web/Android use `Feather` icons instead.
+- `expo-haptics` — `components/MilestoneRow.tsx` guards `Haptics.impactAsync`
+  with `Platform.OS !== "web"` because the package's web shim throws an
+  `UnavailabilityError` when called.
+- `expo-image-picker` and `expo-location` are listed as dependencies but
+  are not currently imported anywhere in `app/`, so no shim is needed
+  unless a future feature pulls them in.
+
+To verify a clean web build locally, run
+`pnpm --filter @workspace/mobile run build:web` and serve `artifacts/mobile/dist`
+with any static server. The login screen should render and a `POST /api/auth/login`
+round-trip should succeed against the Express API.
