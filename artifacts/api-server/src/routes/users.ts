@@ -10,9 +10,10 @@ import {
   DeleteUserParams,
 } from "@workspace/api-zod";
 import { z } from "zod";
-import { requireAuth, requireAdmin } from "../middlewares/requireAuth";
+import { requireAuth } from "../middlewares/requireAuth";
 import { hashPassword } from "../lib/auth";
 import { visibleTeamIdsFor } from "../lib/permissions";
+import type { User } from "@workspace/db";
 
 const router = Router();
 
@@ -46,13 +47,86 @@ function publicUser(u: typeof usersTable.$inferSelect) {
   };
 }
 
-router.post("/users", requireAdmin, async (req, res): Promise<void> => {
+/**
+ * Returns true when `actor` may manage (create/update/delete/activate) the
+ * given target user record. Admin can touch anyone. Programme overseers
+ * can manage non-admin/non-PO users whose programme matches theirs (either
+ * directly or via stream→programme). Anyone else: false.
+ *
+ * `actor` may not act on themselves (caller enforces that separately).
+ */
+async function actorCanManageUser(
+  actor: User,
+  target: { role: typeof usersTable.$inferSelect.role; programmeId: string | null; streamId: string | null },
+): Promise<boolean> {
+  if (actor.role === "admin") return true;
+  if (actor.role !== "programme_overseer") return false;
+  if (!actor.programmeId) return false;
+  if (target.role === "admin" || target.role === "programme_overseer") return false;
+  if (target.programmeId === actor.programmeId) return true;
+  if (target.streamId) {
+    const [s] = await db
+      .select({ programmeId: streamsTable.programmeId })
+      .from(streamsTable)
+      .where(eq(streamsTable.id, target.streamId))
+      .limit(1);
+    return !!s && s.programmeId === actor.programmeId;
+  }
+  return false;
+}
+
+/**
+ * Returns true when `actor` may *create* a user shell with the given target
+ * scope. Admins always; programme overseers when target role is non-admin/
+ * non-PO and the target scope (programmeId/streamId/teamId) lies inside
+ * their programme.
+ */
+async function actorCanCreateUser(
+  actor: User,
+  target: {
+    role: typeof usersTable.$inferSelect.role;
+    programmeId: string | null;
+    streamId: string | null;
+    teamId: string | null;
+  },
+): Promise<boolean> {
+  if (actor.role === "admin") return true;
+  if (actor.role !== "programme_overseer") return false;
+  if (!actor.programmeId) return false;
+  if (target.role === "admin" || target.role === "programme_overseer") return false;
+
+  // Resolve which programme the new user would belong to.
+  if (target.programmeId && target.programmeId !== actor.programmeId) return false;
+  if (target.streamId) {
+    const [s] = await db
+      .select({ programmeId: streamsTable.programmeId })
+      .from(streamsTable)
+      .where(eq(streamsTable.id, target.streamId))
+      .limit(1);
+    if (!s || s.programmeId !== actor.programmeId) return false;
+  }
+  return true;
+}
+
+router.post("/users", requireAuth, async (req, res): Promise<void> => {
   const parsed = CreateUserBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
     return;
   }
   const { email, name, password, role, department, programmeId, streamId, teamId } = parsed.data;
+  const actor = req.authUser!;
+
+  const allowed = await actorCanCreateUser(actor, {
+    role,
+    programmeId: programmeId ?? null,
+    streamId: streamId ?? null,
+    teamId: teamId ?? null,
+  });
+  if (!allowed) {
+    res.status(403).json({ error: "You do not have permission to create that user" });
+    return;
+  }
 
   const [existing] = await db
     .select({ id: usersTable.id })
@@ -80,11 +154,11 @@ router.post("/users", requireAdmin, async (req, res): Promise<void> => {
       streamId: streamId ?? null,
       teamId: teamId ?? null,
       active: true,
-      invitedByName: req.authUser!.name,
+      invitedByName: actor.name,
     })
     .returning();
 
-  req.log.info({ userId: user!.id }, "User created directly by admin");
+  req.log.info({ userId: user!.id, by: actor.id }, "User created");
   res.status(201).json(safeUser(user!));
 });
 
@@ -174,12 +248,13 @@ router.get("/users/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(publicUser(user));
 });
 
-router.patch("/users/:id/role", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/users/:id/role", requireAuth, async (req, res): Promise<void> => {
   const params = UpdateUserRoleParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const id = params.data.id;
+  const actor = req.authUser!;
 
-  if (id === req.authUser!.id) {
+  if (id === actor.id) {
     res.status(400).json({ error: "You cannot change your own role" });
     return;
   }
@@ -187,6 +262,40 @@ router.patch("/users/:id/role", requireAdmin, async (req, res): Promise<void> =>
   const parsed = UpdateUserRoleBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const [target] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+  if (!target) {
+    res.status(404).json({ error: "User not found" });
+    return;
+  }
+
+  // Authorization: actor must be allowed to manage the *current* target,
+  // and (if changing scope) also the *new* scope.
+  const canCurrent = await actorCanManageUser(actor, target);
+  if (!canCurrent) {
+    res.status(403).json({ error: "You do not have permission to change that user" });
+    return;
+  }
+  // Block role escalation to admin/PO by non-admins.
+  if (
+    actor.role !== "admin" &&
+    (parsed.data.role === "admin" || parsed.data.role === "programme_overseer")
+  ) {
+    res.status(403).json({ error: "You cannot grant that role" });
+    return;
+  }
+  const nextScope = {
+    role: parsed.data.role,
+    programmeId:
+      "programmeId" in parsed.data ? parsed.data.programmeId ?? null : target.programmeId,
+    streamId: "streamId" in parsed.data ? parsed.data.streamId ?? null : target.streamId,
+    teamId: "teamId" in parsed.data ? parsed.data.teamId ?? null : target.teamId,
+  };
+  const canNext = await actorCanCreateUser(actor, nextScope);
+  if (!canNext) {
+    res.status(403).json({ error: "Target scope is outside your authority" });
     return;
   }
 
@@ -208,17 +317,26 @@ router.patch("/users/:id/role", requireAdmin, async (req, res): Promise<void> =>
     return;
   }
 
-  req.log.info({ targetId: id, role: parsed.data.role }, "Role updated");
+  req.log.info({ targetId: id, role: parsed.data.role, by: actor.id }, "Role updated");
   res.json(safeUser(user));
 });
 
-router.patch("/users/:id/deactivate", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/users/:id/deactivate", requireAuth, async (req, res): Promise<void> => {
   const params = DeactivateUserParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const id = params.data.id;
+  const actor = req.authUser!;
 
-  if (id === req.authUser!.id) {
+  if (id === actor.id) {
     res.status(400).json({ error: "You cannot deactivate your own account" });
+    return;
+  }
+
+  const [target] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+  if (!target) { res.status(404).json({ error: "User not found" }); return; }
+
+  if (!(await actorCanManageUser(actor, target))) {
+    res.status(403).json({ error: "You do not have permission to deactivate that user" });
     return;
   }
 
@@ -230,14 +348,23 @@ router.patch("/users/:id/deactivate", requireAdmin, async (req, res): Promise<vo
 
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
-  req.log.info({ targetId: id }, "User deactivated");
+  req.log.info({ targetId: id, by: actor.id }, "User deactivated");
   res.json(safeUser(user));
 });
 
-router.patch("/users/:id/reactivate", requireAdmin, async (req, res): Promise<void> => {
+router.patch("/users/:id/reactivate", requireAuth, async (req, res): Promise<void> => {
   const params = ReactivateUserParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const id = params.data.id;
+  const actor = req.authUser!;
+
+  const [target] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+  if (!target) { res.status(404).json({ error: "User not found" }); return; }
+
+  if (!(await actorCanManageUser(actor, target))) {
+    res.status(403).json({ error: "You do not have permission to reactivate that user" });
+    return;
+  }
 
   const [user] = await db
     .update(usersTable)
@@ -247,17 +374,26 @@ router.patch("/users/:id/reactivate", requireAdmin, async (req, res): Promise<vo
 
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
-  req.log.info({ targetId: id }, "User reactivated");
+  req.log.info({ targetId: id, by: actor.id }, "User reactivated");
   res.json(safeUser(user));
 });
 
-router.delete("/users/:id", requireAdmin, async (req, res): Promise<void> => {
+router.delete("/users/:id", requireAuth, async (req, res): Promise<void> => {
   const params = DeleteUserParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const id = params.data.id;
+  const actor = req.authUser!;
 
-  if (id === req.authUser!.id) {
+  if (id === actor.id) {
     res.status(400).json({ error: "You cannot delete your own account" });
+    return;
+  }
+
+  const [target] = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+  if (!target) { res.status(404).json({ error: "User not found" }); return; }
+
+  if (!(await actorCanManageUser(actor, target))) {
+    res.status(403).json({ error: "You do not have permission to delete that user" });
     return;
   }
 
@@ -268,7 +404,7 @@ router.delete("/users/:id", requireAdmin, async (req, res): Promise<void> => {
 
   if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
-  req.log.info({ targetId: id }, "User deleted");
+  req.log.info({ targetId: id, by: actor.id }, "User deleted");
   res.sendStatus(204);
 });
 

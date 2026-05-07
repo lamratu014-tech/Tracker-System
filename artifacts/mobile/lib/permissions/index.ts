@@ -1,37 +1,54 @@
-import { useGetMe } from "@workspace/api-client-react";
-import type { User } from "@workspace/api-client-react";
+import { useGetMe, useListStreams } from "@workspace/api-client-react";
+import type { User, Stream } from "@workspace/api-client-react";
 
 export type Principal =
   | Pick<User, "id" | "role" | "programmeId" | "streamId" | "teamId">
   | null
   | undefined;
 
+export type StreamScope = { id: string; programmeId?: string | null };
+export type TeamScope = { id: string; streamId?: string | null };
+
+/**
+ * Pure permission helpers. Programme-overseer checks require the caller to
+ * provide the stream's `programmeId` (directly for streams, or as the
+ * `streamProgrammeId` argument for teams). When that information is
+ * missing, the helper conservatively returns `false` — the server is the
+ * final authority and will reject any request that doesn't actually fall
+ * inside the user's programme.
+ */
 export function canManageEverything(user: Principal): boolean {
   return user?.role === "admin";
 }
 
-/**
- * Programme overseers and admins are treated as "can manage" anything they
- * can see — the API server already filters their visible streams/teams to
- * the programme they oversee, so a UI-side permission check that returns
- * `true` here is safe. Real authorization is enforced server-side.
- */
-export function canManageStream(user: Principal, streamId: string | null | undefined): boolean {
-  if (!user) return false;
+export function canManageStream(
+  user: Principal,
+  stream: StreamScope | string | null | undefined,
+): boolean {
+  if (!user || !stream) return false;
   if (user.role === "admin") return true;
-  if (user.role === "programme_overseer") return true;
-  if (!streamId) return false;
+  const streamId = typeof stream === "string" ? stream : stream.id;
+  const streamProgrammeId =
+    typeof stream === "string" ? null : stream.programmeId ?? null;
+  if (user.role === "programme_overseer") {
+    if (!user.programmeId || !streamProgrammeId) return false;
+    return streamProgrammeId === user.programmeId;
+  }
   if (user.role === "stream_overseer") return user.streamId === streamId;
   return false;
 }
 
 export function canManageTeam(
   user: Principal,
-  team: { id: string; streamId?: string | null } | null | undefined,
+  team: TeamScope | null | undefined,
+  streamProgrammeId?: string | null,
 ): boolean {
   if (!user || !team) return false;
   if (user.role === "admin") return true;
-  if (user.role === "programme_overseer") return true;
+  if (user.role === "programme_overseer") {
+    if (!user.programmeId || !streamProgrammeId) return false;
+    return streamProgrammeId === user.programmeId;
+  }
   if (user.role === "leader") return user.teamId === team.id;
   if (user.role === "stream_overseer") {
     return !!team.streamId && team.streamId === user.streamId;
@@ -41,11 +58,12 @@ export function canManageTeam(
 
 export function canCreateForTeam(
   user: Principal,
-  team: { id: string; streamId?: string | null } | null | undefined,
+  team: TeamScope | null | undefined,
+  streamProgrammeId?: string | null,
 ): boolean {
   if (!user) return false;
-  if (!team) return user.role === "admin" || user.role === "programme_overseer";
-  return canManageTeam(user, team);
+  if (!team) return user.role === "admin";
+  return canManageTeam(user, team, streamProgrammeId);
 }
 
 export function useMe(): User | null {
@@ -57,20 +75,50 @@ export function useCanManageEverything(): boolean {
   return canManageEverything(useMe());
 }
 
+/**
+ * React variants resolve the stream's programmeId via `useListStreams`
+ * so callers can keep passing just an ID. Returns `false` while the list
+ * is still loading.
+ */
 export function useCanManageStream(streamId: string | null | undefined): boolean {
-  return canManageStream(useMe(), streamId);
+  const me = useMe();
+  const { data: streams } = useListStreams();
+  if (!me || !streamId) return false;
+  if (me.role === "admin") return true;
+  if (me.role === "stream_overseer") return me.streamId === streamId;
+  if (me.role === "programme_overseer") {
+    const stream = (streams as Stream[] | undefined)?.find((s) => s.id === streamId);
+    if (!stream || !me.programmeId) return false;
+    return stream.programmeId === me.programmeId;
+  }
+  return false;
 }
 
 export function useCanManageTeam(
-  team: { id: string; streamId?: string | null } | null | undefined,
+  team: TeamScope | null | undefined,
 ): boolean {
-  return canManageTeam(useMe(), team);
+  const me = useMe();
+  const { data: streams } = useListStreams();
+  if (!me || !team) return false;
+  const streamProgrammeId =
+    team.streamId
+      ? (streams as Stream[] | undefined)?.find((s) => s.id === team.streamId)?.programmeId ?? null
+      : null;
+  return canManageTeam(me, team, streamProgrammeId);
 }
 
 export function useCanCreateForTeam(
-  team: { id: string; streamId?: string | null } | null | undefined,
+  team: TeamScope | null | undefined,
 ): boolean {
-  return canCreateForTeam(useMe(), team);
+  const me = useMe();
+  const { data: streams } = useListStreams();
+  if (!me) return false;
+  if (!team) return me.role === "admin";
+  const streamProgrammeId =
+    team.streamId
+      ? (streams as Stream[] | undefined)?.find((s) => s.id === team.streamId)?.programmeId ?? null
+      : null;
+  return canCreateForTeam(me, team, streamProgrammeId);
 }
 
 export type TeamVisibility = "full" | "locked" | "hidden";
@@ -83,19 +131,28 @@ export type TeamVisibility = "full" | "locked" | "hidden";
  *              indicator; do not navigate, do not expose other detail.
  * - `hidden` — do not render the team at all.
  *
- * Admins, programme overseers, and stream overseers always get `full` (no
- * visibility scoping beyond what the server already filtered).
- * Leaders see their own team as `full`, sibling teams in their stream as
- * `locked`, and any team outside their stream as `hidden`.
+ * Admins always full. Stream overseers full inside their stream. Programme
+ * overseers full inside their programme (caller must provide
+ * `streamProgrammeId` for that to resolve). Leaders see their own team as
+ * full and sibling teams in their stream as locked.
  */
 export function teamVisibility(
   user: Principal,
-  team: { id: string; streamId?: string | null } | null | undefined,
+  team: TeamScope | null | undefined,
+  streamProgrammeId?: string | null,
 ): TeamVisibility {
   if (!user || !team) return "hidden";
   if (user.role === "admin") return "full";
-  if (user.role === "programme_overseer") return "full";
-  if (user.role === "stream_overseer") return "full";
+  if (user.role === "programme_overseer") {
+    if (user.programmeId && streamProgrammeId && streamProgrammeId === user.programmeId) {
+      return "full";
+    }
+    return "hidden";
+  }
+  if (user.role === "stream_overseer") {
+    if (team.streamId && team.streamId === user.streamId) return "full";
+    return "hidden";
+  }
   if (user.role === "leader") {
     if (user.teamId && user.teamId === team.id) return "full";
     if (team.streamId && user.streamId && team.streamId === user.streamId) {
@@ -107,7 +164,13 @@ export function teamVisibility(
 }
 
 export function useTeamVisibility(
-  team: { id: string; streamId?: string | null } | null | undefined,
+  team: TeamScope | null | undefined,
 ): TeamVisibility {
-  return teamVisibility(useMe(), team);
+  const me = useMe();
+  const { data: streams } = useListStreams();
+  const streamProgrammeId =
+    team?.streamId
+      ? (streams as Stream[] | undefined)?.find((s) => s.id === team.streamId)?.programmeId ?? null
+      : null;
+  return teamVisibility(me, team, streamProgrammeId);
 }

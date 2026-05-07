@@ -230,16 +230,60 @@ export default function AdminPanelScreen() {
     return streams.find((s) => s.id === streamId)?.name ?? "—";
   }
 
+  function applyRoleChange(userId: string, next: Role, programmeIdOverride?: string) {
+    const u = users.find((x) => x.id === userId);
+    if (!u) return;
+    updateUserRole.mutate({
+      id: userId,
+      data: {
+        role: next,
+        programmeId: programmeIdOverride ?? u.programmeId ?? undefined,
+        streamId: u.streamId ?? undefined,
+        teamId: u.teamId ?? undefined,
+      },
+    });
+  }
+
+  function pickProgramme(userId: string, next: Role) {
+    if (programmes.length === 0) {
+      Alert.alert("No programmes", "Create a programme before assigning a Programme Overseer.");
+      return;
+    }
+    if (Platform.OS === "web") {
+      const list = programmes.map((p, i) => `${i + 1}. ${p.name}`).join("\n");
+      const choice = window.prompt(`Pick a programme (1-${programmes.length}):\n${list}`, "1");
+      if (!choice) return;
+      const idx = parseInt(choice, 10) - 1;
+      const p = programmes[idx];
+      if (!p) {
+        Alert.alert("Invalid choice", "Programme not found.");
+        return;
+      }
+      applyRoleChange(userId, next, p.id);
+      return;
+    }
+    Alert.alert(
+      "Pick a programme",
+      "Choose which programme this overseer manages.",
+      [
+        ...programmes.map((p) => ({
+          text: p.name,
+          onPress: () => applyRoleChange(userId, next, p.id),
+        })),
+        { text: "Cancel", style: "cancel" as const },
+      ],
+    );
+  }
+
   function changeRole(userId: string, currentRole: Role) {
     const u = users.find((x) => x.id === userId);
     if (!u) return;
     const idx = ROLE_CYCLE.indexOf(currentRole);
     const next = ROLE_CYCLE[(idx + 1) % ROLE_CYCLE.length];
-    if (next === "programme_overseer" && !u.programmeId) {
-      Alert.alert(
-        "Programme required",
-        "Assign this user to a programme first before making them a Programme Overseer.",
-      );
+    if (next === "programme_overseer") {
+      // Always (re)pick a programme when promoting to PO so the assignment
+      // is explicit, even if a stale programmeId already exists.
+      pickProgramme(userId, next);
       return;
     }
     if (next === "stream_overseer" && !u.streamId) {
@@ -250,15 +294,7 @@ export default function AdminPanelScreen() {
       Alert.alert("Team required", "Assign this user to a team first before making them a Leader.");
       return;
     }
-    updateUserRole.mutate({
-      id: userId,
-      data: {
-        role: next,
-        programmeId: u.programmeId ?? undefined,
-        streamId: u.streamId ?? undefined,
-        teamId: u.teamId ?? undefined,
-      },
-    });
+    applyRoleChange(userId, next);
   }
 
   function teamsForStream(streamId: string) {

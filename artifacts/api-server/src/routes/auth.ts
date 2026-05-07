@@ -133,14 +133,29 @@ router.post("/auth/invite", requireAuth, async (req, res): Promise<void> => {
   const { email, name, role, department, programmeId, streamId, teamId } = parsed.data;
   const inviter = req.authUser!;
 
-  // Only admins and programme overseers may invite users. Programme
-  // overseers cannot create admins or other programme overseers.
-  if (inviter.role !== "admin" && inviter.role !== "programme_overseer") {
+  // Admins, programme overseers, and stream overseers may invite users.
+  // - admin              → any role
+  // - programme_overseer → only stream_overseer or leader (never admin /
+  //                        another PO), scoped to their programme
+  // - stream_overseer    → only stream_overseer or leader, scoped to their
+  //                        stream
+  if (
+    inviter.role !== "admin" &&
+    inviter.role !== "programme_overseer" &&
+    inviter.role !== "stream_overseer"
+  ) {
     res.status(403).json({ error: "You do not have permission to invite users" });
     return;
   }
   if (
     inviter.role === "programme_overseer" &&
+    (role === "admin" || role === "programme_overseer")
+  ) {
+    res.status(403).json({ error: "You cannot invite that role" });
+    return;
+  }
+  if (
+    inviter.role === "stream_overseer" &&
     (role === "admin" || role === "programme_overseer")
   ) {
     res.status(403).json({ error: "You cannot invite that role" });
@@ -202,6 +217,14 @@ router.post("/auth/invite", requireAuth, async (req, res): Promise<void> => {
       res.status(403).json({ error: "Stream is outside your programme" });
       return;
     }
+    // Stream overseer scope check: must be their own stream.
+    if (
+      inviter.role === "stream_overseer" &&
+      streamId !== inviter.streamId
+    ) {
+      res.status(403).json({ error: "Stream is outside your stream" });
+      return;
+    }
     resolvedStreamId = streamId;
   } else if (role === "leader") {
     if (!teamId) {
@@ -222,6 +245,14 @@ router.post("/auth/invite", requireAuth, async (req, res): Promise<void> => {
       return;
     }
     resolvedStreamId = team.streamId ?? streamId ?? null;
+    // Stream overseer scope check: team's stream must be inviter's stream.
+    if (
+      inviter.role === "stream_overseer" &&
+      resolvedStreamId !== inviter.streamId
+    ) {
+      res.status(403).json({ error: "Team is outside your stream" });
+      return;
+    }
     // Programme overseer scope check: team's stream must be in inviter's programme.
     if (inviter.role === "programme_overseer") {
       if (!resolvedStreamId) {
