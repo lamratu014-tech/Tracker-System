@@ -1,0 +1,33 @@
+2026-05-07T20:27:07.748350713Z ==> Cloning from https://github.com/lamratu014-tech/Tracker-System
+2026-05-07T20:27:08.322291941Z ==> Checking out commit c1f77f65b09b5da8453e4114b188e9eb437aa9c1 in branch main
+2026-05-07T20:27:09.763219809Z ==> Requesting Node.js version 22
+2026-05-07T20:27:10.016873324Z ==> Using Node.js version 22.22.2 via environment variable NODE_VERSION
+2026-05-07T20:27:10.042060535Z ==> Docs on specifying a Node.js version: https://render.com/docs/node-version
+2026-05-07T20:27:11.986727759Z ==> Running build command 'corepack enable && pnpm install --frozen-lockfile && pnpm --filter @workspace/api-server run build'...
+2026-05-07T20:27:12.19436937Z ! Corepack is about to download https://registry.npmjs.org/pnpm/-/pnpm-11.0.8.tgz
+2026-05-07T20:27:13.1301936Z Scope: all 9 workspace projects
+2026-05-07T20:27:13.257495051Z Lockfile is up to date, resolution step is skipped
+2026-05-07T20:27:13.308599669Z Progress: resolved 1, reused 0, downloaded 0, added 0
+2026-05-07T20:27:13.400632679Z Packages: +1089
+2026-05-07T20:27:13.40065126Z ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+2026-05-07T20:27:14.309942434Z Progress: resolved 1089, reused 0, downloaded 15, added 0
+2026-05-07T20:27:15.310368254Z Progress: resolved 1089, reused 0, downloaded 236, added 152
+2026-05-07T20:27:16.310447977Z Progress: resolved 1089, reused 0, downloaded 481, added 287
+2026-05-07T20:27:17.310120451Z Progress: resolved 1089, reused 0, downloaded 593, added 389
+2026-05-07T20:27:18.311096521Z Progress: resolved 1089, reused 0, downloaded 743, added 472
+2026-05-07T20:27:19.311487232Z Progress: resolved 1089, reused 0, downloaded 854, added 600
+2026-05-07T20:27:20.311656783Z Progress: resolved 1089, reused 0, downloaded 884, added 608
+2026-05-07T20:27:21.312164692Z Progress: resolved 1089, reused 0, downloaded 1035, added 677
+2026-05-07T20:27:22.312199488Z Progress: resolved 1089, reused 0, downloaded 1063, added 1054
+2026-05-07T20:27:22.38855142Z Progress: resolved 1089, reused 0, downloaded 1063, added 1089, done
+2026-05-07T20:27:22.892814214Z 
+2026-05-07T20:27:22.892837765Z devDependencies:
+2026-05-07T20:27:22.892842875Z + prettier 3.8.1
+2026-05-07T20:27:22.892850546Z + typescript 5.9.3
+2026-05-07T20:27:22.892854506Z 
+2026-05-07T20:27:22.93018213Z . preinstall$ sh -c 'rm -f package-lock.json yarn.lock; case "$npm_config_user_agent" in pnpm/*) ;; *) echo "Use pnpm instead" >&2; exit 1 ;; esac'
+2026-05-07T20:27:22.959652104Z . preinstall: Use pnpm instead
+2026-05-07T20:27:22.960703866Z . preinstall: Failed
+2026-05-07T20:27:22.971615118Z [ELIFECYCLE] Command failed with exit code 1.
+2026-05-07T20:27:23.155821336Z ==> Build failed 😞
+2026-05-07T20:27:23.155842597Z ==> Common ways to troubleshoot your deploy: https://render.com/docs/troubleshooting-deploys
