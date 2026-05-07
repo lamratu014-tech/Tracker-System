@@ -215,3 +215,35 @@ To verify a clean web build locally, run
 `pnpm --filter @workspace/mobile run build:web` and serve `artifacts/mobile/dist`
 with any static server. The login screen should render and a `POST /api/auth/login`
 round-trip should succeed against the Express API.
+
+## CI guard: web build runs as part of `typecheck`
+
+To prevent another native-only import (e.g. an unguarded `Haptics` call) from
+silently breaking the Render web SPA, the root `pnpm run typecheck` script now
+also runs the Expo web export:
+
+```
+pnpm run typecheck
+  └─ tsc --build (libs)
+  └─ per-artifact + scripts typecheck
+  └─ pnpm run build:web
+       └─ pnpm --filter @workspace/api-spec run codegen
+       └─ pnpm --filter @workspace/mobile run build:web
+```
+
+Any error in the web bundle fails `typecheck`, which is what CI / the
+pre-deploy script invokes. The same `build:web` script is what `render.yaml`
+uses for the `ops-planning-web` static site, so a green `typecheck` locally
+matches what Render will run.
+
+**Skipping it locally** — if you only want a fast type pass during iteration
+and don't care about the web bundle, run the steps individually instead of the
+combined script:
+
+```bash
+pnpm run typecheck:libs
+pnpm -r --filter "./artifacts/**" --filter "./scripts" --if-present run typecheck
+```
+
+Just remember to run the full `pnpm run typecheck` (or `pnpm run build:web`
+on its own) before pushing — CI will run it for you regardless.
