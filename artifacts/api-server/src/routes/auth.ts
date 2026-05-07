@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, usersTable, invitesTable, passwordResetsTable, sessionsTable, teamsTable, streamsTable } from "@workspace/db";
+import { db, usersTable, invitesTable, passwordResetsTable, sessionsTable, teamsTable, streamsTable, programmesTable } from "@workspace/db";
 import { eq, and, gt, isNull } from "drizzle-orm";
 import {
   LoginBody,
@@ -123,25 +123,59 @@ router.post("/auth/logout", requireAuth, async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
-router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
+router.post("/auth/invite", requireAuth, async (req, res): Promise<void> => {
   const parsed = CreateInviteBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
-  const { email, name, role, department, streamId, teamId } = parsed.data;
+  const { email, name, role, department, programmeId, streamId, teamId } = parsed.data;
   const inviter = req.authUser!;
+
+  // Only admins and programme overseers may invite users. Programme
+  // overseers cannot create admins or other programme overseers.
+  if (inviter.role !== "admin" && inviter.role !== "programme_overseer") {
+    res.status(403).json({ error: "You do not have permission to invite users" });
+    return;
+  }
+  if (
+    inviter.role === "programme_overseer" &&
+    (role === "admin" || role === "programme_overseer")
+  ) {
+    res.status(403).json({ error: "You cannot invite that role" });
+    return;
+  }
 
   // Validate scope coherence and that referenced rows exist. We only
   // load the team when we actually need its streamId for cross-checks.
+  let resolvedProgrammeId: string | null = null;
   let resolvedStreamId: string | null = null;
 
   if (role === "admin") {
-    if (streamId || teamId) {
-      res.status(400).json({ error: "Admin invites cannot be scoped to a stream or team" });
+    if (programmeId || streamId || teamId) {
+      res.status(400).json({ error: "Admin invites cannot be scoped to a programme, stream or team" });
       return;
     }
+  } else if (role === "programme_overseer") {
+    if (!programmeId) {
+      res.status(400).json({ error: "Programme overseer invites must include a programmeId" });
+      return;
+    }
+    if (streamId || teamId) {
+      res.status(400).json({ error: "Programme overseer invites cannot include a streamId or teamId" });
+      return;
+    }
+    const [programme] = await db
+      .select({ id: programmesTable.id })
+      .from(programmesTable)
+      .where(eq(programmesTable.id, programmeId))
+      .limit(1);
+    if (!programme) {
+      res.status(400).json({ error: "Programme not found" });
+      return;
+    }
+    resolvedProgrammeId = programmeId;
   } else if (role === "stream_overseer") {
     if (!streamId) {
       res.status(400).json({ error: "Stream overseer invites must include a streamId" });
@@ -152,12 +186,20 @@ router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
       return;
     }
     const [stream] = await db
-      .select({ id: streamsTable.id })
+      .select({ id: streamsTable.id, programmeId: streamsTable.programmeId })
       .from(streamsTable)
       .where(eq(streamsTable.id, streamId))
       .limit(1);
     if (!stream) {
       res.status(400).json({ error: "Stream not found" });
+      return;
+    }
+    // Programme overseer scope check: stream must be in inviter's programme.
+    if (
+      inviter.role === "programme_overseer" &&
+      stream.programmeId !== inviter.programmeId
+    ) {
+      res.status(403).json({ error: "Stream is outside your programme" });
       return;
     }
     resolvedStreamId = streamId;
@@ -180,10 +222,23 @@ router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
       return;
     }
     resolvedStreamId = team.streamId ?? streamId ?? null;
+    // Programme overseer scope check: team's stream must be in inviter's programme.
+    if (inviter.role === "programme_overseer") {
+      if (!resolvedStreamId) {
+        res.status(403).json({ error: "Team is outside your programme" });
+        return;
+      }
+      const [stream] = await db
+        .select({ programmeId: streamsTable.programmeId })
+        .from(streamsTable)
+        .where(eq(streamsTable.id, resolvedStreamId))
+        .limit(1);
+      if (!stream || stream.programmeId !== inviter.programmeId) {
+        res.status(403).json({ error: "Team is outside your programme" });
+        return;
+      }
+    }
   }
-
-  // Admin-only route (enforced by `requireAdmin`), so no further
-  // inviter-role authorization is needed beyond scope-coherence above.
 
   const lowerEmail = email.toLowerCase();
   const [existing] = await db
@@ -224,6 +279,7 @@ router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
             initials,
             department: department ?? "",
             role,
+            programmeId: resolvedProgrammeId,
             streamId: resolvedStreamId,
             teamId: teamId ?? null,
             invitedByName: req.authUser!.name,
@@ -239,6 +295,7 @@ router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
           initials,
           department: department ?? "",
           role,
+          programmeId: resolvedProgrammeId,
           streamId: resolvedStreamId,
           teamId: teamId ?? null,
           passwordHash: null,
@@ -252,6 +309,7 @@ router.post("/auth/invite", requireAdmin, async (req, res): Promise<void> => {
         token,
         role,
         department: department ?? "",
+        programmeId: resolvedProgrammeId,
         streamId: resolvedStreamId,
         teamId: teamId ?? null,
         invitedByName: req.authUser!.name,

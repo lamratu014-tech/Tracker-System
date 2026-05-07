@@ -9,9 +9,9 @@ import {
   DeleteStreamParams,
   ListStreamTeamsParams,
 } from "@workspace/api-zod";
-import { requireAuth, requireAdmin, requireManager } from "../middlewares/requireAuth";
+import { requireAuth, requireManager } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
-import { userCanAccessStream, userCanReadStream, visibleTeamIdsFor } from "../lib/permissions";
+import { userCanAccessStream, userCanManageProgramme, userCanReadStream, visibleTeamIdsFor } from "../lib/permissions";
 
 const router = Router();
 
@@ -20,6 +20,17 @@ router.get("/streams", requireAuth, async (req, res): Promise<void> => {
 
   if (user.role === "admin") {
     const streams = await db.select().from(streamsTable).orderBy(streamsTable.name);
+    res.json(streams);
+    return;
+  }
+
+  if (user.role === "programme_overseer") {
+    if (!user.programmeId) { res.json([]); return; }
+    const streams = await db
+      .select()
+      .from(streamsTable)
+      .where(eq(streamsTable.programmeId, user.programmeId))
+      .orderBy(streamsTable.name);
     res.json(streams);
     return;
   }
@@ -56,13 +67,18 @@ router.get("/streams/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(stream);
 });
 
-// POST /streams — admin only
-router.post("/streams", requireAdmin, async (req, res): Promise<void> => {
+// POST /streams — admin or programme_overseer of the target programme
+router.post("/streams", requireManager, async (req, res): Promise<void> => {
   const parsed = CreateStreamBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
   const [programme] = await db.select().from(programmesTable).where(eq(programmesTable.id, parsed.data.programmeId)).limit(1);
   if (!programme) { res.status(404).json({ error: "Programme not found" }); return; }
+
+  if (!(await userCanManageProgramme(req.authUser!, parsed.data.programmeId))) {
+    res.status(403).json({ error: "You can only create streams in your own programme" });
+    return;
+  }
 
   const [stream] = await db
     .insert(streamsTable)
@@ -83,7 +99,7 @@ router.patch("/streams/:id", requireManager, async (req, res): Promise<void> => 
   const parsed = UpdateStreamBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
 
-  if (!userCanAccessStream(req.authUser!, params.data.id)) {
+  if (!(await userCanAccessStream(req.authUser!, params.data.id))) {
     res.status(403).json({ error: "You can only edit your own stream" });
     return;
   }
@@ -104,7 +120,7 @@ router.delete("/streams/:id", requireManager, async (req, res): Promise<void> =>
   const params = DeleteStreamParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
 
-  if (!userCanAccessStream(req.authUser!, params.data.id)) {
+  if (!(await userCanAccessStream(req.authUser!, params.data.id))) {
     res.status(403).json({ error: "You can only delete your own stream" });
     return;
   }

@@ -10,6 +10,7 @@ export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 
 export const UserRole = {
   admin: "admin",
+  programme_overseer: "programme_overseer",
   stream_overseer: "stream_overseer",
   leader: "leader",
 } as const;

@@ -9,6 +9,7 @@ import type { UserRole } from "./userRole";
 
 export interface UpdateUserRoleBody {
   role: UserRole;
+  programmeId?: string | null;
   streamId?: string | null;
   teamId?: string | null;
 }

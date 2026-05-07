@@ -966,7 +966,7 @@ components:
 
     UserRole:
       type: string
-      enum: [admin, stream_overseer, leader]
+      enum: [admin, programme_overseer, stream_overseer, leader]
 
     AuthStatus:
       type: object
@@ -991,6 +991,7 @@ components:
         initials: { type: string }
         department: { type: string }
         role: { $ref: "#/components/schemas/UserRole" }
+        programmeId: { type: string, nullable: true }
         streamId: { type: string, nullable: true }
         teamId: { type: string, nullable: true }
         active: { type: boolean }
@@ -1043,6 +1044,7 @@ components:
         name: { type: string, minLength: 1 }
         role: { $ref: "#/components/schemas/UserRole" }
         department: { type: string }
+        programmeId: { type: string, nullable: true }
         streamId: { type: string, nullable: true }
         teamId: { type: string, nullable: true }
 
@@ -1076,6 +1078,7 @@ components:
         password: { type: string, minLength: 6 }
         role: { $ref: "#/components/schemas/UserRole" }
         department: { type: string }
+        programmeId: { type: string, nullable: true }
         streamId: { type: string, nullable: true }
         teamId: { type: string, nullable: true }
 
@@ -1084,6 +1087,7 @@ components:
       required: [role]
       properties:
         role: { $ref: "#/components/schemas/UserRole" }
+        programmeId: { type: string, nullable: true }
         streamId: { type: string, nullable: true }
         teamId: { type: string, nullable: true }
 

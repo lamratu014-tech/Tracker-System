@@ -47,17 +47,19 @@ type AdminTab = "structure" | "programmes" | "users" | "members" | "events";
 
 const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
+  programme_overseer: "Prog. Overseer",
   stream_overseer: "Overseer",
   leader: "Leader",
 };
 
 const ROLE_COLOR: Record<Role, string> = {
   admin: "#7C3AED",
+  programme_overseer: "#6366F1",
   stream_overseer: "#0EA5E9",
   leader: "#2563EB",
 };
 
-const ROLE_CYCLE: Role[] = ["admin", "stream_overseer", "leader"];
+const ROLE_CYCLE: Role[] = ["admin", "programme_overseer", "stream_overseer", "leader"];
 
 function confirm(message: string, onYes: () => void) {
   if (Platform.OS === "web") {
@@ -233,6 +235,13 @@ export default function AdminPanelScreen() {
     if (!u) return;
     const idx = ROLE_CYCLE.indexOf(currentRole);
     const next = ROLE_CYCLE[(idx + 1) % ROLE_CYCLE.length];
+    if (next === "programme_overseer" && !u.programmeId) {
+      Alert.alert(
+        "Programme required",
+        "Assign this user to a programme first before making them a Programme Overseer.",
+      );
+      return;
+    }
     if (next === "stream_overseer" && !u.streamId) {
       Alert.alert("Stream required", "Assign this user to a stream first before making them an Overseer.");
       return;
@@ -243,7 +252,12 @@ export default function AdminPanelScreen() {
     }
     updateUserRole.mutate({
       id: userId,
-      data: { role: next, streamId: u.streamId ?? undefined, teamId: u.teamId ?? undefined },
+      data: {
+        role: next,
+        programmeId: u.programmeId ?? undefined,
+        streamId: u.streamId ?? undefined,
+        teamId: u.teamId ?? undefined,
+      },
     });
   }
 

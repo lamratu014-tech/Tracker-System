@@ -1,15 +1,25 @@
 import { useGetMe } from "@workspace/api-client-react";
 import type { User } from "@workspace/api-client-react";
 
-export type Principal = Pick<User, "id" | "role" | "streamId" | "teamId"> | null | undefined;
+export type Principal =
+  | Pick<User, "id" | "role" | "programmeId" | "streamId" | "teamId">
+  | null
+  | undefined;
 
 export function canManageEverything(user: Principal): boolean {
   return user?.role === "admin";
 }
 
+/**
+ * Programme overseers and admins are treated as "can manage" anything they
+ * can see — the API server already filters their visible streams/teams to
+ * the programme they oversee, so a UI-side permission check that returns
+ * `true` here is safe. Real authorization is enforced server-side.
+ */
 export function canManageStream(user: Principal, streamId: string | null | undefined): boolean {
   if (!user) return false;
   if (user.role === "admin") return true;
+  if (user.role === "programme_overseer") return true;
   if (!streamId) return false;
   if (user.role === "stream_overseer") return user.streamId === streamId;
   return false;
@@ -21,6 +31,7 @@ export function canManageTeam(
 ): boolean {
   if (!user || !team) return false;
   if (user.role === "admin") return true;
+  if (user.role === "programme_overseer") return true;
   if (user.role === "leader") return user.teamId === team.id;
   if (user.role === "stream_overseer") {
     return !!team.streamId && team.streamId === user.streamId;
@@ -33,7 +44,7 @@ export function canCreateForTeam(
   team: { id: string; streamId?: string | null } | null | undefined,
 ): boolean {
   if (!user) return false;
-  if (!team) return user.role === "admin";
+  if (!team) return user.role === "admin" || user.role === "programme_overseer";
   return canManageTeam(user, team);
 }
 
@@ -72,7 +83,8 @@ export type TeamVisibility = "full" | "locked" | "hidden";
  *              indicator; do not navigate, do not expose other detail.
  * - `hidden` — do not render the team at all.
  *
- * Admins and stream overseers always get `full` (no visibility scoping).
+ * Admins, programme overseers, and stream overseers always get `full` (no
+ * visibility scoping beyond what the server already filtered).
  * Leaders see their own team as `full`, sibling teams in their stream as
  * `locked`, and any team outside their stream as `hidden`.
  */
@@ -82,6 +94,7 @@ export function teamVisibility(
 ): TeamVisibility {
   if (!user || !team) return "hidden";
   if (user.role === "admin") return "full";
+  if (user.role === "programme_overseer") return "full";
   if (user.role === "stream_overseer") return "full";
   if (user.role === "leader") {
     if (user.teamId && user.teamId === team.id) return "full";

@@ -53,7 +53,12 @@ export async function requireManager(
 ): Promise<void> {
   await requireAuth(req, res, () => {
     const role = req.authUser?.role;
-    if (role !== "admin" && role !== "stream_overseer" && role !== "leader") {
+    if (
+      role !== "admin" &&
+      role !== "programme_overseer" &&
+      role !== "stream_overseer" &&
+      role !== "leader"
+    ) {
       res.status(403).json({ error: "Manager access required" });
       return;
     }

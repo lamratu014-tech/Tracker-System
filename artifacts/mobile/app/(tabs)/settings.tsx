@@ -23,6 +23,7 @@ import { useAuth } from "@/lib/auth/AuthContext";
 
 const ROLE_LABEL: Record<string, string> = {
   admin: "Admin",
+  programme_overseer: "Programme Overseer",
   stream_overseer: "Stream Overseer",
   leader: "Team Leader",
 };

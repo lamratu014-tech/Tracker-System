@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, usersTable } from "@workspace/db";
+import { db, usersTable, streamsTable } from "@workspace/db";
 import { eq, or, inArray } from "drizzle-orm";
 import {
   CreateUserBody,
@@ -34,6 +34,7 @@ function publicUser(u: typeof usersTable.$inferSelect) {
     name: u.name,
     initials: u.initials,
     role: u.role,
+    programmeId: u.programmeId,
     streamId: u.streamId,
     teamId: u.teamId,
     email: "",
@@ -51,7 +52,7 @@ router.post("/users", requireAdmin, async (req, res): Promise<void> => {
     res.status(400).json({ error: parsed.error.issues[0]?.message ?? "Invalid input" });
     return;
   }
-  const { email, name, password, role, department, streamId, teamId } = parsed.data;
+  const { email, name, password, role, department, programmeId, streamId, teamId } = parsed.data;
 
   const [existing] = await db
     .select({ id: usersTable.id })
@@ -75,6 +76,7 @@ router.post("/users", requireAdmin, async (req, res): Promise<void> => {
       passwordHash,
       role,
       department: department ?? "",
+      programmeId: programmeId ?? null,
       streamId: streamId ?? null,
       teamId: teamId ?? null,
       active: true,
@@ -105,6 +107,21 @@ router.get("/users", requireAuth, async (req, res): Promise<void> => {
   if (me.role === "stream_overseer" && me.streamId) {
     conditions.push(eq(usersTable.streamId, me.streamId));
   }
+  if (me.role === "programme_overseer" && me.programmeId) {
+    // Include programme overseers, stream overseers in this programme,
+    // and leaders inside teams in this programme. The teamIds branch
+    // above already covers leader+member rows; add programme/stream
+    // matches here.
+    conditions.push(eq(usersTable.programmeId, me.programmeId));
+    const streamRows = await db
+      .select({ id: streamsTable.id })
+      .from(streamsTable)
+      .where(eq(streamsTable.programmeId, me.programmeId));
+    const streamIds = streamRows.map((s) => s.id);
+    if (streamIds.length > 0) {
+      conditions.push(inArray(usersTable.streamId, streamIds));
+    }
+  }
 
   const rows = await db
     .select()
@@ -134,7 +151,22 @@ router.get("/users/:id", requireAuth, async (req, res): Promise<void> => {
   const teamMatch = visible !== "all" && user.teamId && visible.includes(user.teamId);
   const streamMatch =
     me.role === "stream_overseer" && me.streamId && user.streamId === me.streamId;
-  if (!teamMatch && !streamMatch) {
+
+  let programmeMatch = false;
+  if (me.role === "programme_overseer" && me.programmeId) {
+    if (user.programmeId === me.programmeId) {
+      programmeMatch = true;
+    } else if (user.streamId) {
+      const [s] = await db
+        .select({ programmeId: streamsTable.programmeId })
+        .from(streamsTable)
+        .where(eq(streamsTable.id, user.streamId))
+        .limit(1);
+      programmeMatch = !!s && s.programmeId === me.programmeId;
+    }
+  }
+
+  if (!teamMatch && !streamMatch && !programmeMatch) {
     res.status(404).json({ error: "User not found" });
     return;
   }
@@ -161,6 +193,7 @@ router.patch("/users/:id/role", requireAdmin, async (req, res): Promise<void> =>
   // Build patch so explicit `null` clears the FK while omitted keys leave
   // the existing value untouched.
   const patch: Partial<typeof usersTable.$inferInsert> = { role: parsed.data.role };
+  if ("programmeId" in parsed.data) patch.programmeId = parsed.data.programmeId ?? null;
   if ("streamId" in parsed.data) patch.streamId = parsed.data.streamId ?? null;
   if ("teamId" in parsed.data) patch.teamId = parsed.data.teamId ?? null;
 

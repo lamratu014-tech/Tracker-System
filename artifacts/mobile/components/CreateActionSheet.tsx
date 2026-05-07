@@ -31,6 +31,7 @@ const ALL: Action[] = [
 
 const ROLE_ACTIONS: Record<Role, string[]> = {
   admin: ["stream", "team", "user", "project", "milestone", "event"],
+  programme_overseer: ["stream", "team", "user", "project", "milestone", "event"],
   stream_overseer: ["team", "project", "milestone", "event"],
   leader: ["project", "milestone", "event"],
 };

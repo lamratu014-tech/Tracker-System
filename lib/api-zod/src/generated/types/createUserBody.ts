@@ -15,6 +15,7 @@ export interface CreateUserBody {
   password: string;
   role: UserRole;
   department?: string;
+  programmeId?: string | null;
   streamId?: string | null;
   teamId?: string | null;
 }

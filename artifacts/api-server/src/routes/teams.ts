@@ -92,7 +92,7 @@ router.post("/teams", requireManager, async (req, res): Promise<void> => {
 
   // Non-admins must scope the new team to a stream they oversee.
   if (user.role !== "admin") {
-    if (!streamId || !userCanAccessStream(user, streamId)) {
+    if (!streamId || !(await userCanAccessStream(user, streamId))) {
       res.status(403).json({ error: "You can only create teams within your own stream" });
       return;
     }
@@ -129,7 +129,7 @@ router.patch("/teams/:id", requireManager, async (req, res): Promise<void> => {
 
   // Non-admins cannot reparent a team into a different stream.
   if (user.role !== "admin" && "streamId" in parsed.data) {
-    if (!userCanAccessStream(user, parsed.data.streamId ?? null)) {
+    if (!(await userCanAccessStream(user, parsed.data.streamId ?? null))) {
       res.status(403).json({ error: "You cannot move teams outside your stream" });
       return;
     }

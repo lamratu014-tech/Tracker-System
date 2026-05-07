@@ -2,8 +2,14 @@ import { pgTable, text, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod/v4";
 import { streamsTable } from "./streams";
+import { programmesTable } from "./programmes";
 
-export const userRoles = ["admin", "stream_overseer", "leader"] as const;
+export const userRoles = [
+  "admin",
+  "programme_overseer",
+  "stream_overseer",
+  "leader",
+] as const;
 export type UserRole = (typeof userRoles)[number];
 
 export const usersTable = pgTable("users", {
@@ -18,6 +24,9 @@ export const usersTable = pgTable("users", {
     .$type<UserRole>()
     .notNull()
     .default("leader"),
+  programmeId: text("programme_id").references(() => programmesTable.id, {
+    onDelete: "set null",
+  }),
   streamId: text("stream_id").references(() => streamsTable.id, {
     onDelete: "set null",
   }),

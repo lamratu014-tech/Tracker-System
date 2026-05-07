@@ -19,18 +19,21 @@ import type { Role } from "@/models/types";
 import {
   getListStreamTeamsQueryKey,
   useCreateInvite,
+  useListProgrammes,
   useListStreams,
   useListStreamTeams,
 } from "@workspace/api-client-react";
 
-const ROLES: Role[] = ["admin", "stream_overseer", "leader"];
+const ROLES: Role[] = ["admin", "programme_overseer", "stream_overseer", "leader"];
 const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
+  programme_overseer: "Programme Overseer",
   stream_overseer: "Stream Overseer",
   leader: "Team Leader",
 };
 const ROLE_HINT: Record<Role, string> = {
   admin: "Full access to everything",
+  programme_overseer: "Manages every stream and team within one programme",
   stream_overseer: "Manages all teams within one stream",
   leader: "Manages a single team",
 };
@@ -58,10 +61,13 @@ export default function NewUserScreen() {
   // server state, never from the local Zustand store.
   const streamsQuery = useListStreams();
   const serverStreams = streamsQuery.data ?? [];
+  const programmesQuery = useListProgrammes();
+  const programmes = programmesQuery.data ?? [];
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<Role>("leader");
+  const [programmeId, setProgrammeId] = useState<string | null>(null);
   const [streamId, setStreamId] = useState<string | null>(null);
   const [teamId, setTeamId] = useState<string | null>(null);
   const [createdCode, setCreatedCode] = useState<string | null>(null);
@@ -69,15 +75,19 @@ export default function NewUserScreen() {
   const [error, setError] = useState<string | null>(null);
 
   const isAdmin = me?.role === "admin";
+  const isProgrammeOverseer = me?.role === "programme_overseer";
   const isOverseer = me?.role === "stream_overseer";
 
-  // Overseers are locked to their own stream and may only invite leaders
-  // (or peer overseers) within it.
+  // Programme overseers may invite stream overseers + leaders within their
+  // programme — never admins or other programme overseers. Stream overseers
+  // are still locked to their own stream.
   const visibleRoles: Role[] = isAdmin
     ? ROLES
-    : isOverseer
+    : isProgrammeOverseer
       ? (["stream_overseer", "leader"] as Role[])
-      : [];
+      : isOverseer
+        ? (["stream_overseer", "leader"] as Role[])
+        : [];
 
   const visibleStreams = useMemo(
     () =>
@@ -111,11 +121,11 @@ export default function NewUserScreen() {
     if (isOverseer && role === "admin") setRole("leader");
   }, [isOverseer, role]);
 
-  if (!isAdmin && !isOverseer) {
+  if (!isAdmin && !isProgrammeOverseer && !isOverseer) {
     return (
       <View style={[styles.gate, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.mutedForeground }}>
-          Only admins and stream overseers can invite users.
+          Only admins and overseers can invite users.
         </Text>
       </View>
     );
@@ -128,6 +138,9 @@ export default function NewUserScreen() {
     if (!name.trim()) return Alert.alert("Name required", "Please enter a name.");
     if (!email.trim() || !email.includes("@")) {
       return Alert.alert("Email required", "Please enter a valid email.");
+    }
+    if (role === "programme_overseer" && !programmeId) {
+      return Alert.alert("Programme required", "Pick a programme for this overseer.");
     }
     if (role === "stream_overseer" && !streamId) {
       return Alert.alert("Stream required", "Pick a stream for this overseer.");
@@ -142,6 +155,7 @@ export default function NewUserScreen() {
           name: name.trim(),
           email: email.trim().toLowerCase(),
           role,
+          programmeId: role === "programme_overseer" ? programmeId : null,
           streamId: role === "stream_overseer" ? streamId : null,
           teamId: role === "leader" ? teamId : null,
         },
@@ -234,7 +248,7 @@ export default function NewUserScreen() {
               backgroundColor: role === r ? colors.primary + "11" : colors.card,
             },
           ]}
-          onPress={() => { setRole(r); setStreamId(null); setTeamId(null); }}
+          onPress={() => { setRole(r); setProgrammeId(null); setStreamId(null); setTeamId(null); }}
           activeOpacity={0.85}
           disabled={submitting}
         >
@@ -247,6 +261,28 @@ export default function NewUserScreen() {
           </View>
         </TouchableOpacity>
       ))}
+
+      {role === "programme_overseer" ? (
+        <>
+          <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 8 }]}>Assign to programme *</Text>
+          {programmes.length === 0 ? (
+            <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>No programmes available.</Text>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+              {programmes.map((p) => (
+                <TouchableOpacity
+                  key={p.id}
+                  style={[styles.chip, { borderColor: colors.border, backgroundColor: programmeId === p.id ? colors.primary : colors.muted }]}
+                  onPress={() => setProgrammeId(p.id)}
+                  disabled={submitting}
+                >
+                  <Text style={[styles.chipText, { color: programmeId === p.id ? "#fff" : colors.foreground }]}>{p.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+        </>
+      ) : null}
 
       {role === "stream_overseer" ? (
         <>

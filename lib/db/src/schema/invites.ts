@@ -13,6 +13,7 @@ export const invitesTable = pgTable("invite_tokens", {
     .notNull()
     .default("leader"),
   department: text("department").notNull().default(""),
+  programmeId: text("programme_id"),
   streamId: text("stream_id"),
   teamId: text("team_id"),
   invitedByName: text("invited_by_name").notNull(),

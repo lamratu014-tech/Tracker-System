@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, projectsTable, teamsTable } from "@workspace/db";
+import { db, projectsTable, teamsTable, streamsTable } from "@workspace/db";
 import { eq, inArray } from "drizzle-orm";
 import {
   CreateProjectBody,
@@ -40,6 +40,26 @@ router.get("/projects", requireAuth, async (req, res): Promise<void> => {
 
   if (user.role === "admin") {
     res.json(await baseQuery.orderBy(projectsTable.createdAt));
+    return;
+  }
+
+  if (user.role === "programme_overseer" && user.programmeId) {
+    const teamIds = (
+      await db
+        .select({ id: teamsTable.id })
+        .from(teamsTable)
+        .innerJoin(streamsTable, eq(teamsTable.streamId, streamsTable.id))
+        .where(eq(streamsTable.programmeId, user.programmeId))
+    ).map((t) => t.id);
+    if (!teamIds.length) { res.json([]); return; }
+    res.json(
+      await db
+        .select(projectColumns)
+        .from(projectsTable)
+        .leftJoin(teamsTable, eq(projectsTable.teamId, teamsTable.id))
+        .where(inArray(projectsTable.teamId, teamIds))
+        .orderBy(projectsTable.createdAt)
+    );
     return;
   }
 

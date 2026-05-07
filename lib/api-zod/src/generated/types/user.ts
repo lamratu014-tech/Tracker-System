@@ -14,6 +14,7 @@ export interface User {
   initials: string;
   department: string;
   role: UserRole;
+  programmeId?: string | null;
   streamId?: string | null;
   teamId?: string | null;
   active: boolean;

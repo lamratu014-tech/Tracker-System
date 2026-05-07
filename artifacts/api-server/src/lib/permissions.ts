@@ -3,10 +3,23 @@ import type { User } from "@workspace/db";
 import { eq } from "drizzle-orm";
 
 /**
+ * Look up the programmeId for a stream, or null if the stream is missing.
+ */
+async function getStreamProgrammeId(streamId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ programmeId: streamsTable.programmeId })
+    .from(streamsTable)
+    .where(eq(streamsTable.id, streamId))
+    .limit(1);
+  return row?.programmeId ?? null;
+}
+
+/**
  * Returns true when `user` can manage rows scoped to the given team.
- *  - admin            → always
- *  - leader           → only their own team
- *  - stream_overseer  → any team inside their assigned stream
+ *  - admin              → always
+ *  - leader             → only their own team
+ *  - stream_overseer    → any team inside their assigned stream
+ *  - programme_overseer → any team whose stream is in their assigned programme
  */
 export async function userCanAccessTeam(
   user: User,
@@ -24,17 +37,34 @@ export async function userCanAccessTeam(
       .limit(1);
     return !!team && team.streamId === user.streamId;
   }
+  if (user.role === "programme_overseer") {
+    if (!user.programmeId) return false;
+    const [team] = await db
+      .select({ streamId: teamsTable.streamId })
+      .from(teamsTable)
+      .where(eq(teamsTable.id, teamId))
+      .limit(1);
+    if (!team?.streamId) return false;
+    const programmeId = await getStreamProgrammeId(team.streamId);
+    return programmeId === user.programmeId;
+  }
   return false;
 }
 
-/** Same as userCanAccessTeam but for an entire stream (overseer of that stream or admin). */
-export function userCanAccessStream(
+/** Same as userCanAccessTeam but for an entire stream. Async because the
+ * programme_overseer branch needs the stream's programme. */
+export async function userCanAccessStream(
   user: User,
   streamId: string | null | undefined
-): boolean {
+): Promise<boolean> {
   if (user.role === "admin") return true;
   if (!streamId) return false;
   if (user.role === "stream_overseer") return user.streamId === streamId;
+  if (user.role === "programme_overseer") {
+    if (!user.programmeId) return false;
+    const programmeId = await getStreamProgrammeId(streamId);
+    return programmeId === user.programmeId;
+  }
   return false;
 }
 
@@ -54,11 +84,14 @@ export async function userCanCreateForTeam(
 /**
  * Validates that `actor` may install `targetUserId` as the leader of a team
  * whose stream is `teamStreamId`.
- *  - admin     → always allowed (target must still exist and not be missing)
- *  - overseer  → target must be a non-admin user inside the actor's stream,
- *                AND the team being assigned must also be in that stream.
- *  - leader    → never allowed.
- * Returns a tuple of [allowed, reason] so callers can pick 403/404.
+ *  - admin              → always allowed (target must still exist)
+ *  - stream_overseer    → target must be a non-admin user inside the actor's
+ *                         stream, AND the team must also be in that stream.
+ *  - programme_overseer → target must be a non-admin/non-programme_overseer
+ *                         user, AND the team's stream must be in the actor's
+ *                         programme. Target must not belong to a different
+ *                         programme.
+ *  - leader             → never allowed.
  */
 export async function userCanAssignAsLeader(
   actor: User,
@@ -69,6 +102,7 @@ export async function userCanAssignAsLeader(
     .select({
       id: usersTable.id,
       role: usersTable.role,
+      programmeId: usersTable.programmeId,
       streamId: usersTable.streamId,
     })
     .from(usersTable)
@@ -94,14 +128,35 @@ export async function userCanAssignAsLeader(
     return { ok: true };
   }
 
+  if (actor.role === "programme_overseer") {
+    if (!actor.programmeId) {
+      return { ok: false, status: 403, error: "Your account is not assigned to a programme" };
+    }
+    if (!teamStreamId) {
+      return { ok: false, status: 403, error: "Team is outside your programme" };
+    }
+    const teamProgrammeId = await getStreamProgrammeId(teamStreamId);
+    if (teamProgrammeId !== actor.programmeId) {
+      return { ok: false, status: 403, error: "Team is outside your programme" };
+    }
+    if (target.role === "admin" || target.role === "programme_overseer") {
+      return { ok: false, status: 403, error: "You cannot reassign that account" };
+    }
+    if (target.programmeId && target.programmeId !== actor.programmeId) {
+      return { ok: false, status: 403, error: "Target user is in a different programme" };
+    }
+    return { ok: true };
+  }
+
   return { ok: false, status: 403, error: "Access denied" };
 }
 
 /**
  * True when `user` may read events scoped to a given programme.
- *  - admin            → always
- *  - stream_overseer  → the programme that contains their assigned stream
- *  - leader           → the programme that contains their team's stream
+ *  - admin              → always
+ *  - programme_overseer → only their assigned programme
+ *  - stream_overseer    → the programme that contains their assigned stream
+ *  - leader             → the programme that contains their team's stream
  */
 export async function userCanAccessProgramme(
   user: User,
@@ -109,14 +164,11 @@ export async function userCanAccessProgramme(
 ): Promise<boolean> {
   if (user.role === "admin") return true;
   if (!programmeId) return false;
+  if (user.role === "programme_overseer") return user.programmeId === programmeId;
   if (user.role === "stream_overseer") {
     if (!user.streamId) return false;
-    const [stream] = await db
-      .select({ programmeId: streamsTable.programmeId })
-      .from(streamsTable)
-      .where(eq(streamsTable.id, user.streamId))
-      .limit(1);
-    return !!stream && stream.programmeId === programmeId;
+    const sp = await getStreamProgrammeId(user.streamId);
+    return sp === programmeId;
   }
   if (user.role === "leader") {
     if (!user.teamId) return false;
@@ -126,20 +178,17 @@ export async function userCanAccessProgramme(
       .where(eq(teamsTable.id, user.teamId))
       .limit(1);
     if (!team?.streamId) return false;
-    const [stream] = await db
-      .select({ programmeId: streamsTable.programmeId })
-      .from(streamsTable)
-      .where(eq(streamsTable.id, team.streamId))
-      .limit(1);
-    return !!stream && stream.programmeId === programmeId;
+    const sp = await getStreamProgrammeId(team.streamId);
+    return sp === programmeId;
   }
   return false;
 }
 
 /**
  * True when `user` may *manage* (create/update/delete) entities scoped to a
- * programme — admins always, stream overseers for their own programme.
- * Leaders cannot manage programme-scoped entities.
+ * programme — admins always, programme overseers for their own programme,
+ * stream overseers for the programme containing their stream. Leaders cannot
+ * manage programme-scoped entities.
  */
 export async function userCanManageProgramme(
   user: User,
@@ -147,14 +196,11 @@ export async function userCanManageProgramme(
 ): Promise<boolean> {
   if (user.role === "admin") return true;
   if (!programmeId) return false;
+  if (user.role === "programme_overseer") return user.programmeId === programmeId;
   if (user.role === "stream_overseer") {
     if (!user.streamId) return false;
-    const [stream] = await db
-      .select({ programmeId: streamsTable.programmeId })
-      .from(streamsTable)
-      .where(eq(streamsTable.id, user.streamId))
-      .limit(1);
-    return !!stream && stream.programmeId === programmeId;
+    const sp = await getStreamProgrammeId(user.streamId);
+    return sp === programmeId;
   }
   return false;
 }
@@ -162,6 +208,15 @@ export async function userCanManageProgramme(
 /** Returns the list of teamIds visible to `user` (admin = all). */
 export async function visibleTeamIdsFor(user: User): Promise<string[] | "all"> {
   if (user.role === "admin") return "all";
+  if (user.role === "programme_overseer") {
+    if (!user.programmeId) return [];
+    const rows = await db
+      .select({ id: teamsTable.id })
+      .from(teamsTable)
+      .innerJoin(streamsTable, eq(teamsTable.streamId, streamsTable.id))
+      .where(eq(streamsTable.programmeId, user.programmeId));
+    return rows.map((r) => r.id);
+  }
   if (user.role === "stream_overseer") {
     if (!user.streamId) return [];
     const rows = await db
@@ -176,15 +231,21 @@ export async function visibleTeamIdsFor(user: User): Promise<string[] | "all"> {
 
 /**
  * True when `user` may read a given stream.
- *  - admin           → always
- *  - stream_overseer → only their assigned stream
- *  - leader          → only the stream that contains their team
+ *  - admin              → always
+ *  - programme_overseer → any stream in their assigned programme
+ *  - stream_overseer    → only their assigned stream
+ *  - leader             → only the stream that contains their team
  */
 export async function userCanReadStream(
   user: User,
   streamId: string
 ): Promise<boolean> {
   if (user.role === "admin") return true;
+  if (user.role === "programme_overseer") {
+    if (!user.programmeId) return false;
+    const sp = await getStreamProgrammeId(streamId);
+    return sp === user.programmeId;
+  }
   if (user.role === "stream_overseer") return user.streamId === streamId;
   if (user.role === "leader") {
     if (!user.teamId) return false;

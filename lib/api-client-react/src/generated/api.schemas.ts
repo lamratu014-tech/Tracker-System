@@ -21,6 +21,7 @@ export type UserRole = (typeof UserRole)[keyof typeof UserRole];
 
 export const UserRole = {
   admin: "admin",
+  programme_overseer: "programme_overseer",
   stream_overseer: "stream_overseer",
   leader: "leader",
 } as const;
@@ -36,6 +37,7 @@ export interface User {
   initials: string;
   department: string;
   role: UserRole;
+  programmeId?: string | null;
   streamId?: string | null;
   teamId?: string | null;
   active: boolean;
@@ -93,6 +95,7 @@ export interface CreateInviteBody {
   name: string;
   role: UserRole;
   department?: string;
+  programmeId?: string | null;
   streamId?: string | null;
   teamId?: string | null;
 }
@@ -123,12 +126,14 @@ export interface CreateUserBody {
   password: string;
   role: UserRole;
   department?: string;
+  programmeId?: string | null;
   streamId?: string | null;
   teamId?: string | null;
 }
 
 export interface UpdateUserRoleBody {
   role: UserRole;
+  programmeId?: string | null;
   streamId?: string | null;
   teamId?: string | null;
 }

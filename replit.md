@@ -19,8 +19,9 @@ All screens use the API-backed helpers (no more legacy store helpers):
 - React hooks: `useMe()`, `useCanManageEverything()`, `useCanManageStream(streamId)`, `useCanManageTeam(team)`, `useCanCreateForTeam(team)`.
 - Pure functions: `canManageEverything/Stream/Team/CreateForTeam` accept a `Principal` (the User from `useGetMe`).
 
-### Roles (3 login tiers + non-login members)
-- **admin** — Full access across the whole programme
+### Roles (4 login tiers + non-login members)
+- **admin** — Full access across every programme
+- **programme_overseer** — Full access to all streams/teams within their assigned programme. Cannot invite admins or other programme overseers; cannot create org-wide events (admin-only)
 - **stream_overseer** — Full access to all teams within their assigned stream
 - **leader** — Manage their own team only
 - **(member)** — NOT a login role. Members are roster-only entries on a team.
