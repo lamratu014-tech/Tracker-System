@@ -123,11 +123,14 @@ export default function NewEventScreen() {
 
   const allowedScopes: Scope[] = useMemo(() => {
     if (!me) return [];
-    if (me.role === "admin") return ["org", "programme", "team"];
-    if (me.role === "stream_overseer") return ["programme", "team"];
-    if (me.role === "leader") return ["team"];
-    return [];
-  }, [me]);
+    const scopes: Scope[] = [];
+    if (me.role === "admin") scopes.push("org");
+    if ((me.role === "admin" || me.role === "stream_overseer") && allowedProgrammes.length > 0) {
+      scopes.push("programme");
+    }
+    if (allowedTeams.length > 0) scopes.push("team");
+    return scopes;
+  }, [me, allowedProgrammes, allowedTeams]);
 
   // One-shot role-based defaults applied as soon as `me` resolves
   // (useMe() returns null on first render). Won't overwrite later user
