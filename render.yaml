@@ -39,7 +39,6 @@ services:
     name: ops-planning-web
     runtime: static
     plan: free
-    region: oregon
     rootDir: .
     buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm --filter @workspace/api-spec run codegen && pnpm --filter @workspace/mobile run build:web
     staticPublishPath: artifacts/mobile/dist
