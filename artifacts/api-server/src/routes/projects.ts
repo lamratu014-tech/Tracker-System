@@ -10,7 +10,7 @@ import {
 } from "@workspace/api-zod";
 import { requireAuth, requireManager } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
-import { userCanAccessTeam, getProjectSharedTeamIds } from "../lib/permissions";
+import { userCanAccessTeam, userCanReadProject, getProjectSharedTeamIds } from "../lib/permissions";
 
 const router = Router();
 
@@ -161,15 +161,9 @@ router.get("/projects/:id", requireAuth, async (req, res): Promise<void> => {
 
   const sharedTeamIds = await getProjectSharedTeamIds(project.id);
 
-  if (!(await userCanAccessTeam(user, project.teamId))) {
-    let allowed = false;
-    for (const tid of sharedTeamIds) {
-      if (await userCanAccessTeam(user, tid)) { allowed = true; break; }
-    }
-    if (!allowed) {
-      res.status(403).json({ error: "Access denied" });
-      return;
-    }
+  if (!(await userCanReadProject(user, project.teamId, sharedTeamIds))) {
+    res.status(403).json({ error: "Access denied" });
+    return;
   }
 
   res.json({ ...project, sharedTeamIds });
@@ -185,7 +179,7 @@ router.post("/projects", requireManager, async (req, res): Promise<void> => {
     return;
   }
 
-  const sharedTeamIds = parsed.data.sharedTeamIds ?? [];
+  const sharedTeamIds = Array.from(new Set(parsed.data.sharedTeamIds ?? []));
   const validationError = await validateSharedTeamIds(parsed.data.teamId, sharedTeamIds);
   if (validationError) { res.status(400).json({ error: validationError }); return; }
 
@@ -241,7 +235,7 @@ router.patch("/projects/:id", requireManager, async (req, res): Promise<void> =>
 
   let nextSharedTeamIds: string[] | null = null;
   if ("sharedTeamIds" in parsed.data && parsed.data.sharedTeamIds !== undefined) {
-    nextSharedTeamIds = parsed.data.sharedTeamIds;
+    nextSharedTeamIds = Array.from(new Set(parsed.data.sharedTeamIds));
     const validationError = await validateSharedTeamIds(existing.teamId, nextSharedTeamIds);
     if (validationError) { res.status(400).json({ error: validationError }); return; }
   }
