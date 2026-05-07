@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   getListProjectsQueryKey,
   useCreateProject,
+  useListStreams,
   useListTeams,
 } from "@workspace/api-client-react";
 import React, { useMemo, useState } from "react";
@@ -27,11 +28,19 @@ export default function NewProjectScreen() {
   const params = useLocalSearchParams<{ teamId?: string }>();
   const me = useMe();
   const teamsQ = useListTeams();
+  const streamsQ = useListStreams();
   const teams = teamsQ.data ?? [];
+  const streams = streamsQ.data ?? [];
+
+  const programmeIdFor = (streamId?: string | null) =>
+    streamId ? streams.find((s) => s.id === streamId)?.programmeId ?? null : null;
 
   const allowedTeams = useMemo(
-    () => teams.filter((t) => canManageTeam(me, { id: t.id, streamId: t.streamId })),
-    [teams, me],
+    () =>
+      teams.filter((t) =>
+        canManageTeam(me, { id: t.id, streamId: t.streamId }, programmeIdFor(t.streamId)),
+      ),
+    [teams, streams, me],
   );
 
   const initialTeamId =
@@ -64,7 +73,13 @@ export default function NewProjectScreen() {
     if (!title.trim()) return Alert.alert("Title required", "Please enter a project title.");
     if (!teamId) return Alert.alert("Team required", "Pick a team.");
     const team = teams.find((t) => t.id === teamId);
-    if (!canCreateForTeam(me, team ? { id: team.id, streamId: team.streamId } : null)) {
+    if (
+      !canCreateForTeam(
+        me,
+        team ? { id: team.id, streamId: team.streamId } : null,
+        programmeIdFor(team?.streamId),
+      )
+    ) {
       return Alert.alert("Not allowed", "You don't have permission to add a project to this team.");
     }
     createProject.mutate({

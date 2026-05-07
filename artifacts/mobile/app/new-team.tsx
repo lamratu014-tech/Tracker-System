@@ -34,7 +34,7 @@ export default function NewTeamScreen() {
   const users = usersQ.data ?? [];
 
   const allowedStreams = useMemo(
-    () => streams.filter((s) => canManageStream(me, s.id)),
+    () => streams.filter((s) => canManageStream(me, { id: s.id, programmeId: s.programmeId })),
     [streams, me],
   );
 
@@ -77,7 +77,8 @@ export default function NewTeamScreen() {
   function save() {
     if (!name.trim()) return Alert.alert("Name required", "Please enter a team name.");
     if (!streamId) return Alert.alert("Stream required", "Pick a stream.");
-    if (!canManageStream(me, streamId)) {
+    const chosen = streams.find((s) => s.id === streamId);
+    if (!canManageStream(me, chosen ? { id: chosen.id, programmeId: chosen.programmeId } : null)) {
       return Alert.alert("Not allowed", "You can't add teams to that stream.");
     }
     createTeam.mutate({ data: { name: name.trim(), streamId, leaderId: leaderId ?? null } });

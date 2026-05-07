@@ -57,7 +57,9 @@ export default function StreamDetailScreen() {
   const users = usersQ.data ?? [];
 
   // Drop teams the current user must not see at all.
-  const teams = allTeams.filter((t) => teamVisibility(me, t) !== "hidden");
+  const teams = allTeams.filter(
+    (t) => teamVisibility(me, t, stream?.programmeId) !== "hidden",
+  );
   // Leaders and stream overseers may only view their own stream; any other
   // stream (even if empty) is access-restricted. Admins can view every
   // stream.
@@ -229,7 +231,7 @@ export default function StreamDetailScreen() {
         </View>
       ) : (
         teams.map((team) => {
-          const vis = teamVisibility(me, team);
+          const vis = teamVisibility(me, team, stream?.programmeId);
           if (vis === "locked") {
             const leader = team.leaderId ? users.find((u) => u.id === team.leaderId) : null;
             return (

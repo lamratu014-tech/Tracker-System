@@ -106,9 +106,17 @@ export default function EventDetailScreen() {
 
   const isAdmin = canManageEverything(me);
   const isCreator = !!event.createdByUserId && me?.id === event.createdByUserId;
-  const overseerOfStream = !!linkedStreamId && canManageStream(me, linkedStreamId);
+  const linkedStream = linkedStreamId ? streams.find((s) => s.id === linkedStreamId) : null;
+  const overseerOfStream =
+    !!linkedStream &&
+    canManageStream(me, { id: linkedStream.id, programmeId: linkedStream.programmeId });
   const overseerOrLeaderOfTeam =
-    !!linkedTeam && canManageTeam(me, { id: linkedTeam.id, streamId: linkedTeam.streamId });
+    !!linkedTeam &&
+    canManageTeam(
+      me,
+      { id: linkedTeam.id, streamId: linkedTeam.streamId },
+      linkedStream?.programmeId ?? null,
+    );
   // For programme-linked events: stream overseers whose assigned stream
   // sits inside the event's programme can also manage the event.
   const overseerOfProgramme = (() => {

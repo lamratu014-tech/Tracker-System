@@ -164,9 +164,9 @@ export default function ProgrammeScreen() {
               const expanded = expandedStreamId === stream.id;
               const allTeamsHere = teamsByStream.get(stream.id) ?? [];
               const visibleTeamsHere = allTeamsHere.filter(
-                (t) => teamVisibility(me, t) !== "hidden",
+                (t) => teamVisibility(me, t, stream.programmeId) !== "hidden",
               );
-              const canAddTeamHere = canManageStream(me, stream.id);
+              const canAddTeamHere = canManageStream(me, { id: stream.id, programmeId: stream.programmeId });
               return (
                 <View
                   key={stream.id}
@@ -206,7 +206,7 @@ export default function ProgrammeScreen() {
                         </Text>
                       ) : (
                         visibleTeamsHere.map((team) => {
-                          const vis = teamVisibility(me, team);
+                          const vis = teamVisibility(me, team, stream.programmeId);
                           const leader = team.leaderId
                             ? users.find((u) => u.id === team.leaderId)
                             : null;

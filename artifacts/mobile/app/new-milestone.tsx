@@ -4,6 +4,7 @@ import {
   getListProjectMilestonesQueryKey,
   useCreateMilestone,
   useListProjects,
+  useListStreams,
   useListTeams,
 } from "@workspace/api-client-react";
 import React, { useMemo, useState } from "react";
@@ -45,15 +46,24 @@ export default function NewMilestoneScreen() {
 
   const projectsQ = useListProjects();
   const teamsQ = useListTeams();
+  const streamsQ = useListStreams();
   const projects = projectsQ.data ?? [];
   const teams = teamsQ.data ?? [];
+  const streams = streamsQ.data ?? [];
+
+  const programmeIdFor = (streamId?: string | null) =>
+    streamId ? streams.find((s) => s.id === streamId)?.programmeId ?? null : null;
 
   const allowedProjects = useMemo(() => {
     return projects.filter((p) => {
       const team = teams.find((t) => t.id === p.teamId);
-      return canCreateForTeam(me, team ? { id: team.id, streamId: team.streamId } : null);
+      return canCreateForTeam(
+        me,
+        team ? { id: team.id, streamId: team.streamId } : null,
+        programmeIdFor(team?.streamId),
+      );
     });
-  }, [projects, teams, me]);
+  }, [projects, teams, streams, me]);
 
   const initialProjectId =
     params.projectId && allowedProjects.some((p) => p.id === params.projectId)
@@ -89,7 +99,13 @@ export default function NewMilestoneScreen() {
     if (!date) return Alert.alert("Date required", "Pick a date.");
     const project = projects.find((p) => p.id === projectId);
     const team = project ? teams.find((t) => t.id === project.teamId) : null;
-    if (!canCreateForTeam(me, team ? { id: team.id, streamId: team.streamId } : null)) {
+    if (
+      !canCreateForTeam(
+        me,
+        team ? { id: team.id, streamId: team.streamId } : null,
+        programmeIdFor(team?.streamId),
+      )
+    ) {
       return Alert.alert("Not allowed", "You can't add a milestone to this team.");
     }
     createMilestone.mutate({ data: { projectId, title: title.trim(), date } });

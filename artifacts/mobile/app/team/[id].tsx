@@ -59,18 +59,21 @@ export default function TeamDetailScreen() {
   // fetch members / notes / projects / users for a team the user
   // shouldn't be able to inspect.
   const teamLoaded = !!team;
-  const visibility = team
-    ? teamVisibility(me, { id: team.id, streamId: team.streamId })
-    : "hidden";
-  const canFetchTeamData = teamLoaded && visibility === "full";
-
+  // Eagerly load the stream so we have programmeId for visibility checks.
+  // Programme overseers need the team's stream's programmeId to know
+  // whether the team falls inside their programme.
   const streamQ = useGetStream(team?.streamId ?? "", {
     query: {
-      enabled: canFetchTeamData && !!team?.streamId,
+      enabled: teamLoaded && !!team?.streamId,
       queryKey: getGetStreamQueryKey(team?.streamId ?? ""),
     },
   });
   const stream = streamQ.data ?? null;
+
+  const visibility = team
+    ? teamVisibility(me, { id: team.id, streamId: team.streamId }, stream?.programmeId)
+    : "hidden";
+  const canFetchTeamData = teamLoaded && visibility === "full";
 
   const usersQ = useListUsers({
     query: { enabled: canFetchTeamData, queryKey: getListUsersQueryKey() },
@@ -104,7 +107,9 @@ export default function TeamDetailScreen() {
     [projectsQ.data, id],
   );
 
-  const canEdit = useCanManageTeam(team ? { id: team.id, streamId: team.streamId } : null);
+  const canEdit = useCanManageTeam(
+    team ? { id: team.id, streamId: team.streamId } : null,
+  );
   const isAdmin = me?.role === "admin";
 
   const [editing, setEditing] = useState(false);

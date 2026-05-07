@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { db, usersTable, streamsTable } from "@workspace/db";
+import { db, usersTable, streamsTable, teamsTable } from "@workspace/db";
 import { eq, or, inArray } from "drizzle-orm";
 import {
   CreateUserBody,
@@ -104,6 +104,23 @@ async function actorCanCreateUser(
       .where(eq(streamsTable.id, target.streamId))
       .limit(1);
     if (!s || s.programmeId !== actor.programmeId) return false;
+  }
+  // Validate teamId scope by chaining team -> stream -> programme. A PO
+  // must not be able to attach a user to a team outside their programme,
+  // even when programmeId/streamId are omitted from the payload.
+  if (target.teamId) {
+    const [t] = await db
+      .select({ streamId: teamsTable.streamId })
+      .from(teamsTable)
+      .where(eq(teamsTable.id, target.teamId))
+      .limit(1);
+    if (!t?.streamId) return false;
+    const [ts] = await db
+      .select({ programmeId: streamsTable.programmeId })
+      .from(streamsTable)
+      .where(eq(streamsTable.id, t.streamId))
+      .limit(1);
+    if (!ts || ts.programmeId !== actor.programmeId) return false;
   }
   return true;
 }
