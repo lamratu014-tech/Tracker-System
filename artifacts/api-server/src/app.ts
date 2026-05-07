@@ -7,6 +7,11 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
+// Trust the platform proxy (Render, Replit, etc.) so req.ip, rate limiting,
+// and X-Forwarded-* headers behave correctly. "1" trusts a single hop in
+// front of the app, which matches Render's load balancer.
+app.set("trust proxy", 1);
+
 app.use(
   pinoHttp({
     logger,

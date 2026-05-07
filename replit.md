@@ -85,6 +85,22 @@ artifacts/mobile/app/
 - `components/CreateActionSheet.tsx` — role-aware "+" hub
 - `models/types.ts` — thin shim re-exporting types from `@workspace/api-client-react` plus `isOverdue` / `isDueToday` helpers built on `Milestone.date` + `!completed`
 
+## Production hosting
+
+Production is deployed to **Render**, not Replit. The migration is described
+in `RENDER_DEPLOY.md` at the repo root. Three Render resources back the app:
+
+- `ops-planning-db` — Postgres (managed)
+- `ops-planning-api` — Web Service running `artifacts/api-server`
+- `ops-planning-web` — Static Site serving `artifacts/mobile/dist` (the
+  Expo web SPA built with `pnpm --filter @workspace/mobile run build:web`)
+
+The web client reaches the API via `EXPO_PUBLIC_API_BASE_URL`, which must
+be set on the static site before building. `APP_DOMAIN` on the API must
+point at the SPA's public URL so invite/reset emails render correct links.
+`lib/db/src/index.ts` auto-enables TLS for Render/Neon/Supabase/RDS
+connection strings; override with `PGSSL=disable|require` if needed.
+
 ## User preferences
 - Real email login (no profile picker)
 - Stream overseers must have full access across all teams in their stream

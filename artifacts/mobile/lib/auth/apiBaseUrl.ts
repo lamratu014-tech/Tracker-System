@@ -6,6 +6,11 @@ export function resolveApiBaseUrl(): string | null {
   if (fromEnv) return fromEnv.replace(/\/+$/, "");
 
   if (Platform.OS === "web") {
+    // On Render, the SPA and API live on different origins. Set
+    // EXPO_PUBLIC_API_BASE_URL at build time to the API service URL
+    // (e.g. https://ops-planning-api.onrender.com). When unset (e.g.
+    // local dev with both services proxied through one origin), fall
+    // back to the page origin.
     if (typeof window !== "undefined" && window.location?.origin) {
       return window.location.origin;
     }
