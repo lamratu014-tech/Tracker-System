@@ -45,7 +45,11 @@ export default function ProgrammeScreen() {
   const users = usersQ.data ?? [];
 
   const [expandedStreamId, setExpandedStreamId] = useState<string | null>(null);
+  const [expandedProgrammes, setExpandedProgrammes] = useState<Set<string>>(
+    () => new Set(),
+  );
   const didInit = useRef(false);
+  const didInitProgrammes = useRef(false);
 
   const teamsByStream = useMemo(() => {
     const m = new Map<string, typeof teams>();
@@ -91,6 +95,15 @@ export default function ProgrammeScreen() {
     setExpandedStreamId((cur) => (cur === id ? null : id));
   }
 
+  function toggleProgramme(id: string) {
+    setExpandedProgrammes((cur) => {
+      const next = new Set(cur);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
   const isAdmin = canManageEverything(me);
   const loading = streamsQ.isLoading || teamsQ.isLoading || programmesQ.isLoading;
 
@@ -110,6 +123,20 @@ export default function ProgrammeScreen() {
       .map((p) => ({ programme: p, streams: byId.get(p.id) ?? [] }));
   }, [programmes, visibleStreams]);
   const showProgrammeHeaders = programmes.length > 1;
+
+  // First time we have data, auto-expand the user's own programme (the
+  // one containing their stream) so they don't have to tap to find it.
+  // Admins / users without a stream see all programmes collapsed.
+  useEffect(() => {
+    if (didInitProgrammes.current || !showProgrammeHeaders || grouped.length === 0) return;
+    didInitProgrammes.current = true;
+    const ownProgrammeId = me?.streamId
+      ? streams.find((s) => s.id === me.streamId)?.programmeId
+      : null;
+    if (ownProgrammeId && grouped.some((g) => g.programme.id === ownProgrammeId)) {
+      setExpandedProgrammes(new Set([ownProgrammeId]));
+    }
+  }, [grouped, me, streams, showProgrammeHeaders]);
 
   return (
     <ScrollView
@@ -148,19 +175,37 @@ export default function ProgrammeScreen() {
           </Text>
         </View>
       ) : (
-        grouped.map(({ programme, streams: progStreams }) => (
-          <View key={programme.id} style={{ marginBottom: showProgrammeHeaders ? 8 : 0 }}>
+        grouped.map(({ programme, streams: progStreams }) => {
+          const programmeExpanded =
+            !showProgrammeHeaders || expandedProgrammes.has(programme.id);
+          return (
+          <View key={programme.id} style={{ marginBottom: showProgrammeHeaders ? 12 : 0 }}>
             {showProgrammeHeaders ? (
-              <View style={styles.programmeHeader}>
-                <Text style={[styles.programmeName, { color: colors.foreground }]}>
+              <TouchableOpacity
+                style={[
+                  styles.programmeHeader,
+                  {
+                    backgroundColor: colors.muted,
+                    borderColor: colors.border,
+                  },
+                ]}
+                onPress={() => toggleProgramme(programme.id)}
+                activeOpacity={0.7}
+              >
+                <Feather
+                  name={programmeExpanded ? "chevron-down" : "chevron-right"}
+                  size={16}
+                  color={colors.mutedForeground}
+                />
+                <Text style={[styles.programmeName, { color: colors.foreground, flex: 1 }]}>
                   {programme.name}
                 </Text>
                 <Text style={[styles.programmeMeta, { color: colors.mutedForeground }]}>
                   {progStreams.length} stream{progStreams.length !== 1 ? "s" : ""}
                 </Text>
-              </View>
+              </TouchableOpacity>
             ) : null}
-            {progStreams.map((stream) => {
+            {programmeExpanded ? progStreams.map((stream) => {
               const expanded = expandedStreamId === stream.id;
               const allTeamsHere = teamsByStream.get(stream.id) ?? [];
               const visibleTeamsHere = allTeamsHere.filter(
@@ -265,9 +310,10 @@ export default function ProgrammeScreen() {
                   ) : null}
                 </View>
               );
-            })}
+            }) : null}
           </View>
-        ))
+          );
+        })
       )}
     </ScrollView>
   );
@@ -283,7 +329,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8,
   },
   headerBtnText: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
-  programmeHeader: { flexDirection: "row", alignItems: "baseline", justifyContent: "space-between", paddingHorizontal: 4, paddingTop: 6, paddingBottom: 6 },
+  programmeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginBottom: 8,
+  },
   programmeName: { fontSize: 13, fontFamily: "Inter_700Bold", textTransform: "uppercase", letterSpacing: 0.6 },
   programmeMeta: { fontSize: 11, fontFamily: "Inter_400Regular" },
   empty: { padding: 32, alignItems: "center", borderRadius: 12, gap: 8 },
