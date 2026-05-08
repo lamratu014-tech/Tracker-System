@@ -28,7 +28,6 @@ import {
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Alert,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -37,6 +36,7 @@ import {
   View,
 } from "react-native";
 
+import { useDialog } from "@/components/Dialog";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
@@ -48,6 +48,7 @@ export default function TeamDetailScreen() {
   const qc = useQueryClient();
   const { id } = useLocalSearchParams<{ id: string }>();
   const me = useMe();
+  const dialog = useDialog();
 
   const teamQ = useGetTeam(id ?? "", {
     query: { enabled: !!id, queryKey: getGetTeamQueryKey(id ?? "") },
@@ -226,47 +227,35 @@ export default function TeamDetailScreen() {
     );
   }
 
-  function confirmDelete() {
-    const msg = `Delete team "${team!.name}" and all its projects/members?`;
-    const onYes = () => deleteTeam.mutate({ id: team!.id }, { onSuccess: () => router.back() });
-    if (Platform.OS === "web") {
-      if (window.confirm(msg)) onYes();
-    } else {
-      Alert.alert("Delete team", msg, [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: onYes },
-      ]);
-    }
+  async function confirmDelete() {
+    const ok = await dialog.confirm({
+      title: "Delete team",
+      message: `Delete team "${team!.name}" and all its projects/members?`,
+      destructive: true,
+      confirmText: "Delete",
+    });
+    if (ok) deleteTeam.mutate({ id: team!.id }, { onSuccess: () => router.back() });
   }
 
-  function pickLeader() {
+  async function pickLeader() {
     if (!isAdmin) return;
     const candidates = users.filter((u) => u.role === "leader" || u.role === "admin");
     if (candidates.length === 0) {
       Alert.alert("No candidates", "Invite a leader user first.");
       return;
     }
-    const apply = (leaderId: string | null) =>
-      assignLeader.mutate({ id: team!.id, data: { leaderId } });
-    if (Platform.OS === "web") {
-      const list = candidates.map((u, i) => `${i + 1}. ${u.name}`).join("\n");
-      const choice = window.prompt(
-        `Choose new leader (1-${candidates.length}):\n${list}\n\nLeave blank to clear.`,
-      );
-      if (choice === null) return;
-      if (choice.trim() === "") apply(null);
-      else {
-        const idx = parseInt(choice, 10) - 1;
-        if (idx >= 0 && idx < candidates.length) apply(candidates[idx].id);
-      }
-    } else {
-      const buttons = candidates.map((u) => ({ text: u.name, onPress: () => apply(u.id) }));
-      Alert.alert("Assign leader", "", [
-        ...buttons,
-        { text: "Clear", style: "destructive", onPress: () => apply(null) },
-        { text: "Cancel", style: "cancel" },
-      ]);
-    }
+    const CLEAR = "__clear__";
+    const choice = await dialog.choice<string>({
+      title: "Assign leader",
+      message: "Pick a new leader for this team.",
+      options: [
+        ...candidates.map((u) => ({ label: u.name, value: u.id })),
+        { label: "Clear leader", value: CLEAR, destructive: true },
+      ],
+    });
+    if (!choice) return;
+    const leaderId = choice === CLEAR ? null : choice;
+    assignLeader.mutate({ id: team!.id, data: { leaderId } });
   }
 
   function addNewMember() {
@@ -306,17 +295,14 @@ export default function TeamDetailScreen() {
     );
   }
 
-  function confirmDeleteNote(noteId: string) {
-    const msg = "Delete this note?";
-    const onYes = () => deleteNote.mutate({ id: noteId });
-    if (Platform.OS === "web") {
-      if (window.confirm(msg)) onYes();
-    } else {
-      Alert.alert("Delete note", msg, [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: onYes },
-      ]);
-    }
+  async function confirmDeleteNote(noteId: string) {
+    const ok = await dialog.confirm({
+      title: "Delete note",
+      message: "Delete this note?",
+      destructive: true,
+      confirmText: "Delete",
+    });
+    if (ok) deleteNote.mutate({ id: noteId });
   }
 
   function formatNoteDate(iso: string): string {
@@ -333,17 +319,14 @@ export default function TeamDetailScreen() {
     return `${date}, ${time}`;
   }
 
-  function confirmDeleteMember(memberId: string, name: string) {
-    const msg = `Remove "${name}" from this team?`;
-    const onYes = () => deleteMember.mutate({ id: memberId });
-    if (Platform.OS === "web") {
-      if (window.confirm(msg)) onYes();
-    } else {
-      Alert.alert("Remove member", msg, [
-        { text: "Cancel", style: "cancel" },
-        { text: "Remove", style: "destructive", onPress: onYes },
-      ]);
-    }
+  async function confirmDeleteMember(memberId: string, name: string) {
+    const ok = await dialog.confirm({
+      title: "Remove member",
+      message: `Remove "${name}" from this team?`,
+      destructive: true,
+      confirmText: "Remove",
+    });
+    if (ok) deleteMember.mutate({ id: memberId });
   }
 
   return (

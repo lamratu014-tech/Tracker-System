@@ -14,6 +14,7 @@ import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 
+import { DialogProvider } from "@/components/Dialog";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useColors } from "@/hooks/useColors";
 import { AuthProvider, useAuth } from "@/lib/auth/AuthContext";
@@ -98,7 +99,9 @@ export default function RootLayout() {
           <KeyboardProvider>
             <QueryClientProvider client={queryClient}>
               <AuthProvider>
-                <RootLayoutNav />
+                <DialogProvider>
+                  <RootLayoutNav />
+                </DialogProvider>
               </AuthProvider>
             </QueryClientProvider>
           </KeyboardProvider>

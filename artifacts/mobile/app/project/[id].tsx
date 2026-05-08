@@ -21,8 +21,6 @@ import { getListStreamTeamsQueryKey } from "@workspace/api-client-react";
 import type { Milestone } from "@workspace/api-client-react";
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Alert,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -31,6 +29,7 @@ import {
   View,
 } from "react-native";
 
+import { useDialog } from "@/components/Dialog";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoadingRow } from "@/components/LoadingRow";
 import { MilestoneRow } from "@/components/MilestoneRow";
@@ -63,6 +62,7 @@ export default function ProjectDetailScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const dialog = useDialog();
 
   const projectQ = useGetProject(id ?? "", {
     query: { enabled: !!id, queryKey: getGetProjectQueryKey(id ?? "") },
@@ -188,18 +188,14 @@ export default function ProjectDetailScreen() {
     );
   }
 
-  function confirmDelete() {
-    const msg = `Delete project "${project!.title}"?`;
-    const onYes = () =>
-      deleteProject.mutate({ id: project!.id }, { onSuccess: () => router.back() });
-    if (Platform.OS === "web") {
-      if (window.confirm(msg)) onYes();
-    } else {
-      Alert.alert("Delete project", msg, [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: onYes },
-      ]);
-    }
+  async function confirmDelete() {
+    const ok = await dialog.confirm({
+      title: "Delete project",
+      message: `Delete project "${project!.title}"?`,
+      destructive: true,
+      confirmText: "Delete",
+    });
+    if (ok) deleteProject.mutate({ id: project!.id }, { onSuccess: () => router.back() });
   }
 
   const filtered = applyFilter(milestones, filter)

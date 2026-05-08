@@ -28,7 +28,6 @@ import React, { useMemo, useState } from "react";
 import {
   Alert,
   Keyboard,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -37,6 +36,7 @@ import {
   View,
 } from "react-native";
 
+import { useDialog } from "@/components/Dialog";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
@@ -61,22 +61,22 @@ const ROLE_COLOR: Record<Role, string> = {
 
 const ROLE_CYCLE: Role[] = ["admin", "programme_overseer", "stream_overseer", "leader"];
 
-function confirm(message: string, onYes: () => void) {
-  if (Platform.OS === "web") {
-    if (window.confirm(message)) onYes();
-  } else {
-    Alert.alert("Confirm", message, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Yes", style: "destructive", onPress: onYes },
-    ]);
-  }
-}
-
 export default function AdminPanelScreen() {
   const colors = useColors();
   const router = useRouter();
   const qc = useQueryClient();
   const me = useMe();
+  const dialog = useDialog();
+
+  async function confirm(message: string, onYes: () => void) {
+    const ok = await dialog.confirm({
+      title: "Confirm",
+      message,
+      destructive: true,
+      confirmText: "Yes",
+    });
+    if (ok) onYes();
+  }
 
   const usersQ = useListUsers();
   const programmesQ = useListProgrammes();
@@ -133,25 +133,16 @@ export default function AdminPanelScreen() {
     return m;
   }, [streams]);
 
-  function promptRename(p: { id: string; name: string }) {
-    if (Platform.OS === "web") {
-      const next = window.prompt("Rename programme", p.name);
-      if (next && next.trim() && next.trim() !== p.name) {
-        updateProgramme.mutate({ id: p.id, data: { name: next.trim() } });
-      }
-      return;
+  async function promptRename(p: { id: string; name: string }) {
+    const next = await dialog.prompt({
+      title: "Rename programme",
+      defaultValue: p.name,
+      placeholder: "Programme name",
+      confirmText: "Save",
+    });
+    if (next && next.trim() && next.trim() !== p.name) {
+      updateProgramme.mutate({ id: p.id, data: { name: next.trim() } });
     }
-    Alert.prompt(
-      "Rename programme",
-      p.name,
-      (next) => {
-        if (next && next.trim() && next.trim() !== p.name) {
-          updateProgramme.mutate({ id: p.id, data: { name: next.trim() } });
-        }
-      },
-      "plain-text",
-      p.name,
-    );
   }
 
   function addProgramme() {
@@ -244,35 +235,18 @@ export default function AdminPanelScreen() {
     });
   }
 
-  function pickProgramme(userId: string, next: Role) {
+  async function pickProgramme(userId: string, next: Role) {
     if (programmes.length === 0) {
       Alert.alert("No programmes", "Create a programme before assigning a Programme Overseer.");
       return;
     }
-    if (Platform.OS === "web") {
-      const list = programmes.map((p, i) => `${i + 1}. ${p.name}`).join("\n");
-      const choice = window.prompt(`Pick a programme (1-${programmes.length}):\n${list}`, "1");
-      if (!choice) return;
-      const idx = parseInt(choice, 10) - 1;
-      const p = programmes[idx];
-      if (!p) {
-        Alert.alert("Invalid choice", "Programme not found.");
-        return;
-      }
-      applyRoleChange(userId, next, p.id);
-      return;
-    }
-    Alert.alert(
-      "Pick a programme",
-      "Choose which programme this overseer manages.",
-      [
-        ...programmes.map((p) => ({
-          text: p.name,
-          onPress: () => applyRoleChange(userId, next, p.id),
-        })),
-        { text: "Cancel", style: "cancel" as const },
-      ],
-    );
+    const programmeId = await dialog.choice<string>({
+      title: "Pick a programme",
+      message: "Choose which programme this overseer manages.",
+      options: programmes.map((p) => ({ label: p.name, value: p.id })),
+    });
+    if (!programmeId) return;
+    applyRoleChange(userId, next, programmeId);
   }
 
   function changeRole(userId: string, currentRole: Role) {

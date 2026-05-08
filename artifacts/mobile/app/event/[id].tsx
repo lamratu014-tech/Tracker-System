@@ -15,7 +15,6 @@ import {
 import React from "react";
 import {
   Alert,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -24,6 +23,7 @@ import {
   View,
 } from "react-native";
 
+import { useDialog } from "@/components/Dialog";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
@@ -49,6 +49,7 @@ export default function EventDetailScreen() {
   const qc = useQueryClient();
   const { id } = useLocalSearchParams<{ id: string }>();
   const me = useMe();
+  const dialog = useDialog();
 
   const eventQ = useGetEvent(id ?? "", {
     query: { enabled: !!id, queryKey: getGetEventQueryKey(id ?? "") },
@@ -201,19 +202,15 @@ export default function EventDetailScreen() {
     timeStr = "—";
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!event) return;
-    const msg = `Delete event "${event.title}"?`;
-    const onYes = () =>
-      deleteEvent.mutate({ id: event.id }, { onSuccess: () => router.back() });
-    if (Platform.OS === "web") {
-      if (window.confirm(msg)) onYes();
-    } else {
-      Alert.alert("Delete event", msg, [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: onYes },
-      ]);
-    }
+    const ok = await dialog.confirm({
+      title: "Delete event",
+      message: `Delete event "${event.title}"?`,
+      destructive: true,
+      confirmText: "Delete",
+    });
+    if (ok) deleteEvent.mutate({ id: event.id }, { onSuccess: () => router.back() });
   }
 
   return (

@@ -8,8 +8,6 @@ import {
 } from "@workspace/api-client-react";
 import React from "react";
 import {
-  Alert,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,6 +16,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { useDialog } from "@/components/Dialog";
 import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/lib/auth/AuthContext";
 
@@ -33,6 +32,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user: me, signOut } = useAuth();
+  const dialog = useDialog();
   const [signingOut, setSigningOut] = React.useState(false);
 
   const teamQ = useGetTeam(me?.teamId ?? "", {
@@ -52,28 +52,21 @@ export default function SettingsScreen() {
   else if (stream) context = `${stream.name} (whole stream)`;
   else if (me.role === "leader") context = "No team yet";
 
-  function confirm(message: string, onYes: () => void) {
-    if (Platform.OS === "web") {
-      if (window.confirm(message)) onYes();
-    } else {
-      Alert.alert("Confirm", message, [
-        { text: "Cancel", style: "cancel" },
-        { text: "Yes", style: "destructive", onPress: onYes },
-      ]);
-    }
-  }
-
-  function handleLogout() {
-    confirm("Sign out?", async () => {
-      if (signingOut) return;
-      setSigningOut(true);
-      try {
-        await signOut();
-      } finally {
-        setSigningOut(false);
-        router.replace("/login");
-      }
+  async function handleLogout() {
+    const ok = await dialog.confirm({
+      title: "Sign out",
+      message: "Sign out of your account?",
+      destructive: true,
+      confirmText: "Sign out",
     });
+    if (!ok || signingOut) return;
+    setSigningOut(true);
+    try {
+      await signOut();
+    } finally {
+      setSigningOut(false);
+      router.replace("/login");
+    }
   }
 
   return (

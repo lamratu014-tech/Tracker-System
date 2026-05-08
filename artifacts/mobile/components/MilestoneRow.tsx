@@ -1,8 +1,9 @@
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import React from "react";
-import { Alert, Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Platform, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
+import { useDialog } from "@/components/Dialog";
 import type { Milestone } from "@/models/types";
 import { isOverdue } from "@/models/types";
 import { useColors } from "@/hooks/useColors";
@@ -16,6 +17,7 @@ interface Props {
 
 export function MilestoneRow({ milestone, canEdit, onToggleCompleted, onDelete }: Props) {
   const colors = useColors();
+  const dialog = useDialog();
   const overdue = isOverdue(milestone);
   const completed = milestone.completed;
 
@@ -27,16 +29,15 @@ export function MilestoneRow({ milestone, canEdit, onToggleCompleted, onDelete }
     onToggleCompleted(!completed);
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!onDelete) return;
-    if (Platform.OS === "web") {
-      if (window.confirm(`Delete milestone "${milestone.title}"?`)) onDelete();
-    } else {
-      Alert.alert("Delete milestone", `Delete "${milestone.title}"?`, [
-        { text: "Cancel", style: "cancel" },
-        { text: "Delete", style: "destructive", onPress: onDelete },
-      ]);
-    }
+    const ok = await dialog.confirm({
+      title: "Delete milestone",
+      message: `Delete "${milestone.title}"?`,
+      destructive: true,
+      confirmText: "Delete",
+    });
+    if (ok) onDelete();
   }
 
   const dl = new Date(milestone.date);

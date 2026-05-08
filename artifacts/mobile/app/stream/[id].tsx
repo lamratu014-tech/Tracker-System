@@ -15,8 +15,6 @@ import {
 } from "@workspace/api-client-react";
 import React, { useEffect, useState } from "react";
 import {
-  Alert,
-  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,6 +23,7 @@ import {
   View,
 } from "react-native";
 
+import { useDialog } from "@/components/Dialog";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
@@ -41,6 +40,7 @@ export default function StreamDetailScreen() {
   const qc = useQueryClient();
   const { id } = useLocalSearchParams<{ id: string }>();
   const me = useMe();
+  const dialog = useDialog();
 
   const streamQ = useGetStream(id ?? "", {
     query: { enabled: !!id, queryKey: getGetStreamQueryKey(id ?? "") },
@@ -135,22 +135,15 @@ export default function StreamDetailScreen() {
     );
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!stream) return;
-    const msg = `Delete stream "${stream.name}" and all its teams/projects?`;
-    if (Platform.OS === "web") {
-      if (window.confirm(msg)) deleteStream.mutate({ id: stream.id }, { onSuccess: () => router.back() });
-    } else {
-      Alert.alert("Delete stream", msg, [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () =>
-            deleteStream.mutate({ id: stream.id }, { onSuccess: () => router.back() }),
-        },
-      ]);
-    }
+    const ok = await dialog.confirm({
+      title: "Delete stream",
+      message: `Delete stream "${stream.name}" and all its teams/projects?`,
+      destructive: true,
+      confirmText: "Delete",
+    });
+    if (ok) deleteStream.mutate({ id: stream.id }, { onSuccess: () => router.back() });
   }
 
   function saveName() {
