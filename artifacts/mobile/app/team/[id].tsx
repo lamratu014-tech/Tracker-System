@@ -265,7 +265,11 @@ export default function TeamDetailScreen() {
       (u) => !taken.has(u.id) && u.role === "leader",
     );
     if (candidates.length === 0) {
-      Alert.alert("No candidates", "Invite a leader-eligible user first.");
+      await dialog.confirm({
+        title: "No candidates",
+        message: "There are no users with the Leader role available. Invite a new user with role Leader first, then come back here to add them.",
+        confirmText: "OK",
+      });
       return;
     }
     const choice = await dialog.choice<string>({
@@ -284,7 +288,11 @@ export default function TeamDetailScreen() {
       (u) => !taken.has(u.id) && (u.role === "leader" || u.role === "team_admin"),
     );
     if (candidates.length === 0) {
-      Alert.alert("No candidates", "Invite a team-admin-eligible user first.");
+      await dialog.confirm({
+        title: "No candidates",
+        message: "There are no users with the Team admin (or Leader) role available. Invite a new user with role Team admin first, then come back here to add them.",
+        confirmText: "OK",
+      });
       return;
     }
     const choice = await dialog.choice<string>({
