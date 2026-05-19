@@ -16,8 +16,8 @@ API contract: `lib/api-spec/openapi.yaml`. Run `pnpm --filter @workspace/api-spe
 
 ### Permissions (`lib/permissions/index.ts`)
 All screens use the API-backed helpers (no more legacy store helpers):
-- React hooks: `useMe()`, `useCanManageEverything()`, `useCanManageStream(streamId)`, `useCanManageTeam(team)`, `useCanCreateForTeam(team)`, `useCanManageTeamManagers(team)` (gates add/remove of leaders + team admins; leader-of-team is allowed, team_admin is NOT).
-- Pure functions: `canManageEverything/Stream/Team/CreateForTeam/TeamManagers` accept a `Principal` (the User from `useGetMe`).
+- React hooks: `useMe()`, `useCanManageEverything()`, `useCanManageStream(streamId)`, `useCanManageTeam(team)`, `useCanCreateForTeam(team)`, `useCanManageTeamLeaders(team)` (admin / in-scope PO / in-scope SO only), `useCanManageTeamAdmins(team)` (same tiers plus any current leader of the team — team_admin is NEVER allowed).
+- Pure functions: `canManageEverything/Stream/Team/CreateForTeam/TeamLeaders/TeamAdmins` accept a `Principal` (the User from `useGetMe`).
 
 ### Roles (5 login tiers + non-login members)
 - **admin** — Full access across every programme

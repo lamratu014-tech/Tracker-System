@@ -61,7 +61,7 @@ const ROLE_COLOR: Record<Role, string> = {
   team_admin: "#0EA5E9",
 };
 
-const ROLE_CYCLE: Role[] = ["admin", "programme_overseer", "stream_overseer", "leader"];
+const ROLE_CYCLE: Role[] = ["admin", "programme_overseer", "stream_overseer", "leader", "team_admin"];
 
 export default function AdminPanelScreen() {
   const colors = useColors();

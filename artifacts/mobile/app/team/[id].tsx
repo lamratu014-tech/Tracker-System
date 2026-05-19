@@ -44,7 +44,8 @@ import { useColors } from "@/hooks/useColors";
 import {
   teamVisibility,
   useCanManageTeam,
-  useCanManageTeamManagers,
+  useCanManageTeamAdmins,
+  useCanManageTeamLeaders,
   useMe,
 } from "@/lib/permissions";
 
@@ -124,7 +125,10 @@ export default function TeamDetailScreen() {
   const canEdit = useCanManageTeam(
     team ? { id: team.id, streamId: team.streamId } : null,
   );
-  const canManageManagers = useCanManageTeamManagers(
+  const canManageLeaders = useCanManageTeamLeaders(
+    team ? { id: team.id, streamId: team.streamId } : null,
+  );
+  const canManageAdmins = useCanManageTeamAdmins(
     team ? { id: team.id, streamId: team.streamId } : null,
   );
   const isAdmin = me?.role === "admin";
@@ -255,10 +259,10 @@ export default function TeamDetailScreen() {
   }
 
   async function addLeader() {
-    if (!canManageManagers) return;
+    if (!canManageLeaders) return;
     const taken = new Set([...leaderIds, ...teamAdminIds]);
     const candidates = users.filter(
-      (u) => !taken.has(u.id) && (u.role === "leader" || u.role === "team_admin"),
+      (u) => !taken.has(u.id) && u.role === "leader",
     );
     if (candidates.length === 0) {
       Alert.alert("No candidates", "Invite a leader-eligible user first.");
@@ -274,7 +278,7 @@ export default function TeamDetailScreen() {
   }
 
   async function addTeamAdmin() {
-    if (!canManageManagers) return;
+    if (!canManageAdmins) return;
     const taken = new Set([...leaderIds, ...teamAdminIds]);
     const candidates = users.filter(
       (u) => !taken.has(u.id) && (u.role === "leader" || u.role === "team_admin"),
@@ -292,11 +296,22 @@ export default function TeamDetailScreen() {
     addManager.mutate({ id: team!.id, data: { userId: choice, role: "team_admin" } });
   }
 
-  async function removeManagerFor(userId: string, label: string) {
-    if (!canManageManagers) return;
+  async function removeLeaderFor(userId: string, label: string) {
+    if (!canManageLeaders) return;
     const ok = await dialog.confirm({
-      title: "Remove from team",
-      message: `Remove ${label} as a manager of this team?`,
+      title: "Remove leader",
+      message: `Remove ${label} as a leader of this team?`,
+      destructive: true,
+      confirmText: "Remove",
+    });
+    if (ok) removeManager.mutate({ id: team!.id, userId });
+  }
+
+  async function removeTeamAdminFor(userId: string, label: string) {
+    if (!canManageAdmins) return;
+    const ok = await dialog.confirm({
+      title: "Remove team admin",
+      message: `Remove ${label} as a team admin?`,
       destructive: true,
       confirmText: "Remove",
     });
@@ -397,7 +412,7 @@ export default function TeamDetailScreen() {
           <Text style={[styles.leaderText, { color: colors.foreground, flex: 1 }]}>
             Leaders {leaderUsers.length > 0 ? `(${leaderUsers.length})` : ""}
           </Text>
-          {canManageManagers ? (
+          {canManageLeaders ? (
             <TouchableOpacity onPress={addLeader} style={{ padding: 4 }}>
               <Feather name="plus" size={16} color={colors.primary} />
             </TouchableOpacity>
@@ -409,8 +424,8 @@ export default function TeamDetailScreen() {
           leaderUsers.map((u) => (
             <View key={u.id} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
               <Text style={{ color: colors.foreground, flex: 1, fontFamily: "Inter_600SemiBold" }}>{u.name}</Text>
-              {canManageManagers ? (
-                <TouchableOpacity onPress={() => removeManagerFor(u.id, u.name)}>
+              {canManageLeaders ? (
+                <TouchableOpacity onPress={() => removeLeaderFor(u.id, u.name)}>
                   <Feather name="x" size={14} color={colors.mutedForeground} />
                 </TouchableOpacity>
               ) : null}
@@ -422,7 +437,7 @@ export default function TeamDetailScreen() {
           <Text style={[styles.leaderText, { color: colors.foreground, flex: 1 }]}>
             Team admins {teamAdminUsers.length > 0 ? `(${teamAdminUsers.length})` : ""}
           </Text>
-          {canManageManagers ? (
+          {canManageAdmins ? (
             <TouchableOpacity onPress={addTeamAdmin} style={{ padding: 4 }}>
               <Feather name="plus" size={16} color={colors.primary} />
             </TouchableOpacity>
@@ -434,8 +449,8 @@ export default function TeamDetailScreen() {
           teamAdminUsers.map((u) => (
             <View key={u.id} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
               <Text style={{ color: colors.foreground, flex: 1 }}>{u.name}</Text>
-              {canManageManagers ? (
-                <TouchableOpacity onPress={() => removeManagerFor(u.id, u.name)}>
+              {canManageAdmins ? (
+                <TouchableOpacity onPress={() => removeTeamAdminFor(u.id, u.name)}>
                   <Feather name="x" size={14} color={colors.mutedForeground} />
                 </TouchableOpacity>
               ) : null}

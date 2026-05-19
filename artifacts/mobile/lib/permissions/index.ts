@@ -78,11 +78,12 @@ export function canCreateForTeam(
 }
 
 /**
- * Only admin / programme-overseer / stream-overseer / current team leaders
- * may add or remove team managers (leaders + team admins). A team_admin
- * specifically may NOT add other managers.
+ * Adding or removing a **leader** of a team is restricted to admin /
+ * programme-overseer (in scope) / stream-overseer (in scope) — i.e. tiers
+ * strictly above the team itself. Leaders cannot promote or demote other
+ * leaders; team_admins certainly cannot.
  */
-export function canManageTeamManagers(
+export function canManageTeamLeaders(
   user: Principal,
   team: TeamScope | null | undefined,
   streamProgrammeId?: string | null,
@@ -96,6 +97,21 @@ export function canManageTeamManagers(
   if (user.role === "stream_overseer") {
     return !!team.streamId && team.streamId === user.streamId;
   }
+  return false;
+}
+
+/**
+ * Adding or removing a **team_admin** of a team is allowed for the same
+ * higher tiers as above, plus any current leader of that team. team_admins
+ * themselves can NOT manage other team_admins.
+ */
+export function canManageTeamAdmins(
+  user: Principal,
+  team: TeamScope | null | undefined,
+  streamProgrammeId?: string | null,
+): boolean {
+  if (canManageTeamLeaders(user, team, streamProgrammeId)) return true;
+  if (!user || !team) return false;
   if (user.role === "leader") {
     return leaderTeamIds(user).includes(team.id);
   }
@@ -157,7 +173,7 @@ export function useCanCreateForTeam(
   return canCreateForTeam(me, team, streamProgrammeId);
 }
 
-export function useCanManageTeamManagers(
+export function useCanManageTeamLeaders(
   team: TeamScope | null | undefined,
 ): boolean {
   const me = useMe();
@@ -167,7 +183,20 @@ export function useCanManageTeamManagers(
     team?.streamId
       ? (streams as Stream[] | undefined)?.find((s) => s.id === team.streamId)?.programmeId ?? null
       : null;
-  return canManageTeamManagers(me, team, streamProgrammeId);
+  return canManageTeamLeaders(me, team, streamProgrammeId);
+}
+
+export function useCanManageTeamAdmins(
+  team: TeamScope | null | undefined,
+): boolean {
+  const me = useMe();
+  const { data: streams } = useListStreams();
+  if (!me) return false;
+  const streamProgrammeId =
+    team?.streamId
+      ? (streams as Stream[] | undefined)?.find((s) => s.id === team.streamId)?.programmeId ?? null
+      : null;
+  return canManageTeamAdmins(me, team, streamProgrammeId);
 }
 
 export type TeamVisibility = "full" | "locked" | "hidden";
