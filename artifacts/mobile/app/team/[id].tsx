@@ -10,8 +10,9 @@ import {
   getListTeamNotesQueryKey,
   getListTeamsQueryKey,
   getListUsersQueryKey,
-  useAssignTeamLeader,
+  useAddTeamManager,
   useCreateTeamMember,
+  useRemoveTeamManager,
   useCreateTeamNote,
   useDeleteMember,
   useDeleteTeam,
@@ -40,7 +41,12 @@ import { useDialog } from "@/components/Dialog";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
-import { teamVisibility, useCanManageTeam, useMe } from "@/lib/permissions";
+import {
+  teamVisibility,
+  useCanManageTeam,
+  useCanManageTeamManagers,
+  useMe,
+} from "@/lib/permissions";
 
 export default function TeamDetailScreen() {
   const colors = useColors();
@@ -118,6 +124,9 @@ export default function TeamDetailScreen() {
   const canEdit = useCanManageTeam(
     team ? { id: team.id, streamId: team.streamId } : null,
   );
+  const canManageManagers = useCanManageTeamManagers(
+    team ? { id: team.id, streamId: team.streamId } : null,
+  );
   const isAdmin = me?.role === "admin";
 
   const [editing, setEditing] = useState(false);
@@ -139,7 +148,8 @@ export default function TeamDetailScreen() {
 
   const updateTeam = useUpdateTeam({ mutation: { onSuccess: invalidateTeam } });
   const deleteTeam = useDeleteTeam({ mutation: { onSuccess: invalidateTeam } });
-  const assignLeader = useAssignTeamLeader({ mutation: { onSuccess: invalidateTeam } });
+  const addManager = useAddTeamManager({ mutation: { onSuccess: invalidateTeam } });
+  const removeManager = useRemoveTeamManager({ mutation: { onSuccess: invalidateTeam } });
   const createMember = useCreateTeamMember({
     mutation: {
       onSuccess: () => {
@@ -217,7 +227,14 @@ export default function TeamDetailScreen() {
     );
   }
 
-  const leader = team.leaderId ? users.find((u) => u.id === team.leaderId) : null;
+  const leaderIds = team.leaderIds ?? [];
+  const teamAdminIds = team.teamAdminIds ?? [];
+  const leaderUsers = leaderIds
+    .map((uid) => users.find((u) => u.id === uid))
+    .filter((u): u is NonNullable<typeof u> => !!u);
+  const teamAdminUsers = teamAdminIds
+    .map((uid) => users.find((u) => u.id === uid))
+    .filter((u): u is NonNullable<typeof u> => !!u);
 
   function saveName() {
     if (!draftName.trim()) return;
@@ -237,25 +254,53 @@ export default function TeamDetailScreen() {
     if (ok) deleteTeam.mutate({ id: team!.id }, { onSuccess: () => router.back() });
   }
 
-  async function pickLeader() {
-    if (!isAdmin) return;
-    const candidates = users.filter((u) => u.role === "leader" || u.role === "admin");
+  async function addLeader() {
+    if (!canManageManagers) return;
+    const taken = new Set([...leaderIds, ...teamAdminIds]);
+    const candidates = users.filter(
+      (u) => !taken.has(u.id) && (u.role === "leader" || u.role === "team_admin"),
+    );
     if (candidates.length === 0) {
-      Alert.alert("No candidates", "Invite a leader user first.");
+      Alert.alert("No candidates", "Invite a leader-eligible user first.");
       return;
     }
-    const CLEAR = "__clear__";
     const choice = await dialog.choice<string>({
-      title: "Assign leader",
-      message: "Pick a new leader for this team.",
-      options: [
-        ...candidates.map((u) => ({ label: u.name, value: u.id })),
-        { label: "Clear leader", value: CLEAR, destructive: true },
-      ],
+      title: "Add leader",
+      message: "Pick a user to add as a leader of this team.",
+      options: candidates.map((u) => ({ label: u.name, value: u.id })),
     });
     if (!choice) return;
-    const leaderId = choice === CLEAR ? null : choice;
-    assignLeader.mutate({ id: team!.id, data: { leaderId } });
+    addManager.mutate({ id: team!.id, data: { userId: choice, role: "leader" } });
+  }
+
+  async function addTeamAdmin() {
+    if (!canManageManagers) return;
+    const taken = new Set([...leaderIds, ...teamAdminIds]);
+    const candidates = users.filter(
+      (u) => !taken.has(u.id) && (u.role === "leader" || u.role === "team_admin"),
+    );
+    if (candidates.length === 0) {
+      Alert.alert("No candidates", "Invite a team-admin-eligible user first.");
+      return;
+    }
+    const choice = await dialog.choice<string>({
+      title: "Add team admin",
+      message: "Pick a user to add as a team admin.",
+      options: candidates.map((u) => ({ label: u.name, value: u.id })),
+    });
+    if (!choice) return;
+    addManager.mutate({ id: team!.id, data: { userId: choice, role: "team_admin" } });
+  }
+
+  async function removeManagerFor(userId: string, label: string) {
+    if (!canManageManagers) return;
+    const ok = await dialog.confirm({
+      title: "Remove from team",
+      message: `Remove ${label} as a manager of this team?`,
+      destructive: true,
+      confirmText: "Remove",
+    });
+    if (ok) removeManager.mutate({ id: team!.id, userId });
   }
 
   function addNewMember() {
@@ -346,18 +391,58 @@ export default function TeamDetailScreen() {
         <Text style={[styles.title, { color: colors.foreground }]}>{team.name}</Text>
       )}
 
-      <TouchableOpacity
-        onPress={pickLeader}
-        disabled={!isAdmin}
-        style={[styles.leaderBox, { backgroundColor: colors.card, borderColor: colors.border }]}
-      >
-        <Feather name="award" size={14} color={colors.primary} />
-        <Text style={[styles.leaderText, { color: colors.foreground }]}>
-          Leader:{" "}
-          <Text style={{ fontFamily: "Inter_600SemiBold" }}>{leader?.name ?? "Unassigned"}</Text>
-        </Text>
-        {isAdmin ? <Feather name="chevron-right" size={14} color={colors.mutedForeground} /> : null}
-      </TouchableOpacity>
+      <View style={[styles.leaderBox, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: "column", alignItems: "stretch", gap: 8 }]}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Feather name="award" size={14} color={colors.primary} />
+          <Text style={[styles.leaderText, { color: colors.foreground, flex: 1 }]}>
+            Leaders {leaderUsers.length > 0 ? `(${leaderUsers.length})` : ""}
+          </Text>
+          {canManageManagers ? (
+            <TouchableOpacity onPress={addLeader} style={{ padding: 4 }}>
+              <Feather name="plus" size={16} color={colors.primary} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+        {leaderUsers.length === 0 ? (
+          <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>Unassigned</Text>
+        ) : (
+          leaderUsers.map((u) => (
+            <View key={u.id} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={{ color: colors.foreground, flex: 1, fontFamily: "Inter_600SemiBold" }}>{u.name}</Text>
+              {canManageManagers ? (
+                <TouchableOpacity onPress={() => removeManagerFor(u.id, u.name)}>
+                  <Feather name="x" size={14} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ))
+        )}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 }}>
+          <Feather name="shield" size={14} color={colors.primary} />
+          <Text style={[styles.leaderText, { color: colors.foreground, flex: 1 }]}>
+            Team admins {teamAdminUsers.length > 0 ? `(${teamAdminUsers.length})` : ""}
+          </Text>
+          {canManageManagers ? (
+            <TouchableOpacity onPress={addTeamAdmin} style={{ padding: 4 }}>
+              <Feather name="plus" size={16} color={colors.primary} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+        {teamAdminUsers.length === 0 ? (
+          <Text style={{ color: colors.mutedForeground, fontSize: 12 }}>None</Text>
+        ) : (
+          teamAdminUsers.map((u) => (
+            <View key={u.id} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Text style={{ color: colors.foreground, flex: 1 }}>{u.name}</Text>
+              {canManageManagers ? (
+                <TouchableOpacity onPress={() => removeManagerFor(u.id, u.name)}>
+                  <Feather name="x" size={14} color={colors.mutedForeground} />
+                </TouchableOpacity>
+              ) : null}
+            </View>
+          ))
+        )}
+      </View>
 
       {canEdit ? (
         <View style={styles.actions}>

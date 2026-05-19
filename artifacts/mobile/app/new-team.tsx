@@ -81,7 +81,7 @@ export default function NewTeamScreen() {
     if (!canManageStream(me, chosen ? { id: chosen.id, programmeId: chosen.programmeId } : null)) {
       return Alert.alert("Not allowed", "You can't add teams to that stream.");
     }
-    createTeam.mutate({ data: { name: name.trim(), streamId, leaderId: leaderId ?? null } });
+    createTeam.mutate({ data: { name: name.trim(), streamId, leaderIds: leaderId ? [leaderId] : [] } });
   }
 
   return (

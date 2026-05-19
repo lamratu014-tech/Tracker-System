@@ -1,11 +1,11 @@
 import type { Request, Response, NextFunction } from "express";
 import { getUserFromToken } from "../lib/auth";
-import type { User } from "@workspace/db";
+import type { Principal } from "../lib/auth";
 
 declare global {
   namespace Express {
     interface Request {
-      authUser?: User;
+      authUser?: Principal;
     }
   }
 }
@@ -13,7 +13,7 @@ declare global {
 export async function requireAuth(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   const header = req.headers.authorization;
   if (!header?.startsWith("Bearer ")) {
@@ -33,7 +33,7 @@ export async function requireAuth(
 export async function requireAdmin(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   await requireAuth(req, res, () => {
     if (req.authUser?.role !== "admin") {
@@ -44,12 +44,13 @@ export async function requireAdmin(
   });
 }
 
-// Allows admin, stream_overseer, or leader. Per-row scoping is enforced
-// in route handlers; refined permission checks land in a follow-up task.
+// Allows admin, programme_overseer, stream_overseer, leader, or team_admin.
+// Per-row scoping is enforced inside each route handler — this middleware
+// only filters out plain members / unscoped users.
 export async function requireManager(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void> {
   await requireAuth(req, res, () => {
     const role = req.authUser?.role;
@@ -57,7 +58,8 @@ export async function requireManager(
       role !== "admin" &&
       role !== "programme_overseer" &&
       role !== "stream_overseer" &&
-      role !== "leader"
+      role !== "leader" &&
+      role !== "team_admin"
     ) {
       res.status(403).json({ error: "Manager access required" });
       return;

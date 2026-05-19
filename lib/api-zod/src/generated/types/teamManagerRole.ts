@@ -6,12 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 
-export type UserRole = (typeof UserRole)[keyof typeof UserRole];
+export type TeamManagerRole =
+  (typeof TeamManagerRole)[keyof typeof TeamManagerRole];
 
-export const UserRole = {
-  admin: "admin",
-  programme_overseer: "programme_overseer",
-  stream_overseer: "stream_overseer",
+export const TeamManagerRole = {
   leader: "leader",
   team_admin: "team_admin",
 } as const;

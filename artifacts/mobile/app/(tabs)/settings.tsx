@@ -35,8 +35,10 @@ export default function SettingsScreen() {
   const dialog = useDialog();
   const [signingOut, setSigningOut] = React.useState(false);
 
-  const teamQ = useGetTeam(me?.teamId ?? "", {
-    query: { enabled: !!me?.teamId, queryKey: getGetTeamQueryKey(me?.teamId ?? "") },
+  const primaryTeamId =
+    me?.leaderTeamIds?.[0] ?? me?.teamAdminTeamIds?.[0] ?? "";
+  const teamQ = useGetTeam(primaryTeamId, {
+    query: { enabled: !!primaryTeamId, queryKey: getGetTeamQueryKey(primaryTeamId) },
   });
   const team = teamQ.data ?? null;
   const streamId = me?.streamId ?? team?.streamId ?? null;
@@ -50,7 +52,7 @@ export default function SettingsScreen() {
   let context = "Programme-wide";
   if (team && stream) context = `${stream.name} · ${team.name}`;
   else if (stream) context = `${stream.name} (whole stream)`;
-  else if (me.role === "leader") context = "No team yet";
+  else if (me.role === "leader" || me.role === "team_admin") context = "No team yet";
 
   async function handleLogout() {
     const ok = await dialog.confirm({

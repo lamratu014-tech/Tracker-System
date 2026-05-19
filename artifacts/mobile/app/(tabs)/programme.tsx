@@ -252,8 +252,9 @@ export default function ProgrammeScreen() {
                       ) : (
                         visibleTeamsHere.map((team) => {
                           const vis = teamVisibility(me, team, stream.programmeId);
-                          const leader = team.leaderId
-                            ? users.find((u) => u.id === team.leaderId)
+                          const teamLeaderId = team.leaderIds?.[0] ?? null;
+                          const leader = teamLeaderId
+                            ? users.find((u) => u.id === teamLeaderId)
                             : null;
                           const leaderLabel = leader?.name ?? "Unassigned";
                           if (vis === "locked") {

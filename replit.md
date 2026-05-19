@@ -16,15 +16,18 @@ API contract: `lib/api-spec/openapi.yaml`. Run `pnpm --filter @workspace/api-spe
 
 ### Permissions (`lib/permissions/index.ts`)
 All screens use the API-backed helpers (no more legacy store helpers):
-- React hooks: `useMe()`, `useCanManageEverything()`, `useCanManageStream(streamId)`, `useCanManageTeam(team)`, `useCanCreateForTeam(team)`.
-- Pure functions: `canManageEverything/Stream/Team/CreateForTeam` accept a `Principal` (the User from `useGetMe`).
+- React hooks: `useMe()`, `useCanManageEverything()`, `useCanManageStream(streamId)`, `useCanManageTeam(team)`, `useCanCreateForTeam(team)`, `useCanManageTeamManagers(team)` (gates add/remove of leaders + team admins; leader-of-team is allowed, team_admin is NOT).
+- Pure functions: `canManageEverything/Stream/Team/CreateForTeam/TeamManagers` accept a `Principal` (the User from `useGetMe`).
 
-### Roles (4 login tiers + non-login members)
+### Roles (5 login tiers + non-login members)
 - **admin** — Full access across every programme
 - **programme_overseer** — Full access to all streams/teams within their assigned programme. Cannot invite admins or other programme overseers; cannot create org-wide events (admin-only)
 - **stream_overseer** — Full access to all teams within their assigned stream
-- **leader** — Manage their own team only
+- **leader** — Manages one or more teams (multiple leaders per team allowed). Can add/remove team leaders AND team admins for teams they lead.
+- **team_admin** — Same day-to-day access as `leader` for projects/milestones/members/notes/team-scoped events, on teams where they appear in `team_managers` with role `team_admin`. **Cannot** add/remove other managers.
 - **(member)** — NOT a login role. Members are roster-only entries on a team.
+
+Per-team management is tracked in the `team_managers` join table (`team_id, user_id, role`). The `Team` resource exposes derived `leaderIds[]` and `teamAdminIds[]`. Users expose derived `leaderTeamIds[]` and `teamAdminTeamIds[]` (the previous single `users.team_id` column was dropped; a user can manage multiple teams).
 
 ### Hierarchy
 ```
@@ -36,7 +39,7 @@ Events are separate, optionally linked to a stream OR team via invitedTeamIds
 
 ### Key generated hooks used across screens
 - Streams: `useListStreams`, `useGetStream`, `useListStreamTeams`, `useCreateStream`, `useUpdateStream`, `useDeleteStream`
-- Teams: `useListTeams`, `useGetTeam`, `useCreateTeam`, `useUpdateTeam`, `useDeleteTeam`, `useAssignTeamLeader`, `useListTeamMembers`, `useCreateTeamMember`, `useDeleteMember`, `useListTeamNotes` + note CRUD
+- Teams: `useListTeams`, `useGetTeam`, `useCreateTeam`, `useUpdateTeam`, `useDeleteTeam`, `useAddTeamManager`, `useRemoveTeamManager`, `useListTeamMembers`, `useCreateTeamMember`, `useDeleteMember`, `useListTeamNotes` + note CRUD
 - Projects/Milestones: `useListProjects`, `useGetProject`, `useCreateProject`, `useUpdateProject`, `useDeleteProject`, `useListProjectMilestones`, `useCreateMilestone`, `useSetMilestoneStatus`, `useDeleteMilestone`
 - Events: `useListEvents`, `useGetEvent`, `useCreateEvent`, `useDeleteEvent`
 - Users: `useListUsers`, `useGetMe`, `useUpdateUserRole`, `useDeleteUser`

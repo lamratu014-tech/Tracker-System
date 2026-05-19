@@ -1,58 +1,93 @@
 import { Router } from "express";
-import { db, teamsTable, personnelTable, usersTable, streamsTable } from "@workspace/db";
-import { eq, inArray } from "drizzle-orm";
+import {
+  db,
+  teamsTable,
+  personnelTable,
+  streamsTable,
+  teamManagersTable,
+} from "@workspace/db";
+import { and, eq, inArray } from "drizzle-orm";
 import {
   CreateTeamBody,
   UpdateTeamBody,
-  AssignTeamLeaderBody,
+  AddTeamManagerBody,
   CreateTeamMemberBody,
   UpdateMemberBody,
 } from "@workspace/api-zod";
 import { z } from "zod";
 import { requireAuth, requireManager } from "../middlewares/requireAuth";
 import { logActivity } from "../lib/activity";
-import { userCanAccessTeam, userCanAccessStream, userCanAssignAsLeader, visibleTeamIdsFor } from "../lib/permissions";
+import {
+  userCanAccessTeam,
+  userCanAccessStream,
+  userCanAssignAsManager,
+  userCanManageTeamLeaders,
+  userCanManageTeamAdmins,
+  visibleTeamIdsFor,
+  getTeamManagersByTeam,
+} from "../lib/permissions";
 
 const router = Router();
 
 const IdParam = z.object({ id: z.string() });
+const ManagerParams = z.object({ id: z.string(), userId: z.string() });
+
+type TeamRow = {
+  id: string;
+  name: string;
+  streamId: string | null;
+  functionLabel: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  streamName?: string | null;
+};
+
+async function attachManagers<T extends { id: string }>(
+  rows: T[],
+): Promise<(T & { leaderIds: string[]; teamAdminIds: string[] })[]> {
+  if (rows.length === 0) return [];
+  const map = await getTeamManagersByTeam(rows.map((r) => r.id));
+  return rows.map((r) => {
+    const entry = map.get(r.id) ?? { leaderIds: [], teamAdminIds: [] };
+    return { ...r, leaderIds: entry.leaderIds, teamAdminIds: entry.teamAdminIds };
+  });
+}
+
+const teamSelect = {
+  id: teamsTable.id,
+  name: teamsTable.name,
+  streamId: teamsTable.streamId,
+  functionLabel: teamsTable.functionLabel,
+  createdAt: teamsTable.createdAt,
+  updatedAt: teamsTable.updatedAt,
+};
+
+const teamSelectWithStream = {
+  ...teamSelect,
+  streamName: streamsTable.name,
+};
 
 // GET /teams
 router.get("/teams", requireAuth, async (req, res): Promise<void> => {
   const user = req.authUser!;
   const visibleIds = await visibleTeamIdsFor(user);
 
-  const selectShape = {
-    id: teamsTable.id,
-    name: teamsTable.name,
-    streamId: teamsTable.streamId,
-    leaderId: teamsTable.leaderId,
-    functionLabel: teamsTable.functionLabel,
-    createdAt: teamsTable.createdAt,
-    updatedAt: teamsTable.updatedAt,
-    streamName: streamsTable.name,
-  };
-
-  type TeamRow = {
-    id: string; name: string; streamId: string | null; leaderId: string | null;
-    functionLabel: string | null; createdAt: Date; updatedAt: Date; streamName: string | null;
-  };
   let teams: TeamRow[] = [];
   if (visibleIds === "all") {
     teams = await db
-      .select(selectShape)
+      .select(teamSelectWithStream)
       .from(teamsTable)
       .leftJoin(streamsTable, eq(teamsTable.streamId, streamsTable.id))
       .orderBy(teamsTable.name);
   } else if (visibleIds.length > 0) {
     teams = await db
-      .select(selectShape)
+      .select(teamSelectWithStream)
       .from(teamsTable)
       .leftJoin(streamsTable, eq(teamsTable.streamId, streamsTable.id))
       .where(inArray(teamsTable.id, visibleIds))
       .orderBy(teamsTable.name);
   }
-  res.json(teams);
+  res.json(await attachManagers(teams));
 });
 
 // GET /teams/:id
@@ -65,31 +100,28 @@ router.get("/teams/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
   const [team] = await db
-    .select({
-      id: teamsTable.id,
-      name: teamsTable.name,
-      streamId: teamsTable.streamId,
-      leaderId: teamsTable.leaderId,
-      functionLabel: teamsTable.functionLabel,
-      createdAt: teamsTable.createdAt,
-      updatedAt: teamsTable.updatedAt,
-      streamName: streamsTable.name,
-    })
+    .select(teamSelectWithStream)
     .from(teamsTable)
     .leftJoin(streamsTable, eq(teamsTable.streamId, streamsTable.id))
     .where(eq(teamsTable.id, params.data.id))
     .limit(1);
   if (!team) { res.status(404).json({ error: "Team not found" }); return; }
-  res.json(team);
+  const [enriched] = await attachManagers([team]);
+  res.json(enriched);
 });
 
 // POST /teams — admin or overseer of the target stream
 router.post("/teams", requireManager, async (req, res): Promise<void> => {
   const parsed = CreateTeamBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const { name, streamId, leaderId, functionLabel } = parsed.data;
+  const { name, streamId, leaderIds, functionLabel } = parsed.data;
   const user = req.authUser!;
 
+  // Only admins, programme_overseers, and stream_overseers may create teams.
+  if (user.role !== "admin" && user.role !== "programme_overseer" && user.role !== "stream_overseer") {
+    res.status(403).json({ error: "You cannot create teams" });
+    return;
+  }
   // Non-admins must scope the new team to a stream they oversee.
   if (user.role !== "admin") {
     if (!streamId || !(await userCanAccessStream(user, streamId))) {
@@ -98,19 +130,36 @@ router.post("/teams", requireManager, async (req, res): Promise<void> => {
     }
   }
 
-  // If a leader is being installed at create time, validate the target
-  // user is in scope (target's stream matches; not an admin) for non-admins.
-  if (leaderId) {
-    const check = await userCanAssignAsLeader(user, leaderId, streamId ?? null);
-    if (!check.ok) { res.status(check.status).json({ error: check.error }); return; }
-  }
-
   const [team] = await db
     .insert(teamsTable)
-    .values({ name, streamId: streamId ?? null, leaderId: leaderId ?? null, functionLabel })
+    .values({ name, streamId: streamId ?? null, functionLabel })
     .returning();
+
+  const dedupedLeaderIds = Array.from(new Set(leaderIds ?? []));
+  if (dedupedLeaderIds.length > 0) {
+    for (const leaderId of dedupedLeaderIds) {
+      const check = await userCanAssignAsManager(
+        user,
+        leaderId,
+        team.id,
+        streamId ?? null,
+        "leader",
+      );
+      if (!check.ok) {
+        // Rollback the freshly-created team so we don't leave it orphaned.
+        await db.delete(teamsTable).where(eq(teamsTable.id, team.id));
+        res.status(check.status).json({ error: check.error });
+        return;
+      }
+    }
+    await db.insert(teamManagersTable).values(
+      dedupedLeaderIds.map((userId) => ({ teamId: team.id, userId, role: "leader" as const })),
+    );
+  }
+
   await logActivity({ user, actionType: "create", entityType: "team", entityId: team.id, entityTitle: team.name });
-  res.status(201).json(team);
+  const [enriched] = await attachManagers([team]);
+  res.status(201).json(enriched);
 });
 
 // PATCH /teams/:id — admin or manager of this team
@@ -135,40 +184,17 @@ router.patch("/teams/:id", requireManager, async (req, res): Promise<void> => {
     }
   }
 
-  // Leaders cannot reassign leadership of their own team via PATCH;
-  // assignment must go through the dedicated /assign-leader route which
-  // enforces the same admin/overseer-only rule.
-  if (user.role === "leader" && "leaderId" in parsed.data) {
-    res.status(403).json({ error: "Team leaders cannot reassign team leaders" });
-    return;
-  }
-
-  // For non-admins, validate any new leaderId against the resolved stream
-  // of the team (post-patch streamId if changing, otherwise existing one).
-  if ("leaderId" in parsed.data && parsed.data.leaderId) {
-    const [existingTeam] = await db
-      .select({ streamId: teamsTable.streamId })
-      .from(teamsTable)
-      .where(eq(teamsTable.id, params.data.id))
-      .limit(1);
-    const targetStreamId =
-      "streamId" in parsed.data ? parsed.data.streamId ?? null : existingTeam?.streamId ?? null;
-    const check = await userCanAssignAsLeader(user, parsed.data.leaderId, targetStreamId);
-    if (!check.ok) { res.status(check.status).json({ error: check.error }); return; }
-  }
-
-  // Preserve the difference between "key omitted" (don't touch) and "key=null" (clear).
   const patch: Partial<typeof teamsTable.$inferInsert> = {};
   if ("name" in parsed.data) patch.name = parsed.data.name;
   if ("streamId" in parsed.data) patch.streamId = parsed.data.streamId ?? null;
-  if ("leaderId" in parsed.data) patch.leaderId = parsed.data.leaderId ?? null;
   if ("functionLabel" in parsed.data) patch.functionLabel = parsed.data.functionLabel;
 
   const [team] = await db.update(teamsTable).set(patch).where(eq(teamsTable.id, params.data.id)).returning();
   if (!team) { res.status(404).json({ error: "Team not found" }); return; }
 
   await logActivity({ user, actionType: "update", entityType: "team", entityId: team.id, entityTitle: team.name });
-  res.json(team);
+  const [enriched] = await attachManagers([team]);
+  res.json(enriched);
 });
 
 // DELETE /teams/:id — admin or overseer of the team's stream
@@ -177,9 +203,9 @@ router.delete("/teams/:id", requireManager, async (req, res): Promise<void> => {
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const user = req.authUser!;
 
-  // Leaders cannot delete their own team — only an overseer/admin can.
-  if (user.role === "leader") {
-    res.status(403).json({ error: "Team leaders cannot delete their team" });
+  // Leaders and team_admins cannot delete their own team — only an overseer/admin can.
+  if (user.role === "leader" || user.role === "team_admin") {
+    res.status(403).json({ error: "Only overseers or admins can delete a team" });
     return;
   }
   if (!(await userCanAccessTeam(user, params.data.id))) {
@@ -194,54 +220,114 @@ router.delete("/teams/:id", requireManager, async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
-// POST /teams/:id/assign-leader — admin or overseer of the team's stream
-router.post("/teams/:id/assign-leader", requireManager, async (req, res): Promise<void> => {
+// POST /teams/:id/managers — add a leader or team_admin
+router.post("/teams/:id/managers", requireManager, async (req, res): Promise<void> => {
   const params = IdParam.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
   const teamId = params.data.id;
   const user = req.authUser!;
 
-  // Leaders can't reassign their own team's leader; that's an admin/overseer action.
-  if (user.role === "leader") {
-    res.status(403).json({ error: "Team leaders cannot reassign team leaders" });
-    return;
-  }
-  if (!(await userCanAccessTeam(user, teamId))) {
-    res.status(403).json({ error: "Access denied" });
-    return;
-  }
-
-  const parsed = AssignTeamLeaderBody.safeParse(req.body);
+  const parsed = AddTeamManagerBody.safeParse(req.body);
   if (!parsed.success) { res.status(400).json({ error: parsed.error.message }); return; }
-  const leaderId = parsed.data.leaderId ?? null;
+  const { userId: targetUserId, role: managerRole } = parsed.data;
 
-  // Validate the target user is in scope (admin always passes; overseer
-  // requires the target to be a non-admin in the same stream).
-  if (leaderId) {
-    const [existingTeam] = await db
-      .select({ streamId: teamsTable.streamId })
-      .from(teamsTable)
-      .where(eq(teamsTable.id, teamId))
-      .limit(1);
-    const check = await userCanAssignAsLeader(user, leaderId, existingTeam?.streamId ?? null);
-    if (!check.ok) { res.status(check.status).json({ error: check.error }); return; }
-  }
+  const allowed =
+    managerRole === "leader"
+      ? await userCanManageTeamLeaders(user, teamId)
+      : await userCanManageTeamAdmins(user, teamId);
+  if (!allowed) { res.status(403).json({ error: "Access denied" }); return; }
 
   const [team] = await db
-    .update(teamsTable)
-    .set({ leaderId })
+    .select(teamSelect)
+    .from(teamsTable)
     .where(eq(teamsTable.id, teamId))
-    .returning();
+    .limit(1);
   if (!team) { res.status(404).json({ error: "Team not found" }); return; }
 
-  if (leaderId) {
-    await db
-      .update(usersTable)
-      .set({ teamId, streamId: team.streamId, role: "leader" })
-      .where(eq(usersTable.id, leaderId));
-  }
+  const check = await userCanAssignAsManager(
+    user,
+    targetUserId,
+    teamId,
+    team.streamId,
+    managerRole,
+  );
+  if (!check.ok) { res.status(check.status).json({ error: check.error }); return; }
 
-  res.json(team);
+  // Upsert: a user can hold only one role per team. If they already have a
+  // row, update its role to the new value (e.g. promoting team_admin → leader).
+  await db
+    .insert(teamManagersTable)
+    .values({ teamId, userId: targetUserId, role: managerRole })
+    .onConflictDoUpdate({
+      target: [teamManagersTable.teamId, teamManagersTable.userId],
+      set: { role: managerRole },
+    });
+
+  await logActivity({
+    user,
+    actionType: "update",
+    entityType: "team",
+    entityId: teamId,
+    entityTitle: team.name,
+    teamId,
+  });
+
+  const [enriched] = await attachManagers([team]);
+  res.json(enriched);
+});
+
+// DELETE /teams/:id/managers/:userId — remove a manager
+router.delete("/teams/:id/managers/:userId", requireManager, async (req, res): Promise<void> => {
+  const params = ManagerParams.safeParse(req.params);
+  if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
+  const { id: teamId, userId: targetUserId } = params.data;
+  const user = req.authUser!;
+
+  const [existing] = await db
+    .select({ role: teamManagersTable.role })
+    .from(teamManagersTable)
+    .where(
+      and(
+        eq(teamManagersTable.teamId, teamId),
+        eq(teamManagersTable.userId, targetUserId),
+      ),
+    )
+    .limit(1);
+  if (!existing) { res.status(404).json({ error: "Manager not found" }); return; }
+
+  const allowed =
+    existing.role === "leader"
+      ? await userCanManageTeamLeaders(user, teamId)
+      : await userCanManageTeamAdmins(user, teamId);
+  if (!allowed) { res.status(403).json({ error: "Access denied" }); return; }
+
+  await db
+    .delete(teamManagersTable)
+    .where(
+      and(
+        eq(teamManagersTable.teamId, teamId),
+        eq(teamManagersTable.userId, targetUserId),
+      ),
+    );
+
+  const [team] = await db
+    .select(teamSelect)
+    .from(teamsTable)
+    .where(eq(teamsTable.id, teamId))
+    .limit(1);
+  if (!team) { res.status(404).json({ error: "Team not found" }); return; }
+
+  await logActivity({
+    user,
+    actionType: "update",
+    entityType: "team",
+    entityId: teamId,
+    entityTitle: team.name,
+    teamId,
+  });
+
+  const [enriched] = await attachManagers([team]);
+  res.json(enriched);
 });
 
 // ─── Members (assigned_personnel) ─────────────────────────────────────────

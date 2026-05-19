@@ -33,6 +33,7 @@ const ROLE_ACTIONS: Record<Role, string[]> = {
   programme_overseer: ["stream", "team", "user", "project", "event"],
   stream_overseer: ["team", "project", "event"],
   leader: ["project", "event"],
+  team_admin: ["project", "event"],
 };
 
 interface Props {

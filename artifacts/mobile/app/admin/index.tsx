@@ -50,6 +50,7 @@ const ROLE_LABEL: Record<Role, string> = {
   programme_overseer: "Prog. Overseer",
   stream_overseer: "Overseer",
   leader: "Leader",
+  team_admin: "Team Admin",
 };
 
 const ROLE_COLOR: Record<Role, string> = {
@@ -57,6 +58,7 @@ const ROLE_COLOR: Record<Role, string> = {
   programme_overseer: "#6366F1",
   stream_overseer: "#0EA5E9",
   leader: "#2563EB",
+  team_admin: "#0EA5E9",
 };
 
 const ROLE_CYCLE: Role[] = ["admin", "programme_overseer", "stream_overseer", "leader"];
@@ -230,7 +232,7 @@ export default function AdminPanelScreen() {
         role: next,
         programmeId: programmeIdOverride ?? u.programmeId ?? undefined,
         streamId: u.streamId ?? undefined,
-        teamId: u.teamId ?? undefined,
+        teamIds: [...(u.leaderTeamIds ?? []), ...(u.teamAdminTeamIds ?? [])],
       },
     });
   }
@@ -264,8 +266,13 @@ export default function AdminPanelScreen() {
       Alert.alert("Stream required", "Assign this user to a stream first before making them an Overseer.");
       return;
     }
-    if (next === "leader" && !u.teamId) {
-      Alert.alert("Team required", "Assign this user to a team first before making them a Leader.");
+    const hasTeam =
+      (u.leaderTeamIds?.length ?? 0) > 0 || (u.teamAdminTeamIds?.length ?? 0) > 0;
+    if ((next === "leader" || next === "team_admin") && !hasTeam) {
+      Alert.alert(
+        "Team required",
+        `Assign this user to a team first before making them a ${next === "leader" ? "Leader" : "Team Admin"}.`,
+      );
       return;
     }
     applyRoleChange(userId, next);
@@ -508,7 +515,7 @@ export default function AdminPanelScreen() {
                   ? "All streams"
                   : role === "stream_overseer"
                     ? streamLabel(u.streamId)
-                    : teamLabel(u.teamId);
+                    : teamLabel(u.leaderTeamIds?.[0] ?? u.teamAdminTeamIds?.[0] ?? null);
               return (
                 <View key={u.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>

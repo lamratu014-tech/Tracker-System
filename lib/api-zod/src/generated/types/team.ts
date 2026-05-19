@@ -10,7 +10,8 @@ export interface Team {
   id: string;
   name: string;
   streamId?: string | null;
-  leaderId?: string | null;
+  leaderIds: string[];
+  teamAdminIds: string[];
   functionLabel?: string | null;
   createdAt: Date;
   updatedAt?: Date;

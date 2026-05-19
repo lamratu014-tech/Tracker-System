@@ -1,8 +1,8 @@
 import { db, activityLogsTable } from "@workspace/db";
-import type { User } from "@workspace/db";
+import type { Principal } from "./auth";
 
 export async function logActivity(opts: {
-  user: User;
+  user: Principal;
   actionType: string;
   entityType: string;
   entityId?: string;
@@ -11,6 +11,10 @@ export async function logActivity(opts: {
   teamId?: string | null;
 }): Promise<void> {
   try {
+    // Fall back to the first team the actor manages so activity entries
+    // still attach to a sensible scope when the caller doesn't supply one.
+    const fallbackTeamId =
+      opts.user.leaderTeamIds[0] ?? opts.user.teamAdminTeamIds[0] ?? null;
     await db.insert(activityLogsTable).values({
       userId: opts.user.id,
       userRole: opts.user.role,
@@ -20,7 +24,7 @@ export async function logActivity(opts: {
       entityId: opts.entityId,
       entityTitle: opts.entityTitle,
       description: opts.description,
-      teamId: opts.teamId ?? opts.user.teamId,
+      teamId: opts.teamId ?? fallbackTeamId,
     });
   } catch {
     // Activity logging should never crash the main request

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, streamsTable, teamsTable, programmesTable } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import {
   CreateStreamBody,
   UpdateStreamBody,
@@ -42,11 +42,20 @@ router.get("/streams", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  if (user.role === "leader") {
-    if (!user.teamId) { res.json([]); return; }
-    const [team] = await db.select({ streamId: teamsTable.streamId }).from(teamsTable).where(eq(teamsTable.id, user.teamId)).limit(1);
-    if (!team?.streamId) { res.json([]); return; }
-    const streams = await db.select().from(streamsTable).where(eq(streamsTable.id, team.streamId));
+  if (user.role === "leader" || user.role === "team_admin") {
+    const managedTeamIds = [...user.leaderTeamIds, ...user.teamAdminTeamIds];
+    if (managedTeamIds.length === 0) { res.json([]); return; }
+    const teamRows = await db
+      .select({ streamId: teamsTable.streamId })
+      .from(teamsTable)
+      .where(inArray(teamsTable.id, managedTeamIds));
+    const streamIds = Array.from(new Set(teamRows.map((r) => r.streamId).filter((s): s is string => !!s)));
+    if (streamIds.length === 0) { res.json([]); return; }
+    const streams = await db
+      .select()
+      .from(streamsTable)
+      .where(inArray(streamsTable.id, streamIds))
+      .orderBy(streamsTable.name);
     res.json(streams);
     return;
   }
@@ -67,9 +76,6 @@ router.get("/streams/:id", requireAuth, async (req, res): Promise<void> => {
   res.json(stream);
 });
 
-// POST /streams — admin or programme_overseer of the target programme.
-// Stream-level overseers and leaders are explicitly *not* allowed to create
-// new streams, even though `requireManager` would otherwise admit them.
 router.post("/streams", requireManager, async (req, res): Promise<void> => {
   const actor = req.authUser!;
   if (actor.role !== "admin" && actor.role !== "programme_overseer") {
@@ -100,7 +106,6 @@ router.post("/streams", requireManager, async (req, res): Promise<void> => {
   res.status(201).json(stream);
 });
 
-// PATCH /streams/:id — admin or overseer of this stream
 router.patch("/streams/:id", requireManager, async (req, res): Promise<void> => {
   const params = UpdateStreamParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
@@ -123,7 +128,6 @@ router.patch("/streams/:id", requireManager, async (req, res): Promise<void> => 
   res.json(stream);
 });
 
-// DELETE /streams/:id — admin or overseer of this stream
 router.delete("/streams/:id", requireManager, async (req, res): Promise<void> => {
   const params = DeleteStreamParams.safeParse(req.params);
   if (!params.success) { res.status(400).json({ error: params.error.message }); return; }
@@ -150,9 +154,6 @@ router.get("/streams/:id/teams", requireAuth, async (req, res): Promise<void> =>
     return;
   }
 
-  // Anyone who can read the stream may enumerate every team inside it.
-  // Team *mutation* is still gated separately per-team. This is what enables
-  // a leader to choose peer teams when sharing a project across the stream.
   const teams = await db
     .select()
     .from(teamsTable)

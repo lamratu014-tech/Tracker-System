@@ -12,4 +12,5 @@ export interface UpdateUserRoleBody {
   programmeId?: string | null;
   streamId?: string | null;
   teamId?: string | null;
+  teamIds?: string[];
 }

@@ -531,9 +531,9 @@ paths:
         "204": { description: Deleted }
         "404": { $ref: "#/components/responses/NotFound" }
 
-  /teams/{id}/assign-leader:
+  /teams/{id}/managers:
     post:
-      operationId: assignTeamLeader
+      operationId: addTeamManager
       tags: [teams]
       security: [{ bearerAuth: [] }]
       parameters:
@@ -542,7 +542,23 @@ paths:
         required: true
         content:
           application/json:
-            schema: { $ref: "#/components/schemas/AssignLeaderBody" }
+            schema: { $ref: "#/components/schemas/AddTeamManagerBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Team" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /teams/{id}/managers/{userId}:
+    delete:
+      operationId: removeTeamManager
+      tags: [teams]
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+        - { in: path, name: userId, required: true, schema: { type: string } }
       responses:
         "200":
           description: OK
@@ -966,7 +982,11 @@ components:
 
     UserRole:
       type: string
-      enum: [admin, programme_overseer, stream_overseer, leader]
+      enum: [admin, programme_overseer, stream_overseer, leader, team_admin]
+
+    TeamManagerRole:
+      type: string
+      enum: [leader, team_admin]
 
     AuthStatus:
       type: object
@@ -983,7 +1003,8 @@ components:
 
     User:
       type: object
-      required: [id, email, name, initials, department, role, active, createdAt, updatedAt]
+      required:
+        [id, email, name, initials, department, role, active, leaderTeamIds, teamAdminTeamIds, createdAt, updatedAt]
       properties:
         id: { type: string }
         email: { type: string, format: email }
@@ -993,7 +1014,14 @@ components:
         role: { $ref: "#/components/schemas/UserRole" }
         programmeId: { type: string, nullable: true }
         streamId: { type: string, nullable: true }
-        teamId: { type: string, nullable: true }
+        leaderTeamIds:
+          type: array
+          items: { type: string }
+          description: Teams the user leads (derived from team_managers).
+        teamAdminTeamIds:
+          type: array
+          items: { type: string }
+          description: Teams the user is a team_admin of (derived from team_managers).
         active: { type: boolean }
         invitedByName: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
@@ -1046,7 +1074,14 @@ components:
         department: { type: string }
         programmeId: { type: string, nullable: true }
         streamId: { type: string, nullable: true }
-        teamId: { type: string, nullable: true }
+        teamId:
+          type: string
+          nullable: true
+          description: Convenience for leader invites; equivalent to teamIds of length 1.
+        teamIds:
+          type: array
+          items: { type: string }
+          description: Teams to add the invitee as a manager of (leader or team_admin role).
 
     CreateInviteResponse:
       type: object
@@ -1081,6 +1116,9 @@ components:
         programmeId: { type: string, nullable: true }
         streamId: { type: string, nullable: true }
         teamId: { type: string, nullable: true }
+        teamIds:
+          type: array
+          items: { type: string }
 
     UpdateUserRoleBody:
       type: object
@@ -1090,6 +1128,9 @@ components:
         programmeId: { type: string, nullable: true }
         streamId: { type: string, nullable: true }
         teamId: { type: string, nullable: true }
+        teamIds:
+          type: array
+          items: { type: string }
 
     Programme:
       type: object
@@ -1139,12 +1180,17 @@ components:
 
     Team:
       type: object
-      required: [id, name, createdAt]
+      required: [id, name, leaderIds, teamAdminIds, createdAt]
       properties:
         id: { type: string }
         name: { type: string }
         streamId: { type: string, nullable: true }
-        leaderId: { type: string, nullable: true }
+        leaderIds:
+          type: array
+          items: { type: string }
+        teamAdminIds:
+          type: array
+          items: { type: string }
         functionLabel: { type: string, nullable: true }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -1162,7 +1208,9 @@ components:
       properties:
         name: { type: string, minLength: 1 }
         streamId: { type: string, nullable: true }
-        leaderId: { type: string, nullable: true }
+        leaderIds:
+          type: array
+          items: { type: string }
         functionLabel: { type: string }
 
     UpdateTeamBody:
@@ -1170,13 +1218,14 @@ components:
       properties:
         name: { type: string, minLength: 1 }
         streamId: { type: string, nullable: true }
-        leaderId: { type: string, nullable: true }
         functionLabel: { type: string }
 
-    AssignLeaderBody:
+    AddTeamManagerBody:
       type: object
+      required: [userId, role]
       properties:
-        leaderId: { type: string, nullable: true }
+        userId: { type: string, minLength: 1 }
+        role: { $ref: "#/components/schemas/TeamManagerRole" }
 
     Member:
       type: object

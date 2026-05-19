@@ -109,8 +109,8 @@ router.get("/projects", requireAuth, async (req, res): Promise<void> => {
           .from(teamsTable)
           .where(eq(teamsTable.streamId, user.streamId))
       ).map((t) => t.id);
-    } else if (user.teamId) {
-      visibleTeamIds = [user.teamId];
+    } else if (user.role === "leader" || user.role === "team_admin") {
+      visibleTeamIds = Array.from(new Set([...user.leaderTeamIds, ...user.teamAdminTeamIds]));
     }
 
     if (visibleTeamIds.length === 0) {

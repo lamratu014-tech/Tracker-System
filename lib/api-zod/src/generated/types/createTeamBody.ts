@@ -10,6 +10,6 @@ export interface CreateTeamBody {
   /** @minLength 1 */
   name: string;
   streamId?: string | null;
-  leaderId?: string | null;
+  leaderIds?: string[];
   functionLabel?: string;
 }

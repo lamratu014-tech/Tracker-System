@@ -15,5 +15,8 @@ export interface CreateInviteBody {
   department?: string;
   programmeId?: string | null;
   streamId?: string | null;
+  /** Convenience for leader invites; equivalent to teamIds of length 1. */
   teamId?: string | null;
+  /** Teams to add the invitee as a manager of (leader or team_admin role). */
+  teamIds?: string[];
 }

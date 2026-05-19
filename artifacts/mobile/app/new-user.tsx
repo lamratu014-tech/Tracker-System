@@ -18,24 +18,28 @@ import { useAuth } from "@/lib/auth/AuthContext";
 import type { Role } from "@/models/types";
 import {
   getListStreamTeamsQueryKey,
+  getListTeamsQueryKey,
   useCreateInvite,
   useListProgrammes,
   useListStreams,
   useListStreamTeams,
+  useListTeams,
 } from "@workspace/api-client-react";
 
-const ROLES: Role[] = ["admin", "programme_overseer", "stream_overseer", "leader"];
+const ROLES: Role[] = ["admin", "programme_overseer", "stream_overseer", "leader", "team_admin"];
 const ROLE_LABEL: Record<Role, string> = {
   admin: "Admin",
   programme_overseer: "Programme Overseer",
   stream_overseer: "Stream Overseer",
   leader: "Team Leader",
+  team_admin: "Team Admin",
 };
 const ROLE_HINT: Record<Role, string> = {
   admin: "Full access to everything",
   programme_overseer: "Manages every stream and team within one programme",
   stream_overseer: "Manages all teams within one stream",
-  leader: "Manages a single team",
+  leader: "Leads one or more teams (can manage team leaders/admins)",
+  team_admin: "Helps run one or more teams (same access as leader, can't change leaders)",
 };
 
 function describeError(err: unknown): string {
@@ -69,7 +73,7 @@ export default function NewUserScreen() {
   const [role, setRole] = useState<Role>("leader");
   const [programmeId, setProgrammeId] = useState<string | null>(null);
   const [streamId, setStreamId] = useState<string | null>(null);
-  const [teamId, setTeamId] = useState<string | null>(null);
+  const [teamIds, setTeamIds] = useState<string[]>([]);
   const [createdCode, setCreatedCode] = useState<string | null>(null);
   const [createdName, setCreatedName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -77,17 +81,22 @@ export default function NewUserScreen() {
   const isAdmin = me?.role === "admin";
   const isProgrammeOverseer = me?.role === "programme_overseer";
   const isOverseer = me?.role === "stream_overseer";
+  const isLeader = me?.role === "leader";
+  const myLeaderTeamIds = me?.leaderTeamIds ?? [];
 
-  // Programme overseers may invite stream overseers + leaders within their
-  // programme — never admins or other programme overseers. Stream overseers
-  // are still locked to their own stream.
+  // Programme overseers may invite stream overseers + leaders + team admins
+  // within their programme — never admins or other programme overseers.
+  // Stream overseers are still locked to their own stream. Leaders may only
+  // invite team admins for teams they lead (server enforces this).
   const visibleRoles: Role[] = isAdmin
     ? ROLES
     : isProgrammeOverseer
-      ? (["stream_overseer", "leader"] as Role[])
+      ? (["stream_overseer", "leader", "team_admin"] as Role[])
       : isOverseer
-        ? (["stream_overseer", "leader"] as Role[])
-        : [];
+        ? (["stream_overseer", "leader", "team_admin"] as Role[])
+        : isLeader
+          ? (["team_admin"] as Role[])
+          : [];
 
   const visibleStreams = useMemo(() => {
     if (isOverseer && me?.streamId) {
@@ -102,13 +111,21 @@ export default function NewUserScreen() {
   // Teams for the leader-invite path are loaded per-stream from the API
   // once a stream is picked; this guarantees teamId originates from
   // server data and will pass server-side validation.
+  const needsTeams = role === "leader" || role === "team_admin";
   const teamsQuery = useListStreamTeams(streamId ?? "", {
     query: {
-      enabled: role === "leader" && !!streamId,
+      enabled: needsTeams && !!streamId && !isLeader,
       queryKey: getListStreamTeamsQueryKey(streamId ?? ""),
     },
   });
-  const streamTeams = teamsQuery.data ?? [];
+  const allTeamsQuery = useListTeams({
+    query: { enabled: isLeader, queryKey: getListTeamsQueryKey() },
+  });
+  const leaderOwnTeams = useMemo(
+    () => (allTeamsQuery.data ?? []).filter((t) => myLeaderTeamIds.includes(t.id)),
+    [allTeamsQuery.data, myLeaderTeamIds],
+  );
+  const streamTeams = isLeader ? leaderOwnTeams : teamsQuery.data ?? [];
 
   // Auto-pin overseer's stream so they can't accidentally pick a different one.
   React.useEffect(() => {
@@ -123,7 +140,7 @@ export default function NewUserScreen() {
     if (isOverseer && role === "admin") setRole("leader");
   }, [isOverseer, role]);
 
-  if (!isAdmin && !isProgrammeOverseer && !isOverseer) {
+  if (!isAdmin && !isProgrammeOverseer && !isOverseer && !isLeader) {
     return (
       <View style={[styles.gate, { backgroundColor: colors.background }]}>
         <Text style={{ color: colors.mutedForeground }}>
@@ -147,8 +164,8 @@ export default function NewUserScreen() {
     if (role === "stream_overseer" && !streamId) {
       return Alert.alert("Stream required", "Pick a stream for this overseer.");
     }
-    if (role === "leader" && !teamId) {
-      return Alert.alert("Team required", "Pick a team for this leader.");
+    if ((role === "leader" || role === "team_admin") && teamIds.length === 0) {
+      return Alert.alert("Team required", `Pick at least one team for this ${role === "leader" ? "leader" : "team admin"}.`);
     }
 
     try {
@@ -159,7 +176,7 @@ export default function NewUserScreen() {
           role,
           programmeId: role === "programme_overseer" ? programmeId : null,
           streamId: role === "stream_overseer" ? streamId : null,
-          teamId: role === "leader" ? teamId : null,
+          teamIds: (role === "leader" || role === "team_admin") ? teamIds : [],
         },
       });
       setCreatedCode(res.code);
@@ -250,7 +267,7 @@ export default function NewUserScreen() {
               backgroundColor: role === r ? colors.primary + "11" : colors.card,
             },
           ]}
-          onPress={() => { setRole(r); setProgrammeId(null); setStreamId(null); setTeamId(null); }}
+          onPress={() => { setRole(r); setProgrammeId(null); setStreamId(null); setTeamIds([]); }}
           activeOpacity={0.85}
           disabled={submitting}
         >
@@ -304,43 +321,54 @@ export default function NewUserScreen() {
         </>
       ) : null}
 
-      {role === "leader" ? (
+      {needsTeams ? (
         <>
-          <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 8 }]}>Stream *</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-            {visibleStreams.map((s) => (
-              <TouchableOpacity
-                key={s.id}
-                style={[styles.chip, { borderColor: colors.border, backgroundColor: streamId === s.id ? colors.primary : colors.muted }]}
-                onPress={() => { if (!isOverseer) { setStreamId(s.id); setTeamId(null); } }}
-                disabled={submitting || isOverseer}
-              >
-                <Text style={[styles.chipText, { color: streamId === s.id ? "#fff" : colors.foreground }]}>{s.name}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+          {!isLeader ? (
+            <>
+              <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 8 }]}>Stream *</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
+                {visibleStreams.map((s) => (
+                  <TouchableOpacity
+                    key={s.id}
+                    style={[styles.chip, { borderColor: colors.border, backgroundColor: streamId === s.id ? colors.primary : colors.muted }]}
+                    onPress={() => { if (!isOverseer) { setStreamId(s.id); setTeamIds([]); } }}
+                    disabled={submitting || isOverseer}
+                  >
+                    <Text style={[styles.chipText, { color: streamId === s.id ? "#fff" : colors.foreground }]}>{s.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </>
+          ) : null}
 
-          <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 8 }]}>Assign to team *</Text>
-          {!streamId ? (
+          <Text style={[styles.label, { color: colors.mutedForeground, marginTop: 8 }]}>
+            Assign to team(s) * <Text style={{ color: colors.mutedForeground, fontSize: 11 }}>(tap to toggle)</Text>
+          </Text>
+          {!isLeader && !streamId ? (
             <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>Pick a stream first.</Text>
-          ) : teamsQuery.isLoading ? (
+          ) : (!isLeader && teamsQuery.isLoading) || (isLeader && allTeamsQuery.isLoading) ? (
             <ActivityIndicator color={colors.primary} />
           ) : streamTeams.length === 0 ? (
-            <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>No teams in this stream yet.</Text>
+            <Text style={{ color: colors.mutedForeground, fontSize: 13 }}>
+              {isLeader ? "You don't lead any teams." : "No teams in this stream yet."}
+            </Text>
           ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 6 }}>
-              {streamTeams.map((team) => (
-                <TouchableOpacity
-                  key={team.id}
-                  style={[styles.chip, { borderColor: colors.border, backgroundColor: teamId === team.id ? colors.primary : colors.muted }]}
-                  onPress={() => setTeamId(team.id)}
-                  disabled={submitting}
-                >
-                  <Text style={[styles.chipText, { color: teamId === team.id ? "#fff" : colors.foreground }]}>
-                    {team.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+              {streamTeams.map((team) => {
+                const selected = teamIds.includes(team.id);
+                return (
+                  <TouchableOpacity
+                    key={team.id}
+                    style={[styles.chip, { borderColor: colors.border, backgroundColor: selected ? colors.primary : colors.muted }]}
+                    onPress={() => setTeamIds((prev) => selected ? prev.filter((x) => x !== team.id) : [...prev, team.id])}
+                    disabled={submitting}
+                  >
+                    <Text style={[styles.chipText, { color: selected ? "#fff" : colors.foreground }]}>
+                      {team.name}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
             </ScrollView>
           )}
         </>

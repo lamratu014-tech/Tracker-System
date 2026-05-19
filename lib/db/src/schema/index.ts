@@ -5,6 +5,7 @@ export * from "./passwordResets";
 export * from "./programmes";
 export * from "./streams";
 export * from "./teams";
+export * from "./teamManagers";
 export * from "./personnel";
 export * from "./projects";
 export * from "./projectTeams";

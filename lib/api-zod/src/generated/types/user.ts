@@ -16,7 +16,10 @@ export interface User {
   role: UserRole;
   programmeId?: string | null;
   streamId?: string | null;
-  teamId?: string | null;
+  /** Teams the user leads (derived from team_managers). */
+  leaderTeamIds: string[];
+  /** Teams the user is a team_admin of (derived from team_managers). */
+  teamAdminTeamIds: string[];
   active: boolean;
   invitedByName?: string | null;
   createdAt: Date;

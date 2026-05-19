@@ -100,7 +100,9 @@ export default function NewEventScreen() {
   );
   const [programmeId, setProgrammeId] = useState<string | undefined>(undefined);
   const [teamId, setTeamId] = useState<string | undefined>(
-    me?.role === "leader" && me.teamId ? me.teamId : undefined,
+    (me?.role === "leader" || me?.role === "team_admin")
+      ? (me.leaderTeamIds?.[0] ?? me.teamAdminTeamIds?.[0])
+      : undefined,
   );
   const [pickerOpen, setPickerOpen] = useState<null | "programme" | "team">(null);
 
@@ -115,7 +117,10 @@ export default function NewEventScreen() {
       return teams.filter((t) => t.streamId && programmeStreamIds.has(t.streamId));
     }
     if (me.role === "stream_overseer") return teams.filter((t) => t.streamId === me.streamId);
-    if (me.role === "leader" && me.teamId) return teams.filter((t) => t.id === me.teamId);
+    if (me.role === "leader" || me.role === "team_admin") {
+      const managed = new Set([...(me.leaderTeamIds ?? []), ...(me.teamAdminTeamIds ?? [])]);
+      return teams.filter((t) => managed.has(t.id));
+    }
     return [];
   }, [teams, streams, me]);
 
@@ -157,10 +162,11 @@ export default function NewEventScreen() {
   useEffect(() => {
     if (didDefault.current) return;
     if (!me) return;
-    if (me.role === "leader" && me.teamId) {
+    const myFirstTeam = me.leaderTeamIds?.[0] ?? me.teamAdminTeamIds?.[0] ?? null;
+    if ((me.role === "leader" || me.role === "team_admin") && myFirstTeam) {
       didDefault.current = true;
       setScope("team");
-      setTeamId(me.teamId);
+      setTeamId(myFirstTeam);
       return;
     }
     if (me.role === "programme_overseer" && me.programmeId) {

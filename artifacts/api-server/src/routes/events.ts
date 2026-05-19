@@ -49,7 +49,8 @@ router.get("/events", requireAuth, async (req, res): Promise<void> => {
       continue;
     }
 
-    if (user.teamId && invitedTeamIds.includes(user.teamId)) {
+    const managedTeamIds = [...user.leaderTeamIds, ...user.teamAdminTeamIds];
+    if (managedTeamIds.some((tid) => invitedTeamIds.includes(tid))) {
       result.push({
         ...event,
         internalDescription: "",
@@ -89,7 +90,8 @@ router.get("/events/:id", requireAuth, async (req, res): Promise<void> => {
     return;
   }
 
-  if (user.teamId && invitedTeamIds.includes(user.teamId)) {
+  const managedTeamIds = [...user.leaderTeamIds, ...user.teamAdminTeamIds];
+  if (managedTeamIds.some((tid) => invitedTeamIds.includes(tid))) {
     res.json({
       ...event,
       internalDescription: "",

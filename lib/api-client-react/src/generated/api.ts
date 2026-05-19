@@ -18,7 +18,7 @@ import type {
 
 import type {
   AcceptInviteBody,
-  AssignLeaderBody,
+  AddTeamManagerBody,
   AuthSession,
   AuthStatus,
   BadRequestResponse,
@@ -2668,41 +2668,41 @@ export const useDeleteTeam = <
   return useMutation(getDeleteTeamMutationOptions(options));
 };
 
-export const getAssignTeamLeaderUrl = (id: string) => {
-  return `/api/teams/${id}/assign-leader`;
+export const getAddTeamManagerUrl = (id: string) => {
+  return `/api/teams/${id}/managers`;
 };
 
-export const assignTeamLeader = async (
+export const addTeamManager = async (
   id: string,
-  assignLeaderBody: AssignLeaderBody,
+  addTeamManagerBody: AddTeamManagerBody,
   options?: RequestInit,
 ): Promise<Team> => {
-  return customFetch<Team>(getAssignTeamLeaderUrl(id), {
+  return customFetch<Team>(getAddTeamManagerUrl(id), {
     ...options,
     method: "POST",
     headers: { "Content-Type": "application/json", ...options?.headers },
-    body: JSON.stringify(assignLeaderBody),
+    body: JSON.stringify(addTeamManagerBody),
   });
 };
 
-export const getAssignTeamLeaderMutationOptions = <
+export const getAddTeamManagerMutationOptions = <
   TError = ErrorType<NotFoundResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof assignTeamLeader>>,
+    Awaited<ReturnType<typeof addTeamManager>>,
     TError,
-    { id: string; data: BodyType<AssignLeaderBody> },
+    { id: string; data: BodyType<AddTeamManagerBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationOptions<
-  Awaited<ReturnType<typeof assignTeamLeader>>,
+  Awaited<ReturnType<typeof addTeamManager>>,
   TError,
-  { id: string; data: BodyType<AssignLeaderBody> },
+  { id: string; data: BodyType<AddTeamManagerBody> },
   TContext
 > => {
-  const mutationKey = ["assignTeamLeader"];
+  const mutationKey = ["addTeamManager"];
   const { mutation: mutationOptions, request: requestOptions } = options
     ? options.mutation &&
       "mutationKey" in options.mutation &&
@@ -2712,41 +2712,120 @@ export const getAssignTeamLeaderMutationOptions = <
     : { mutation: { mutationKey }, request: undefined };
 
   const mutationFn: MutationFunction<
-    Awaited<ReturnType<typeof assignTeamLeader>>,
-    { id: string; data: BodyType<AssignLeaderBody> }
+    Awaited<ReturnType<typeof addTeamManager>>,
+    { id: string; data: BodyType<AddTeamManagerBody> }
   > = (props) => {
     const { id, data } = props ?? {};
 
-    return assignTeamLeader(id, data, requestOptions);
+    return addTeamManager(id, data, requestOptions);
   };
 
   return { mutationFn, ...mutationOptions };
 };
 
-export type AssignTeamLeaderMutationResult = NonNullable<
-  Awaited<ReturnType<typeof assignTeamLeader>>
+export type AddTeamManagerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof addTeamManager>>
 >;
-export type AssignTeamLeaderMutationBody = BodyType<AssignLeaderBody>;
-export type AssignTeamLeaderMutationError = ErrorType<NotFoundResponse>;
+export type AddTeamManagerMutationBody = BodyType<AddTeamManagerBody>;
+export type AddTeamManagerMutationError = ErrorType<NotFoundResponse>;
 
-export const useAssignTeamLeader = <
+export const useAddTeamManager = <
   TError = ErrorType<NotFoundResponse>,
   TContext = unknown,
 >(options?: {
   mutation?: UseMutationOptions<
-    Awaited<ReturnType<typeof assignTeamLeader>>,
+    Awaited<ReturnType<typeof addTeamManager>>,
     TError,
-    { id: string; data: BodyType<AssignLeaderBody> },
+    { id: string; data: BodyType<AddTeamManagerBody> },
     TContext
   >;
   request?: SecondParameter<typeof customFetch>;
 }): UseMutationResult<
-  Awaited<ReturnType<typeof assignTeamLeader>>,
+  Awaited<ReturnType<typeof addTeamManager>>,
   TError,
-  { id: string; data: BodyType<AssignLeaderBody> },
+  { id: string; data: BodyType<AddTeamManagerBody> },
   TContext
 > => {
-  return useMutation(getAssignTeamLeaderMutationOptions(options));
+  return useMutation(getAddTeamManagerMutationOptions(options));
+};
+
+export const getRemoveTeamManagerUrl = (id: string, userId: string) => {
+  return `/api/teams/${id}/managers/${userId}`;
+};
+
+export const removeTeamManager = async (
+  id: string,
+  userId: string,
+  options?: RequestInit,
+): Promise<Team> => {
+  return customFetch<Team>(getRemoveTeamManagerUrl(id, userId), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getRemoveTeamManagerMutationOptions = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeTeamManager>>,
+    TError,
+    { id: string; userId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof removeTeamManager>>,
+  TError,
+  { id: string; userId: string },
+  TContext
+> => {
+  const mutationKey = ["removeTeamManager"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof removeTeamManager>>,
+    { id: string; userId: string }
+  > = (props) => {
+    const { id, userId } = props ?? {};
+
+    return removeTeamManager(id, userId, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RemoveTeamManagerMutationResult = NonNullable<
+  Awaited<ReturnType<typeof removeTeamManager>>
+>;
+
+export type RemoveTeamManagerMutationError = ErrorType<NotFoundResponse>;
+
+export const useRemoveTeamManager = <
+  TError = ErrorType<NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof removeTeamManager>>,
+    TError,
+    { id: string; userId: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof removeTeamManager>>,
+  TError,
+  { id: string; userId: string },
+  TContext
+> => {
+  return useMutation(getRemoveTeamManagerMutationOptions(options));
 };
 
 export const getListTeamMembersUrl = (id: string) => {

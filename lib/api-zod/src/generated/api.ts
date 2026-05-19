@@ -57,10 +57,18 @@ export const LoginResponse = zod.object({
       "programme_overseer",
       "stream_overseer",
       "leader",
+      "team_admin",
     ]),
     programmeId: zod.string().nullish(),
     streamId: zod.string().nullish(),
-    teamId: zod.string().nullish(),
+    leaderTeamIds: zod
+      .array(zod.string())
+      .describe("Teams the user leads (derived from team_managers)."),
+    teamAdminTeamIds: zod
+      .array(zod.string())
+      .describe(
+        "Teams the user is a team_admin of (derived from team_managers).",
+      ),
     active: zod.boolean(),
     invitedByName: zod.string().nullish(),
     createdAt: zod.coerce.date(),
@@ -77,10 +85,23 @@ export const GetMeResponse = zod.object({
   name: zod.string(),
   initials: zod.string(),
   department: zod.string(),
-  role: zod.enum(["admin", "programme_overseer", "stream_overseer", "leader"]),
+  role: zod.enum([
+    "admin",
+    "programme_overseer",
+    "stream_overseer",
+    "leader",
+    "team_admin",
+  ]),
   programmeId: zod.string().nullish(),
   streamId: zod.string().nullish(),
-  teamId: zod.string().nullish(),
+  leaderTeamIds: zod
+    .array(zod.string())
+    .describe("Teams the user leads (derived from team_managers)."),
+  teamAdminTeamIds: zod
+    .array(zod.string())
+    .describe(
+      "Teams the user is a team_admin of (derived from team_managers).",
+    ),
   active: zod.boolean(),
   invitedByName: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -136,11 +157,28 @@ export const AcceptInviteBody = zod.object({
 export const CreateInviteBody = zod.object({
   email: zod.string().email(),
   name: zod.string().min(1),
-  role: zod.enum(["admin", "programme_overseer", "stream_overseer", "leader"]),
+  role: zod.enum([
+    "admin",
+    "programme_overseer",
+    "stream_overseer",
+    "leader",
+    "team_admin",
+  ]),
   department: zod.string().optional(),
   programmeId: zod.string().nullish(),
   streamId: zod.string().nullish(),
-  teamId: zod.string().nullish(),
+  teamId: zod
+    .string()
+    .nullish()
+    .describe(
+      "Convenience for leader invites; equivalent to teamIds of length 1.",
+    ),
+  teamIds: zod
+    .array(zod.string())
+    .optional()
+    .describe(
+      "Teams to add the invitee as a manager of (leader or team_admin role).",
+    ),
 });
 
 /**
@@ -159,7 +197,13 @@ export const GetInviteByTokenParams = zod.object({
 export const GetInviteByTokenResponse = zod.object({
   email: zod.string().email(),
   name: zod.string(),
-  role: zod.enum(["admin", "programme_overseer", "stream_overseer", "leader"]),
+  role: zod.enum([
+    "admin",
+    "programme_overseer",
+    "stream_overseer",
+    "leader",
+    "team_admin",
+  ]),
   department: zod.string(),
 });
 
@@ -169,10 +213,23 @@ export const ListUsersResponseItem = zod.object({
   name: zod.string(),
   initials: zod.string(),
   department: zod.string(),
-  role: zod.enum(["admin", "programme_overseer", "stream_overseer", "leader"]),
+  role: zod.enum([
+    "admin",
+    "programme_overseer",
+    "stream_overseer",
+    "leader",
+    "team_admin",
+  ]),
   programmeId: zod.string().nullish(),
   streamId: zod.string().nullish(),
-  teamId: zod.string().nullish(),
+  leaderTeamIds: zod
+    .array(zod.string())
+    .describe("Teams the user leads (derived from team_managers)."),
+  teamAdminTeamIds: zod
+    .array(zod.string())
+    .describe(
+      "Teams the user is a team_admin of (derived from team_managers).",
+    ),
   active: zod.boolean(),
   invitedByName: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -186,11 +243,18 @@ export const CreateUserBody = zod.object({
   email: zod.string().email(),
   name: zod.string().min(1),
   password: zod.string().min(createUserBodyPasswordMin),
-  role: zod.enum(["admin", "programme_overseer", "stream_overseer", "leader"]),
+  role: zod.enum([
+    "admin",
+    "programme_overseer",
+    "stream_overseer",
+    "leader",
+    "team_admin",
+  ]),
   department: zod.string().optional(),
   programmeId: zod.string().nullish(),
   streamId: zod.string().nullish(),
   teamId: zod.string().nullish(),
+  teamIds: zod.array(zod.string()).optional(),
 });
 
 export const UpdateUserRoleParams = zod.object({
@@ -198,10 +262,17 @@ export const UpdateUserRoleParams = zod.object({
 });
 
 export const UpdateUserRoleBody = zod.object({
-  role: zod.enum(["admin", "programme_overseer", "stream_overseer", "leader"]),
+  role: zod.enum([
+    "admin",
+    "programme_overseer",
+    "stream_overseer",
+    "leader",
+    "team_admin",
+  ]),
   programmeId: zod.string().nullish(),
   streamId: zod.string().nullish(),
   teamId: zod.string().nullish(),
+  teamIds: zod.array(zod.string()).optional(),
 });
 
 export const UpdateUserRoleResponse = zod.object({
@@ -210,10 +281,23 @@ export const UpdateUserRoleResponse = zod.object({
   name: zod.string(),
   initials: zod.string(),
   department: zod.string(),
-  role: zod.enum(["admin", "programme_overseer", "stream_overseer", "leader"]),
+  role: zod.enum([
+    "admin",
+    "programme_overseer",
+    "stream_overseer",
+    "leader",
+    "team_admin",
+  ]),
   programmeId: zod.string().nullish(),
   streamId: zod.string().nullish(),
-  teamId: zod.string().nullish(),
+  leaderTeamIds: zod
+    .array(zod.string())
+    .describe("Teams the user leads (derived from team_managers)."),
+  teamAdminTeamIds: zod
+    .array(zod.string())
+    .describe(
+      "Teams the user is a team_admin of (derived from team_managers).",
+    ),
   active: zod.boolean(),
   invitedByName: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -230,10 +314,23 @@ export const DeactivateUserResponse = zod.object({
   name: zod.string(),
   initials: zod.string(),
   department: zod.string(),
-  role: zod.enum(["admin", "programme_overseer", "stream_overseer", "leader"]),
+  role: zod.enum([
+    "admin",
+    "programme_overseer",
+    "stream_overseer",
+    "leader",
+    "team_admin",
+  ]),
   programmeId: zod.string().nullish(),
   streamId: zod.string().nullish(),
-  teamId: zod.string().nullish(),
+  leaderTeamIds: zod
+    .array(zod.string())
+    .describe("Teams the user leads (derived from team_managers)."),
+  teamAdminTeamIds: zod
+    .array(zod.string())
+    .describe(
+      "Teams the user is a team_admin of (derived from team_managers).",
+    ),
   active: zod.boolean(),
   invitedByName: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -250,10 +347,23 @@ export const ReactivateUserResponse = zod.object({
   name: zod.string(),
   initials: zod.string(),
   department: zod.string(),
-  role: zod.enum(["admin", "programme_overseer", "stream_overseer", "leader"]),
+  role: zod.enum([
+    "admin",
+    "programme_overseer",
+    "stream_overseer",
+    "leader",
+    "team_admin",
+  ]),
   programmeId: zod.string().nullish(),
   streamId: zod.string().nullish(),
-  teamId: zod.string().nullish(),
+  leaderTeamIds: zod
+    .array(zod.string())
+    .describe("Teams the user leads (derived from team_managers)."),
+  teamAdminTeamIds: zod
+    .array(zod.string())
+    .describe(
+      "Teams the user is a team_admin of (derived from team_managers).",
+    ),
   active: zod.boolean(),
   invitedByName: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -270,10 +380,23 @@ export const GetUserResponse = zod.object({
   name: zod.string(),
   initials: zod.string(),
   department: zod.string(),
-  role: zod.enum(["admin", "programme_overseer", "stream_overseer", "leader"]),
+  role: zod.enum([
+    "admin",
+    "programme_overseer",
+    "stream_overseer",
+    "leader",
+    "team_admin",
+  ]),
   programmeId: zod.string().nullish(),
   streamId: zod.string().nullish(),
-  teamId: zod.string().nullish(),
+  leaderTeamIds: zod
+    .array(zod.string())
+    .describe("Teams the user leads (derived from team_managers)."),
+  teamAdminTeamIds: zod
+    .array(zod.string())
+    .describe(
+      "Teams the user is a team_admin of (derived from team_managers).",
+    ),
   active: zod.boolean(),
   invitedByName: zod.string().nullish(),
   createdAt: zod.coerce.date(),
@@ -374,7 +497,8 @@ export const ListStreamTeamsResponseItem = zod.object({
   id: zod.string(),
   name: zod.string(),
   streamId: zod.string().nullish(),
-  leaderId: zod.string().nullish(),
+  leaderIds: zod.array(zod.string()),
+  teamAdminIds: zod.array(zod.string()),
   functionLabel: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date().optional(),
@@ -386,7 +510,8 @@ export const ListTeamsResponseItem = zod
     id: zod.string(),
     name: zod.string(),
     streamId: zod.string().nullish(),
-    leaderId: zod.string().nullish(),
+    leaderIds: zod.array(zod.string()),
+    teamAdminIds: zod.array(zod.string()),
     functionLabel: zod.string().nullish(),
     createdAt: zod.coerce.date(),
     updatedAt: zod.coerce.date().optional(),
@@ -401,7 +526,7 @@ export const ListTeamsResponse = zod.array(ListTeamsResponseItem);
 export const CreateTeamBody = zod.object({
   name: zod.string().min(1),
   streamId: zod.string().nullish(),
-  leaderId: zod.string().nullish(),
+  leaderIds: zod.array(zod.string()).optional(),
   functionLabel: zod.string().optional(),
 });
 
@@ -414,7 +539,8 @@ export const GetTeamResponse = zod
     id: zod.string(),
     name: zod.string(),
     streamId: zod.string().nullish(),
-    leaderId: zod.string().nullish(),
+    leaderIds: zod.array(zod.string()),
+    teamAdminIds: zod.array(zod.string()),
     functionLabel: zod.string().nullish(),
     createdAt: zod.coerce.date(),
     updatedAt: zod.coerce.date().optional(),
@@ -432,7 +558,6 @@ export const UpdateTeamParams = zod.object({
 export const UpdateTeamBody = zod.object({
   name: zod.string().min(1).optional(),
   streamId: zod.string().nullish(),
-  leaderId: zod.string().nullish(),
   functionLabel: zod.string().optional(),
 });
 
@@ -440,7 +565,8 @@ export const UpdateTeamResponse = zod.object({
   id: zod.string(),
   name: zod.string(),
   streamId: zod.string().nullish(),
-  leaderId: zod.string().nullish(),
+  leaderIds: zod.array(zod.string()),
+  teamAdminIds: zod.array(zod.string()),
   functionLabel: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date().optional(),
@@ -450,19 +576,37 @@ export const DeleteTeamParams = zod.object({
   id: zod.coerce.string(),
 });
 
-export const AssignTeamLeaderParams = zod.object({
+export const AddTeamManagerParams = zod.object({
   id: zod.coerce.string(),
 });
 
-export const AssignTeamLeaderBody = zod.object({
-  leaderId: zod.string().nullish(),
+export const AddTeamManagerBody = zod.object({
+  userId: zod.string().min(1),
+  role: zod.enum(["leader", "team_admin"]),
 });
 
-export const AssignTeamLeaderResponse = zod.object({
+export const AddTeamManagerResponse = zod.object({
   id: zod.string(),
   name: zod.string(),
   streamId: zod.string().nullish(),
-  leaderId: zod.string().nullish(),
+  leaderIds: zod.array(zod.string()),
+  teamAdminIds: zod.array(zod.string()),
+  functionLabel: zod.string().nullish(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date().optional(),
+});
+
+export const RemoveTeamManagerParams = zod.object({
+  id: zod.coerce.string(),
+  userId: zod.coerce.string(),
+});
+
+export const RemoveTeamManagerResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  streamId: zod.string().nullish(),
+  leaderIds: zod.array(zod.string()),
+  teamAdminIds: zod.array(zod.string()),
   functionLabel: zod.string().nullish(),
   createdAt: zod.coerce.date(),
   updatedAt: zod.coerce.date().optional(),

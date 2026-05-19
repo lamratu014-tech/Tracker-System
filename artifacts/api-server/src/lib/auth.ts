@@ -1,10 +1,21 @@
 import bcrypt from "bcryptjs";
-import { db, invitesTable, sessionsTable, usersTable } from "@workspace/db";
-import { eq, gt } from "drizzle-orm";
+import { db, invitesTable, sessionsTable, teamManagersTable, usersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
 import type { User } from "@workspace/db";
 
 const BCRYPT_ROUNDS = 12;
 const SESSION_DAYS = 30;
+
+/**
+ * Authenticated principal: the DB user row plus the lists of teams they
+ * manage as leader / team_admin (derived from `team_managers`). These
+ * arrays replace the legacy `users.team_id` column that used to pin a
+ * leader to exactly one team.
+ */
+export type Principal = User & {
+  leaderTeamIds: string[];
+  teamAdminTeamIds: string[];
+};
 
 export function generateToken(bytes = 32): string {
   const arr = new Uint8Array(bytes);
@@ -40,10 +51,7 @@ export async function hashPassword(plain: string): Promise<string> {
   return bcrypt.hash(plain, BCRYPT_ROUNDS);
 }
 
-export async function verifyPassword(
-  plain: string,
-  hash: string
-): Promise<boolean> {
+export async function verifyPassword(plain: string, hash: string): Promise<boolean> {
   return bcrypt.compare(plain, hash);
 }
 
@@ -55,9 +63,30 @@ export async function createSession(userId: string): Promise<string> {
   return token;
 }
 
-export async function getUserFromToken(
-  token: string
-): Promise<User | null> {
+/** Load team_managers rows for a user and split by role. */
+export async function loadManagedTeams(
+  userId: string,
+): Promise<{ leaderTeamIds: string[]; teamAdminTeamIds: string[] }> {
+  const rows = await db
+    .select({ teamId: teamManagersTable.teamId, role: teamManagersTable.role })
+    .from(teamManagersTable)
+    .where(eq(teamManagersTable.userId, userId));
+  const leaderTeamIds: string[] = [];
+  const teamAdminTeamIds: string[] = [];
+  for (const r of rows) {
+    if (r.role === "leader") leaderTeamIds.push(r.teamId);
+    else if (r.role === "team_admin") teamAdminTeamIds.push(r.teamId);
+  }
+  return { leaderTeamIds, teamAdminTeamIds };
+}
+
+/** Wrap a raw user row with derived team_managers arrays. */
+export async function toPrincipal(user: User): Promise<Principal> {
+  const managed = await loadManagedTeams(user.id);
+  return { ...user, ...managed };
+}
+
+export async function getUserFromToken(token: string): Promise<Principal | null> {
   const now = new Date();
   const [row] = await db
     .select({ user: usersTable })
@@ -78,7 +107,7 @@ export async function getUserFromToken(
   if (!session || session.expiresAt < now) return null;
   if (!row.user.active) return null;
 
-  return row.user;
+  return toPrincipal(row.user);
 }
 
 export async function deleteSession(token: string): Promise<void> {

@@ -226,7 +226,8 @@ export default function StreamDetailScreen() {
         teams.map((team) => {
           const vis = teamVisibility(me, team, stream?.programmeId);
           if (vis === "locked") {
-            const leader = team.leaderId ? users.find((u) => u.id === team.leaderId) : null;
+            const leaderId = team.leaderIds?.[0] ?? null;
+            const leader = leaderId ? users.find((u) => u.id === leaderId) : null;
             return (
               <View
                 key={team.id}

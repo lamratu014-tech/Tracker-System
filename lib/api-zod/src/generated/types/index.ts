@@ -7,7 +7,7 @@
  */
 
 export * from "./acceptInviteBody";
-export * from "./assignLeaderBody";
+export * from "./addTeamManagerBody";
 export * from "./authSession";
 export * from "./authStatus";
 export * from "./badRequestResponse";
@@ -46,6 +46,7 @@ export * from "./setMilestoneStatusBody";
 export * from "./setupBody";
 export * from "./stream";
 export * from "./team";
+export * from "./teamManagerRole";
 export * from "./teamNote";
 export * from "./teamWithStreamName";
 export * from "./unauthorizedResponse";

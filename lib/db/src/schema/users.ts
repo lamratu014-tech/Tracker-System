@@ -9,6 +9,7 @@ export const userRoles = [
   "programme_overseer",
   "stream_overseer",
   "leader",
+  "team_admin",
 ] as const;
 export type UserRole = (typeof userRoles)[number];
 
@@ -30,7 +31,6 @@ export const usersTable = pgTable("users", {
   streamId: text("stream_id").references(() => streamsTable.id, {
     onDelete: "set null",
   }),
-  teamId: text("team_id"),
   passwordHash: text("password_hash"),
   active: boolean("active").notNull().default(true),
   invitedByName: text("invited_by_name"),

@@ -24,6 +24,15 @@ export const UserRole = {
   programme_overseer: "programme_overseer",
   stream_overseer: "stream_overseer",
   leader: "leader",
+  team_admin: "team_admin",
+} as const;
+
+export type TeamManagerRole =
+  (typeof TeamManagerRole)[keyof typeof TeamManagerRole];
+
+export const TeamManagerRole = {
+  leader: "leader",
+  team_admin: "team_admin",
 } as const;
 
 export interface AuthStatus {
@@ -39,7 +48,10 @@ export interface User {
   role: UserRole;
   programmeId?: string | null;
   streamId?: string | null;
-  teamId?: string | null;
+  /** Teams the user leads (derived from team_managers). */
+  leaderTeamIds: string[];
+  /** Teams the user is a team_admin of (derived from team_managers). */
+  teamAdminTeamIds: string[];
   active: boolean;
   invitedByName?: string | null;
   createdAt: string;
@@ -97,7 +109,10 @@ export interface CreateInviteBody {
   department?: string;
   programmeId?: string | null;
   streamId?: string | null;
+  /** Convenience for leader invites; equivalent to teamIds of length 1. */
   teamId?: string | null;
+  /** Teams to add the invitee as a manager of (leader or team_admin role). */
+  teamIds?: string[];
 }
 
 export interface CreateInviteResponse {
@@ -129,6 +144,7 @@ export interface CreateUserBody {
   programmeId?: string | null;
   streamId?: string | null;
   teamId?: string | null;
+  teamIds?: string[];
 }
 
 export interface UpdateUserRoleBody {
@@ -136,6 +152,7 @@ export interface UpdateUserRoleBody {
   programmeId?: string | null;
   streamId?: string | null;
   teamId?: string | null;
+  teamIds?: string[];
 }
 
 export interface Programme {
@@ -182,7 +199,8 @@ export interface Team {
   id: string;
   name: string;
   streamId?: string | null;
-  leaderId?: string | null;
+  leaderIds: string[];
+  teamAdminIds: string[];
   functionLabel?: string | null;
   createdAt: string;
   updatedAt?: string;
@@ -196,7 +214,7 @@ export interface CreateTeamBody {
   /** @minLength 1 */
   name: string;
   streamId?: string | null;
-  leaderId?: string | null;
+  leaderIds?: string[];
   functionLabel?: string;
 }
 
@@ -204,12 +222,13 @@ export interface UpdateTeamBody {
   /** @minLength 1 */
   name?: string;
   streamId?: string | null;
-  leaderId?: string | null;
   functionLabel?: string;
 }
 
-export interface AssignLeaderBody {
-  leaderId?: string | null;
+export interface AddTeamManagerBody {
+  /** @minLength 1 */
+  userId: string;
+  role: TeamManagerRole;
 }
 
 export interface Member {

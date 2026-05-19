@@ -2,12 +2,21 @@ import { useGetMe, useListStreams } from "@workspace/api-client-react";
 import type { User, Stream } from "@workspace/api-client-react";
 
 export type Principal =
-  | Pick<User, "id" | "role" | "programmeId" | "streamId" | "teamId">
+  | Pick<User, "id" | "role" | "programmeId" | "streamId" | "leaderTeamIds" | "teamAdminTeamIds">
   | null
   | undefined;
 
 export type StreamScope = { id: string; programmeId?: string | null };
 export type TeamScope = { id: string; streamId?: string | null };
+
+function managedTeamIds(user: Principal): string[] {
+  if (!user) return [];
+  return [...(user.leaderTeamIds ?? []), ...(user.teamAdminTeamIds ?? [])];
+}
+
+function leaderTeamIds(user: Principal): string[] {
+  return user?.leaderTeamIds ?? [];
+}
 
 /**
  * Pure permission helpers. Programme-overseer checks require the caller to
@@ -49,9 +58,11 @@ export function canManageTeam(
     if (!user.programmeId || !streamProgrammeId) return false;
     return streamProgrammeId === user.programmeId;
   }
-  if (user.role === "leader") return user.teamId === team.id;
   if (user.role === "stream_overseer") {
     return !!team.streamId && team.streamId === user.streamId;
+  }
+  if (user.role === "leader" || user.role === "team_admin") {
+    return managedTeamIds(user).includes(team.id);
   }
   return false;
 }
@@ -64,6 +75,31 @@ export function canCreateForTeam(
   if (!user) return false;
   if (!team) return user.role === "admin";
   return canManageTeam(user, team, streamProgrammeId);
+}
+
+/**
+ * Only admin / programme-overseer / stream-overseer / current team leaders
+ * may add or remove team managers (leaders + team admins). A team_admin
+ * specifically may NOT add other managers.
+ */
+export function canManageTeamManagers(
+  user: Principal,
+  team: TeamScope | null | undefined,
+  streamProgrammeId?: string | null,
+): boolean {
+  if (!user || !team) return false;
+  if (user.role === "admin") return true;
+  if (user.role === "programme_overseer") {
+    if (!user.programmeId || !streamProgrammeId) return false;
+    return streamProgrammeId === user.programmeId;
+  }
+  if (user.role === "stream_overseer") {
+    return !!team.streamId && team.streamId === user.streamId;
+  }
+  if (user.role === "leader") {
+    return leaderTeamIds(user).includes(team.id);
+  }
+  return false;
 }
 
 export function useMe(): User | null {
@@ -121,6 +157,19 @@ export function useCanCreateForTeam(
   return canCreateForTeam(me, team, streamProgrammeId);
 }
 
+export function useCanManageTeamManagers(
+  team: TeamScope | null | undefined,
+): boolean {
+  const me = useMe();
+  const { data: streams } = useListStreams();
+  if (!me) return false;
+  const streamProgrammeId =
+    team?.streamId
+      ? (streams as Stream[] | undefined)?.find((s) => s.id === team.streamId)?.programmeId ?? null
+      : null;
+  return canManageTeamManagers(me, team, streamProgrammeId);
+}
+
 export type TeamVisibility = "full" | "locked" | "hidden";
 
 /**
@@ -133,8 +182,8 @@ export type TeamVisibility = "full" | "locked" | "hidden";
  *
  * Admins always full. Stream overseers full inside their stream. Programme
  * overseers full inside their programme (caller must provide
- * `streamProgrammeId` for that to resolve). Leaders see their own team as
- * full and sibling teams in their stream as locked.
+ * `streamProgrammeId` for that to resolve). Leaders + team_admins see
+ * their own teams as full and sibling teams in their stream as locked.
  */
 export function teamVisibility(
   user: Principal,
@@ -153,8 +202,8 @@ export function teamVisibility(
     if (team.streamId && team.streamId === user.streamId) return "full";
     return "hidden";
   }
-  if (user.role === "leader") {
-    if (user.teamId && user.teamId === team.id) return "full";
+  if (user.role === "leader" || user.role === "team_admin") {
+    if (managedTeamIds(user).includes(team.id)) return "full";
     if (team.streamId && user.streamId && team.streamId === user.streamId) {
       return "locked";
     }

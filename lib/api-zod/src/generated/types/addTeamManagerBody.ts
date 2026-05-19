@@ -5,10 +5,10 @@
  * Ops & Planning API specification
  * OpenAPI spec version: 0.1.0
  */
+import type { TeamManagerRole } from "./teamManagerRole";
 
-export interface UpdateTeamBody {
+export interface AddTeamManagerBody {
   /** @minLength 1 */
-  name?: string;
-  streamId?: string | null;
-  functionLabel?: string;
+  userId: string;
+  role: TeamManagerRole;
 }

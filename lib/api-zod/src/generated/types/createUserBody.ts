@@ -18,4 +18,5 @@ export interface CreateUserBody {
   programmeId?: string | null;
   streamId?: string | null;
   teamId?: string | null;
+  teamIds?: string[];
 }
