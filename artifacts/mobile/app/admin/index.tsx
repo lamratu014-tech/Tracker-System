@@ -22,6 +22,8 @@ import {
   useListTeams,
   useListUsers,
   useUpdateProgramme,
+  useUpdateStream,
+  useUpdateTeam,
   useUpdateUserRole,
 } from "@workspace/api-client-react";
 import React, { useMemo, useState } from "react";
@@ -61,7 +63,15 @@ const ROLE_COLOR: Record<Role, string> = {
   team_admin: "#0EA5E9",
 };
 
-const ROLE_CYCLE: Role[] = ["admin", "programme_overseer", "stream_overseer", "leader", "team_admin"];
+const ROLE_ORDER: Role[] = ["admin", "programme_overseer", "stream_overseer", "leader", "team_admin"];
+
+const ROLE_DESCRIPTIONS: Record<Role, string> = {
+  admin: "Full access everywhere — every programme, stream, team, user.",
+  programme_overseer: "Full access inside one programme. Can't invite admins or other programme overseers.",
+  stream_overseer: "Full access inside one stream — every team in that stream.",
+  leader: "Manages one or more teams. Can add/remove leaders and team admins of teams they lead.",
+  team_admin: "Same day-to-day powers as a leader on assigned teams, but can't change who the managers are.",
+};
 
 export default function AdminPanelScreen() {
   const colors = useColors();
@@ -178,13 +188,22 @@ export default function AdminPanelScreen() {
   const deleteTeam = useDeleteTeam({
     mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListTeamsQueryKey() }) },
   });
+  const updateStream = useUpdateStream({
+    mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListStreamsQueryKey() }) },
+  });
+  const updateTeam = useUpdateTeam({
+    mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListTeamsQueryKey() }) },
+  });
   const deleteEvent = useDeleteEvent({
     mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListEventsQueryKey() }) },
   });
   const deleteMember = useDeleteMember();
 
   const [tab, setTab] = useState<AdminTab>("structure");
-  const [expandedStreamId, setExpandedStreamId] = useState<string | null>(streams[0]?.id ?? null);
+  const [structureView, setStructureView] = useState<{ programmeId: string | null; streamId: string | null }>({
+    programmeId: null,
+    streamId: null,
+  });
 
   // Members tab — fetch members for each team and merge
   const memberQueries = useQueries({
@@ -223,56 +242,115 @@ export default function AdminPanelScreen() {
     return streams.find((s) => s.id === streamId)?.name ?? "—";
   }
 
-  function applyRoleChange(userId: string, next: Role, programmeIdOverride?: string) {
+  function applyRoleChange(
+    userId: string,
+    next: Role,
+    overrides?: { programmeId?: string; streamId?: string; teamIds?: string[] },
+  ) {
     const u = users.find((x) => x.id === userId);
     if (!u) return;
     updateUserRole.mutate({
       id: userId,
       data: {
         role: next,
-        programmeId: programmeIdOverride ?? u.programmeId ?? undefined,
-        streamId: u.streamId ?? undefined,
-        teamIds: [...(u.leaderTeamIds ?? []), ...(u.teamAdminTeamIds ?? [])],
+        programmeId: overrides?.programmeId ?? u.programmeId ?? undefined,
+        streamId: overrides?.streamId ?? u.streamId ?? undefined,
+        teamIds:
+          overrides?.teamIds ??
+          [...(u.leaderTeamIds ?? []), ...(u.teamAdminTeamIds ?? [])],
       },
     });
   }
 
-  async function pickProgramme(userId: string, next: Role) {
+  async function pickProgrammeForRole(): Promise<string | null> {
     if (programmes.length === 0) {
-      Alert.alert("No programmes", "Create a programme before assigning a Programme Overseer.");
-      return;
+      await dialog.confirm({
+        title: "No programmes",
+        message: "Create a programme first, then come back and assign this role.",
+        confirmText: "OK",
+      });
+      return null;
     }
-    const programmeId = await dialog.choice<string>({
+    return dialog.choice<string>({
       title: "Pick a programme",
       message: "Choose which programme this overseer manages.",
       options: programmes.map((p) => ({ label: p.name, value: p.id })),
     });
-    if (!programmeId) return;
-    applyRoleChange(userId, next, programmeId);
   }
 
-  function changeRole(userId: string, currentRole: Role) {
+  async function pickStreamForRole(): Promise<string | null> {
+    if (streams.length === 0) {
+      await dialog.confirm({
+        title: "No streams",
+        message: "Create a stream first, then come back and assign this role.",
+        confirmText: "OK",
+      });
+      return null;
+    }
+    return dialog.choice<string>({
+      title: "Pick a stream",
+      message: "Choose which stream this overseer manages.",
+      options: streams.map((s) => {
+        const prog = programmes.find((p) => p.id === s.programmeId);
+        return { label: prog ? `${prog.name}  ·  ${s.name}` : s.name, value: s.id };
+      }),
+    });
+  }
+
+  async function pickTeamForRole(): Promise<string | null> {
+    if (teams.length === 0) {
+      await dialog.confirm({
+        title: "No teams",
+        message: "Create a team first, then come back and assign this role.",
+        confirmText: "OK",
+      });
+      return null;
+    }
+    return dialog.choice<string>({
+      title: "Pick a team",
+      message: "Choose a team for this person to manage. You can add them to more teams later from the team page.",
+      options: teams.map((t) => {
+        const s = streams.find((x) => x.id === t.streamId);
+        return { label: s ? `${s.name}  ·  ${t.name}` : t.name, value: t.id };
+      }),
+    });
+  }
+
+  async function changeRole(userId: string, currentRole: Role) {
     const u = users.find((x) => x.id === userId);
     if (!u) return;
-    const idx = ROLE_CYCLE.indexOf(currentRole);
-    const next = ROLE_CYCLE[(idx + 1) % ROLE_CYCLE.length];
+    const next = await dialog.choice<Role>({
+      title: `Change role for ${u.name}`,
+      message: `Currently ${ROLE_LABEL[currentRole]}. Pick a new role — only admins can do this.`,
+      options: ROLE_ORDER.map((r) => ({
+        label: `${ROLE_LABEL[r]}${r === currentRole ? "  (current)" : ""}\n${ROLE_DESCRIPTIONS[r]}`,
+        value: r,
+      })),
+    });
+    if (!next || next === currentRole) return;
+
     if (next === "programme_overseer") {
-      // Always (re)pick a programme when promoting to PO so the assignment
-      // is explicit, even if a stale programmeId already exists.
-      pickProgramme(userId, next);
+      const programmeId = await pickProgrammeForRole();
+      if (!programmeId) return;
+      applyRoleChange(userId, next, { programmeId });
       return;
     }
-    if (next === "stream_overseer" && !u.streamId) {
-      Alert.alert("Stream required", "Assign this user to a stream first before making them an Overseer.");
+    if (next === "stream_overseer") {
+      const streamId = u.streamId ?? (await pickStreamForRole());
+      if (!streamId) return;
+      applyRoleChange(userId, next, { streamId });
       return;
     }
-    const hasTeam =
-      (u.leaderTeamIds?.length ?? 0) > 0 || (u.teamAdminTeamIds?.length ?? 0) > 0;
-    if ((next === "leader" || next === "team_admin") && !hasTeam) {
-      Alert.alert(
-        "Team required",
-        `Assign this user to a team first before making them a ${next === "leader" ? "Leader" : "Team Admin"}.`,
-      );
+    if (next === "leader" || next === "team_admin") {
+      const hasTeam =
+        (u.leaderTeamIds?.length ?? 0) > 0 || (u.teamAdminTeamIds?.length ?? 0) > 0;
+      if (!hasTeam) {
+        const teamId = await pickTeamForRole();
+        if (!teamId) return;
+        applyRoleChange(userId, next, { teamIds: [teamId] });
+        return;
+      }
+      applyRoleChange(userId, next);
       return;
     }
     applyRoleChange(userId, next);
@@ -305,110 +383,55 @@ export default function AdminPanelScreen() {
 
       <ScrollView contentContainerStyle={{ padding: 16, paddingBottom: 60 }}>
         {tab === "structure" ? (
-          <>
-            <View style={styles.sectionRow}>
-              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
-                Streams ({streams.length}) · Teams ({teams.length})
-              </Text>
-              <View style={{ flexDirection: "row", gap: 6 }}>
-                <TouchableOpacity
-                  style={[styles.smallBtn, { backgroundColor: colors.muted }]}
-                  onPress={() => router.push("/new-team")}
-                >
-                  <Feather name="users" size={12} color={colors.primary} />
-                  <Text style={[styles.smallBtnText, { color: colors.primary }]}>Team</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.smallBtn, { backgroundColor: colors.primary }]}
-                  onPress={() => router.push("/new-stream")}
-                >
-                  <Feather name="plus" size={12} color="#fff" />
-                  <Text style={[styles.smallBtnText, { color: "#fff" }]}>Stream</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-            {streamsQ.isError ? (
-              <ErrorBanner error={streamsQ.error} onRetry={() => streamsQ.refetch()} />
-            ) : null}
-            {streamsQ.isLoading ? (
-              <LoadingRow />
-            ) : streams.length === 0 ? (
-              <View style={[styles.empty, { backgroundColor: colors.muted }]}>
-                <Text style={{ color: colors.mutedForeground }}>No streams yet.</Text>
-              </View>
-            ) : (
-              streams.map((stream) => {
-                const expanded = expandedStreamId === stream.id;
-                const stTeams = teamsForStream(stream.id);
-                return (
-                  <View key={stream.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, padding: 0 }]}>
-                    <TouchableOpacity
-                      style={styles.cardHeader}
-                      onPress={() => setExpandedStreamId(expanded ? null : stream.id)}
-                      activeOpacity={0.85}
-                    >
-                      <Feather name={expanded ? "chevron-down" : "chevron-right"} size={16} color={colors.mutedForeground} />
-                      <View style={[styles.dot, { backgroundColor: colors.primary }]} />
-                      <View style={{ flex: 1 }}>
-                        <Text style={[styles.cardTitle, { color: colors.foreground }]}>{stream.name}</Text>
-                        <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
-                          {stTeams.length} team{stTeams.length !== 1 ? "s" : ""}
-                        </Text>
-                      </View>
-                      <View style={{ flexDirection: "row", gap: 4 }}>
-                        <TouchableOpacity
-                          style={styles.iconBtn}
-                          onPress={(e) => { e.stopPropagation(); router.push({ pathname: "/stream/[id]", params: { id: stream.id } }); }}
-                        >
-                          <Feather name="external-link" size={14} color={colors.primary} />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          style={styles.iconBtn}
-                          onPress={(e) => {
-                            e.stopPropagation();
-                            confirm(`Delete stream "${stream.name}"?`, () => deleteStream.mutate({ id: stream.id }));
-                          }}
-                        >
-                          <Feather name="trash-2" size={14} color="#DC2626" />
-                        </TouchableOpacity>
-                      </View>
-                    </TouchableOpacity>
-
-                    {expanded ? (
-                      <View style={styles.cardBody}>
-                        {stTeams.length === 0 ? (
-                          <Text style={{ color: colors.mutedForeground, padding: 8, textAlign: "center" }}>
-                            No teams in this stream.
-                          </Text>
-                        ) : (
-                          stTeams.map((team) => (
-                            <View key={team.id} style={[styles.subRow, { borderColor: colors.border }]}>
-                              <Feather name="users" size={14} color={colors.primary} />
-                              <View style={{ flex: 1 }}>
-                                <Text style={[styles.subTitle, { color: colors.foreground }]}>{team.name}</Text>
-                              </View>
-                              <TouchableOpacity
-                                style={styles.iconBtn}
-                                onPress={() => router.push({ pathname: "/team/[id]", params: { id: team.id } })}
-                              >
-                                <Feather name="external-link" size={13} color={colors.primary} />
-                              </TouchableOpacity>
-                              <TouchableOpacity
-                                style={styles.iconBtn}
-                                onPress={() => confirm(`Delete team "${team.name}"?`, () => deleteTeam.mutate({ id: team.id }))}
-                              >
-                                <Feather name="trash-2" size={13} color="#DC2626" />
-                              </TouchableOpacity>
-                            </View>
-                          ))
-                        )}
-                      </View>
-                    ) : null}
-                  </View>
-                );
-              })
-            )}
-          </>
+          <StructureDrillDown
+            colors={colors}
+            view={structureView}
+            setView={setStructureView}
+            programmes={programmes}
+            streams={streams}
+            teams={teams}
+            streamsLoading={streamsQ.isLoading}
+            streamsError={streamsQ.isError ? streamsQ.error : null}
+            onStreamsRetry={() => streamsQ.refetch()}
+            promptRenameStream={async (s) => {
+              const next = await dialog.prompt({
+                title: "Rename stream",
+                defaultValue: s.name,
+                placeholder: "Stream name",
+                confirmText: "Save",
+              });
+              if (next && next.trim() && next.trim() !== s.name) {
+                updateStream.mutate({ id: s.id, data: { name: next.trim() } });
+              }
+            }}
+            promptRenameTeam={async (t) => {
+              const next = await dialog.prompt({
+                title: "Rename team",
+                defaultValue: t.name,
+                placeholder: "Team name",
+                confirmText: "Save",
+              });
+              if (next && next.trim() && next.trim() !== t.name) {
+                updateTeam.mutate({ id: t.id, data: { name: next.trim() } });
+              }
+            }}
+            onDeleteStream={(s) =>
+              confirm(`Delete stream "${s.name}"? Teams and projects inside will be removed too.`, () =>
+                deleteStream.mutate({ id: s.id }),
+              )
+            }
+            onDeleteTeam={(t) =>
+              confirm(`Delete team "${t.name}"?`, () => deleteTeam.mutate({ id: t.id }))
+            }
+            onAddStream={(programmeId) =>
+              router.push({ pathname: "/new-stream", params: { programmeId } })
+            }
+            onAddTeam={(streamId) =>
+              router.push({ pathname: "/new-team", params: { streamId } })
+            }
+            onOpenStream={(id) => router.push({ pathname: "/stream/[id]", params: { id } })}
+            onOpenTeam={(id) => router.push({ pathname: "/team/[id]", params: { id } })}
+          />
         ) : null}
 
         {tab === "programmes" ? (
@@ -534,11 +557,13 @@ export default function AdminPanelScreen() {
                       </Text>
                     </View>
                     <TouchableOpacity
-                      style={[styles.roleChip, { backgroundColor: ROLE_COLOR[role] }]}
+                      style={[styles.roleChip, { backgroundColor: ROLE_COLOR[role], flexDirection: "row", alignItems: "center", gap: 4 }]}
                       onPress={() => changeRole(u.id, role)}
                       hitSlop={6}
+                      accessibilityLabel={`Change role for ${u.name}`}
                     >
                       <Text style={styles.roleChipText}>{ROLE_LABEL[role]}</Text>
+                      <Feather name="edit-2" size={9} color="#fff" />
                     </TouchableOpacity>
                     {me?.id !== u.id ? (
                       <TouchableOpacity
@@ -553,7 +578,7 @@ export default function AdminPanelScreen() {
               );
             })}
             <Text style={[styles.hint, { color: colors.mutedForeground }]}>
-              Tap the role chip to cycle: Admin → Overseer → Leader.
+              Tap a role chip to change someone's primary login role. Only admins see this.
             </Text>
           </>
         ) : null}
@@ -681,6 +706,223 @@ export default function AdminPanelScreen() {
         ) : null}
       </ScrollView>
     </View>
+  );
+}
+
+type Programme = { id: string; name: string };
+type StreamLite = { id: string; name: string; programmeId: string };
+type TeamLite = { id: string; name: string; streamId?: string | null };
+
+function StructureDrillDown({
+  colors,
+  view,
+  setView,
+  programmes,
+  streams,
+  teams,
+  streamsLoading,
+  streamsError,
+  onStreamsRetry,
+  promptRenameStream,
+  promptRenameTeam,
+  onDeleteStream,
+  onDeleteTeam,
+  onAddStream,
+  onAddTeam,
+  onOpenStream,
+  onOpenTeam,
+}: {
+  colors: ReturnType<typeof useColors>;
+  view: { programmeId: string | null; streamId: string | null };
+  setView: (v: { programmeId: string | null; streamId: string | null }) => void;
+  programmes: Programme[];
+  streams: StreamLite[];
+  teams: TeamLite[];
+  streamsLoading: boolean;
+  streamsError: unknown;
+  onStreamsRetry: () => void;
+  promptRenameStream: (s: StreamLite) => void;
+  promptRenameTeam: (t: TeamLite) => void;
+  onDeleteStream: (s: StreamLite) => void;
+  onDeleteTeam: (t: TeamLite) => void;
+  onAddStream: (programmeId: string) => void;
+  onAddTeam: (streamId: string) => void;
+  onOpenStream: (id: string) => void;
+  onOpenTeam: (id: string) => void;
+}) {
+  const programme = view.programmeId ? programmes.find((p) => p.id === view.programmeId) ?? null : null;
+  const stream = view.streamId ? streams.find((s) => s.id === view.streamId) ?? null : null;
+
+  // Programmes level
+  if (!programme) {
+    return (
+      <>
+        <View style={styles.sectionRow}>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>
+            Programmes ({programmes.length})
+          </Text>
+        </View>
+        {programmes.length === 0 ? (
+          <View style={[styles.empty, { backgroundColor: colors.muted }]}>
+            <Text style={{ color: colors.mutedForeground }}>
+              No programmes yet. Add one on the Programmes tab.
+            </Text>
+          </View>
+        ) : (
+          programmes.map((p) => {
+            const pStreams = streams.filter((s) => s.programmeId === p.id);
+            return (
+              <TouchableOpacity
+                key={p.id}
+                style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 10 }]}
+                onPress={() => setView({ programmeId: p.id, streamId: null })}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.dot, { backgroundColor: colors.primary }]} />
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.cardTitle, { color: colors.foreground }]}>{p.name}</Text>
+                  <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
+                    {pStreams.length} stream{pStreams.length !== 1 ? "s" : ""}
+                  </Text>
+                </View>
+                <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            );
+          })
+        )}
+      </>
+    );
+  }
+
+  // Streams level (inside a programme)
+  if (!stream) {
+    const pStreams = streams.filter((s) => s.programmeId === programme.id);
+    return (
+      <>
+        <View style={[styles.sectionRow, { gap: 8 }]}>
+          <TouchableOpacity
+            style={styles.iconBtn}
+            onPress={() => setView({ programmeId: null, streamId: null })}
+            accessibilityLabel="Back to programmes"
+          >
+            <Feather name="chevron-left" size={20} color={colors.primary} />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>Programme</Text>
+            <Text style={[styles.sectionTitle, { color: colors.foreground }]} numberOfLines={1}>
+              {programme.name}
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={[styles.smallBtn, { backgroundColor: colors.primary }]}
+            onPress={() => onAddStream(programme.id)}
+          >
+            <Feather name="plus" size={12} color="#fff" />
+            <Text style={[styles.smallBtnText, { color: "#fff" }]}>Stream</Text>
+          </TouchableOpacity>
+        </View>
+        {streamsError ? <ErrorBanner error={streamsError} onRetry={onStreamsRetry} /> : null}
+        {streamsLoading ? <LoadingRow /> : null}
+        {pStreams.length === 0 && !streamsLoading ? (
+          <View style={[styles.empty, { backgroundColor: colors.muted }]}>
+            <Text style={{ color: colors.mutedForeground }}>No streams in this programme yet.</Text>
+          </View>
+        ) : (
+          pStreams.map((s) => {
+            const sTeams = teams.filter((t) => t.streamId === s.id);
+            return (
+              <View
+                key={s.id}
+                style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 8 }]}
+              >
+                <TouchableOpacity
+                  style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10 }}
+                  onPress={() => setView({ programmeId: programme.id, streamId: s.id })}
+                  activeOpacity={0.85}
+                >
+                  <View style={[styles.dot, { backgroundColor: colors.primary }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.cardTitle, { color: colors.foreground }]}>{s.name}</Text>
+                    <Text style={[styles.cardSub, { color: colors.mutedForeground }]}>
+                      {sTeams.length} team{sTeams.length !== 1 ? "s" : ""}
+                    </Text>
+                  </View>
+                  <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconBtn} onPress={() => promptRenameStream(s)}>
+                  <Feather name="edit-2" size={13} color={colors.primary} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconBtn} onPress={() => onOpenStream(s.id)}>
+                  <Feather name="external-link" size={13} color={colors.primary} />
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.iconBtn} onPress={() => onDeleteStream(s)}>
+                  <Feather name="trash-2" size={13} color="#DC2626" />
+                </TouchableOpacity>
+              </View>
+            );
+          })
+        )}
+      </>
+    );
+  }
+
+  // Teams level (inside a stream)
+  const sTeams = teams.filter((t) => t.streamId === stream.id);
+  return (
+    <>
+      <View style={[styles.sectionRow, { gap: 8 }]}>
+        <TouchableOpacity
+          style={styles.iconBtn}
+          onPress={() => setView({ programmeId: programme.id, streamId: null })}
+          accessibilityLabel="Back to streams"
+        >
+          <Feather name="chevron-left" size={20} color={colors.primary} />
+        </TouchableOpacity>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.cardSub, { color: colors.mutedForeground }]} numberOfLines={1}>
+            {programme.name}  ·  Stream
+          </Text>
+          <Text style={[styles.sectionTitle, { color: colors.foreground }]} numberOfLines={1}>
+            {stream.name}
+          </Text>
+        </View>
+        <TouchableOpacity
+          style={[styles.smallBtn, { backgroundColor: colors.primary }]}
+          onPress={() => onAddTeam(stream.id)}
+        >
+          <Feather name="plus" size={12} color="#fff" />
+          <Text style={[styles.smallBtnText, { color: "#fff" }]}>Team</Text>
+        </TouchableOpacity>
+      </View>
+      {sTeams.length === 0 ? (
+        <View style={[styles.empty, { backgroundColor: colors.muted }]}>
+          <Text style={{ color: colors.mutedForeground }}>No teams in this stream yet.</Text>
+        </View>
+      ) : (
+        sTeams.map((t) => (
+          <View
+            key={t.id}
+            style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border, flexDirection: "row", alignItems: "center", gap: 8 }]}
+          >
+            <TouchableOpacity
+              style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10 }}
+              onPress={() => onOpenTeam(t.id)}
+              activeOpacity={0.85}
+            >
+              <Feather name="users" size={14} color={colors.primary} />
+              <Text style={[styles.cardTitle, { color: colors.foreground, flex: 1 }]}>{t.name}</Text>
+              <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => promptRenameTeam(t)}>
+              <Feather name="edit-2" size={13} color={colors.primary} />
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.iconBtn} onPress={() => onDeleteTeam(t)}>
+              <Feather name="trash-2" size={13} color="#DC2626" />
+            </TouchableOpacity>
+          </View>
+        ))
+      )}
+    </>
   );
 }
 

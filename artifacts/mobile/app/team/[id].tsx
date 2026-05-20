@@ -258,24 +258,41 @@ export default function TeamDetailScreen() {
     if (ok) deleteTeam.mutate({ id: team!.id }, { onSuccess: () => router.back() });
   }
 
+  const ROLE_LABEL_SHORT: Record<string, string> = {
+    admin: "Admin",
+    programme_overseer: "Prog. Overseer",
+    stream_overseer: "Stream Overseer",
+    leader: "Leader",
+    team_admin: "Team Admin",
+  };
+
+  function buildManagerCandidates() {
+    const taken = new Set([...leaderIds, ...teamAdminIds]);
+    return users
+      .filter((u) => !taken.has(u.id) && u.active !== false)
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((u) => ({
+        label: `${u.name}  ·  ${ROLE_LABEL_SHORT[u.role] ?? u.role}`,
+        value: u.id,
+      }));
+  }
+
   async function addLeader() {
     if (!canManageLeaders) return;
-    const taken = new Set([...leaderIds, ...teamAdminIds]);
-    const candidates = users.filter(
-      (u) => !taken.has(u.id) && u.role === "leader",
-    );
+    const candidates = buildManagerCandidates();
     if (candidates.length === 0) {
       await dialog.confirm({
         title: "No candidates",
-        message: "There are no users with the Leader role available. Invite a new user with role Leader first, then come back here to add them.",
+        message: "Every active user is already a leader or team admin of this team. Invite a new user first, or remove someone before adding them in a different role.",
         confirmText: "OK",
       });
       return;
     }
     const choice = await dialog.choice<string>({
       title: "Add leader",
-      message: "Pick a user to add as a leader of this team.",
-      options: candidates.map((u) => ({ label: u.name, value: u.id })),
+      message: "Pick anyone to add as a leader of this team. Their primary login role won't change — they'll just appear in this team's Leaders list with full leader powers here.",
+      options: candidates,
     });
     if (!choice) return;
     addManager.mutate({ id: team!.id, data: { userId: choice, role: "leader" } });
@@ -283,22 +300,19 @@ export default function TeamDetailScreen() {
 
   async function addTeamAdmin() {
     if (!canManageAdmins) return;
-    const taken = new Set([...leaderIds, ...teamAdminIds]);
-    const candidates = users.filter(
-      (u) => !taken.has(u.id) && (u.role === "leader" || u.role === "team_admin"),
-    );
+    const candidates = buildManagerCandidates();
     if (candidates.length === 0) {
       await dialog.confirm({
         title: "No candidates",
-        message: "There are no users with the Team admin (or Leader) role available. Invite a new user with role Team admin first, then come back here to add them.",
+        message: "Every active user is already a leader or team admin of this team. Invite a new user first, or remove someone before adding them in a different role.",
         confirmText: "OK",
       });
       return;
     }
     const choice = await dialog.choice<string>({
       title: "Add team admin",
-      message: "Pick a user to add as a team admin.",
-      options: candidates.map((u) => ({ label: u.name, value: u.id })),
+      message: "Pick anyone to add as a team admin. Their primary login role won't change — they'll just appear in this team's Team Admins list.",
+      options: candidates,
     });
     if (!choice) return;
     addManager.mutate({ id: team!.id, data: { userId: choice, role: "team_admin" } });

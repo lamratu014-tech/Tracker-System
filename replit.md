@@ -27,6 +27,8 @@ All screens use the API-backed helpers (no more legacy store helpers):
 - **team_admin** — Same day-to-day access as `leader` for projects/milestones/members/notes/team-scoped events, on teams where they appear in `team_managers` with role `team_admin`. **Cannot** add/remove other managers.
 - **(member)** — NOT a login role. Members are roster-only entries on a team.
 
+**Team manager grants are decoupled from primary role.** Any active user — including admins and stream/programme overseers — can be added to a team's `leaderIds` or `teamAdminIds` via the team detail page. The grant only affects appearance in the team's Leaders / Team Admins lists for visibility and accountability; the user's actual access tier still comes from their primary `role`. The Add Leader / Add Team Admin pickers list **every** active user not already in that team's manager lists, sorted by name, with their primary role shown as a sub-label.
+
 Per-team management is tracked in the `team_managers` join table (`team_id, user_id, role`). The `Team` resource exposes derived `leaderIds[]` and `teamAdminIds[]`. Users expose derived `leaderTeamIds[]` and `teamAdminTeamIds[]` (the previous single `users.team_id` column was dropped; a user can manage multiple teams).
 
 ### Hierarchy
@@ -70,7 +72,7 @@ artifacts/mobile/app/
 │   ├── programme.tsx        # Streams → teams view
 │   ├── calendar.tsx         # Monthly grid + day list
 │   └── settings.tsx         # Profile, role chip, admin shortcut, sign out
-├── admin/index.tsx          # Tabs: Structure / Users / Members / Events
+├── admin/index.tsx          # Tabs: Structure (drill-down Programmes → Streams → Teams) / Programmes / Users / Members / Events
 ├── stream/[id].tsx          # Rename/delete stream, list teams
 ├── team/[id].tsx            # Members CRUD, projects, leader, notes timeline
 ├── project/[id].tsx         # Milestones with All/Today/Upcoming/Overdue/Completed filters
@@ -114,4 +116,6 @@ connection strings; override with `PGSSL=disable|require` if needed.
 - After any mutation, invalidate the relevant list/detail query keys so the UI refetches.
 - The `useListEvents` endpoint already applies server-side visibility filtering.
 - **`APP_DOMAIN` env var is required in production** — set it to the canonical HTTPS origin (e.g. `https://your-app.replit.app`). `getAppDomain()` in `artifacts/api-server/src/routes/auth.ts` reads this to build invite and password-reset links. Without it, emailed links point to `https://localhost` (safe fallback — no host-header poisoning, but links won't work until the var is set).
+- Admin Users tab role chip opens an explicit "Change role" dialog (lists all 5 roles with one-line descriptions) — no more cycle-on-tap. Switching to a role that needs a scope (programme / stream / team) prompts for it inline if the user doesn't already have one. Only admins can change roles (server-enforced via `requireAdmin`).
+- Admin Structure tab is a three-level drill-down: Programmes → Streams → Teams. State is a local `{programmeId, streamId}` view stack (no new routes). Programme rename/delete still live on the Programmes admin tab; stream and team rename/delete remain on the Structure level where they're listed.
 - Invite codes are 16 characters (32-char alphabet, ≈ 2^80 entropy). The mobile accept-invite screen enforces `maxLength={16}` and only triggers the preview API call once 16 chars are entered. Server-side Zod schemas for `AcceptInviteBody` and `GetInviteByTokenParams` enforce exactly 16 chars, so legacy 6-char tokens already in the DB are rejected at the validation layer and cannot be redeemed.

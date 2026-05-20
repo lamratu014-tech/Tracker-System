@@ -1,5 +1,5 @@
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   getListStreamsQueryKey,
   useCreateStream,
@@ -30,6 +30,7 @@ export default function NewStreamScreen() {
   const router = useRouter();
   const qc = useQueryClient();
   const me = useMe();
+  const params = useLocalSearchParams<{ programmeId?: string }>();
   const programmesQ = useListProgrammes();
   const allProgrammes = programmesQ.data ?? [];
   // Programme overseers can only create streams within their own programme.
@@ -51,6 +52,10 @@ export default function NewStreamScreen() {
       setProgrammeId(me.programmeId);
       return;
     }
+    if (params.programmeId && programmes.some((p) => p.id === params.programmeId)) {
+      setProgrammeId(params.programmeId);
+      return;
+    }
     let cancelled = false;
     (async () => {
       const last = await getLastUsedProgrammeId();
@@ -61,7 +66,7 @@ export default function NewStreamScreen() {
     return () => {
       cancelled = true;
     };
-  }, [programmes, programmeId, me]);
+  }, [programmes, programmeId, me, params.programmeId]);
 
   const createStream = useCreateStream({
     mutation: {
