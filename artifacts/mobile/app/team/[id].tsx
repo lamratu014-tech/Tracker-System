@@ -293,6 +293,8 @@ export default function TeamDetailScreen() {
       title: "Add leader",
       message: "Pick anyone to add as a leader of this team. Their primary login role won't change — they'll just appear in this team's Leaders list with full leader powers here.",
       options: candidates,
+      searchable: true,
+      searchPlaceholder: "Search by name or role",
     });
     if (!choice) return;
     addManager.mutate({ id: team!.id, data: { userId: choice, role: "leader" } });
@@ -313,6 +315,8 @@ export default function TeamDetailScreen() {
       title: "Add team admin",
       message: "Pick anyone to add as a team admin. Their primary login role won't change — they'll just appear in this team's Team Admins list.",
       options: candidates,
+      searchable: true,
+      searchPlaceholder: "Search by name or role",
     });
     if (!choice) return;
     addManager.mutate({ id: team!.id, data: { userId: choice, role: "team_admin" } });

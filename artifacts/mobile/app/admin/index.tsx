@@ -294,6 +294,8 @@ export default function AdminPanelScreen() {
         const prog = programmes.find((p) => p.id === s.programmeId);
         return { label: prog ? `${prog.name}  ·  ${s.name}` : s.name, value: s.id };
       }),
+      searchable: true,
+      searchPlaceholder: "Search streams",
     });
   }
 
@@ -313,6 +315,8 @@ export default function AdminPanelScreen() {
         const s = streams.find((x) => x.id === t.streamId);
         return { label: s ? `${s.name}  ·  ${t.name}` : t.name, value: t.id };
       }),
+      searchable: true,
+      searchPlaceholder: "Search teams",
     });
   }
 

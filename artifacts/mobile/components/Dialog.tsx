@@ -50,6 +50,8 @@ export type ChoiceOptions<T> = {
   message?: string;
   options: ChoiceOption<T>[];
   cancelText?: string;
+  searchable?: boolean;
+  searchPlaceholder?: string;
 };
 
 export type DialogContextValue = {
@@ -76,6 +78,7 @@ type PromptState = {
 type ChoiceState = {
   kind: "choice";
   opts: ChoiceOptions<unknown>;
+  query: string;
   resolve: Resolver<unknown>;
 };
 type State =
@@ -121,6 +124,7 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
         open({
           kind: "choice",
           opts: opts as ChoiceOptions<unknown>,
+          query: "",
           resolve: resolve as Resolver<unknown>,
         });
       }),
@@ -184,53 +188,14 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
               ) : null}
 
               {state.kind === "choice" ? (
-                <View style={{ gap: 8, marginTop: 12 }}>
-                  {state.opts.message ? (
-                    <Text
-                      style={[
-                        styles.message,
-                        { color: colors.mutedForeground, marginTop: 0 },
-                      ]}
-                    >
-                      {state.opts.message}
-                    </Text>
-                  ) : null}
-                  <ScrollView
-                    style={{ maxHeight: 320 }}
-                    contentContainerStyle={{ gap: 8 }}
-                  >
-                    {state.opts.options.map((opt, i) => (
-                      <TouchableOpacity
-                        key={i}
-                        style={[
-                          styles.choiceBtn,
-                          {
-                            backgroundColor: opt.destructive
-                              ? "#FEE2E2"
-                              : colors.muted,
-                            borderColor: opt.destructive ? "#FCA5A5" : colors.border,
-                          },
-                        ]}
-                        onPress={() =>
-                          settle(() => state.resolve(opt.value))
-                        }
-                      >
-                        <Text
-                          style={[
-                            styles.choiceText,
-                            {
-                              color: opt.destructive
-                                ? "#B91C1C"
-                                : colors.foreground,
-                            },
-                          ]}
-                        >
-                          {opt.label}
-                        </Text>
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
+                <ChoiceBody
+                  state={state}
+                  colors={colors}
+                  onChangeQuery={(t) =>
+                    setState((s) => (s.kind === "choice" ? { ...s, query: t } : s))
+                  }
+                  onPick={(value) => settle(() => state.resolve(value))}
+                />
               ) : null}
 
               {state.kind === "confirm" ? (
@@ -320,6 +285,116 @@ export function DialogProvider({ children }: { children: React.ReactNode }) {
         </Pressable>
       </Modal>
     </DialogContext.Provider>
+  );
+}
+
+function ChoiceBody({
+  state,
+  colors,
+  onChangeQuery,
+  onPick,
+}: {
+  state: ChoiceState;
+  colors: ReturnType<typeof useColors>;
+  onChangeQuery: (t: string) => void;
+  onPick: (value: unknown) => void;
+}) {
+  const inputRef = useRef<TextInput | null>(null);
+  const searchable = !!state.opts.searchable;
+  React.useEffect(() => {
+    if (!searchable) return;
+    const t = setTimeout(() => inputRef.current?.focus(), 60);
+    return () => clearTimeout(t);
+  }, [searchable]);
+
+  const q = state.query.trim().toLowerCase();
+  const filtered = searchable && q
+    ? state.opts.options.filter((o) => o.label.toLowerCase().includes(q))
+    : state.opts.options;
+
+  return (
+    <View style={{ gap: 8, marginTop: 12 }}>
+      {state.opts.message ? (
+        <Text
+          style={[
+            styles.message,
+            { color: colors.mutedForeground, marginTop: 0 },
+          ]}
+        >
+          {state.opts.message}
+        </Text>
+      ) : null}
+      {searchable ? (
+        <TextInput
+          ref={inputRef}
+          value={state.query}
+          onChangeText={onChangeQuery}
+          placeholder={state.opts.searchPlaceholder ?? "Search"}
+          placeholderTextColor={colors.mutedForeground}
+          autoCapitalize="none"
+          autoCorrect={false}
+          returnKeyType="done"
+          onSubmitEditing={() => {
+            if (filtered.length > 0) onPick(filtered[0].value);
+          }}
+          style={[
+            styles.input,
+            {
+              marginTop: 4,
+              backgroundColor: colors.muted,
+              color: colors.foreground,
+              borderColor: colors.border,
+              height: 40,
+            },
+          ]}
+        />
+      ) : null}
+      <ScrollView
+        style={{ maxHeight: 320 }}
+        contentContainerStyle={{ gap: 8 }}
+        keyboardShouldPersistTaps="handled"
+      >
+        {filtered.length === 0 ? (
+          <Text
+            style={[
+              styles.message,
+              {
+                color: colors.mutedForeground,
+                marginTop: 4,
+                textAlign: "center",
+              },
+            ]}
+          >
+            No matches. Clear the search to see everyone.
+          </Text>
+        ) : (
+          filtered.map((opt, i) => (
+            <TouchableOpacity
+              key={i}
+              style={[
+                styles.choiceBtn,
+                {
+                  backgroundColor: opt.destructive ? "#FEE2E2" : colors.muted,
+                  borderColor: opt.destructive ? "#FCA5A5" : colors.border,
+                },
+              ]}
+              onPress={() => onPick(opt.value)}
+            >
+              <Text
+                style={[
+                  styles.choiceText,
+                  {
+                    color: opt.destructive ? "#B91C1C" : colors.foreground,
+                  },
+                ]}
+              >
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          ))
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
