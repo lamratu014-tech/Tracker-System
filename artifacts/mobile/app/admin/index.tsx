@@ -200,10 +200,16 @@ export default function AdminPanelScreen() {
   const deleteMember = useDeleteMember();
 
   const [tab, setTab] = useState<AdminTab>("structure");
+  const [usersQuery, setUsersQuery] = useState("");
   const [structureView, setStructureView] = useState<{ programmeId: string | null; streamId: string | null }>({
     programmeId: null,
     streamId: null,
   });
+
+  function switchTab(next: AdminTab) {
+    if (next !== "users") setUsersQuery("");
+    setTab(next);
+  }
 
   // Members tab — fetch members for each team and merge
   const memberQueries = useQueries({
@@ -376,7 +382,7 @@ export default function AdminPanelScreen() {
           <TouchableOpacity
             key={t}
             style={[styles.tab, tab === t && { borderBottomColor: colors.primary }]}
-            onPress={() => setTab(t)}
+            onPress={() => switchTab(t)}
           >
             <Text style={[styles.tabText, { color: tab === t ? colors.primary : colors.mutedForeground }]}>
               {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -519,10 +525,31 @@ export default function AdminPanelScreen() {
           </>
         ) : null}
 
-        {tab === "users" ? (
+        {tab === "users" ? (() => {
+          const q = usersQuery.trim().toLowerCase();
+          const decorated = users.map((u) => {
+            const role = u.role as Role;
+            const scope =
+              role === "admin"
+                ? "All streams"
+                : role === "stream_overseer"
+                  ? streamLabel(u.streamId)
+                  : teamLabel(u.leaderTeamIds?.[0] ?? u.teamAdminTeamIds?.[0] ?? null);
+            return { u, role, scope };
+          });
+          const visible = q
+            ? decorated.filter(({ u, role, scope }) =>
+                u.name.toLowerCase().includes(q) ||
+                (u.email ?? "").toLowerCase().includes(q) ||
+                ROLE_LABEL[role].toLowerCase().includes(q) ||
+                scope.toLowerCase().includes(q)
+              )
+            : decorated;
+          const countLabel = q ? `Users (${visible.length} of ${users.length})` : `Users (${users.length})`;
+          return (
           <>
             <View style={styles.sectionRow}>
-              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Users ({users.length})</Text>
+              <Text style={[styles.sectionTitle, { color: colors.foreground }]}>{countLabel}</Text>
               <TouchableOpacity
                 style={[styles.smallBtn, { backgroundColor: colors.primary }]}
                 onPress={() => router.push("/new-user")}
@@ -531,18 +558,54 @@ export default function AdminPanelScreen() {
                 <Text style={[styles.smallBtnText, { color: "#fff" }]}>Invite</Text>
               </TouchableOpacity>
             </View>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 }}>
+              <View style={{ flex: 1, position: "relative", justifyContent: "center" }}>
+                <TextInput
+                  style={[
+                    styles.input,
+                    {
+                      backgroundColor: colors.muted,
+                      color: colors.foreground,
+                      borderColor: colors.border,
+                      paddingLeft: 34,
+                      paddingRight: usersQuery ? 34 : 12,
+                    },
+                  ]}
+                  value={usersQuery}
+                  onChangeText={setUsersQuery}
+                  placeholder="Search by name, email, role, or stream/team"
+                  placeholderTextColor={colors.mutedForeground}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  returnKeyType="search"
+                />
+                <View style={{ position: "absolute", left: 10 }} pointerEvents="none">
+                  <Feather name="search" size={14} color={colors.mutedForeground} />
+                </View>
+                {usersQuery ? (
+                  <TouchableOpacity
+                    style={{ position: "absolute", right: 8, padding: 4 }}
+                    onPress={() => setUsersQuery("")}
+                    hitSlop={6}
+                    accessibilityLabel="Clear search"
+                  >
+                    <Feather name="x" size={14} color={colors.mutedForeground} />
+                  </TouchableOpacity>
+                ) : null}
+              </View>
+            </View>
             {usersQ.isError ? (
               <ErrorBanner error={usersQ.error} onRetry={() => usersQ.refetch()} />
             ) : null}
             {usersQ.isLoading ? <LoadingRow /> : null}
-            {users.map((u) => {
-              const role = u.role as Role;
-              const scope =
-                role === "admin"
-                  ? "All streams"
-                  : role === "stream_overseer"
-                    ? streamLabel(u.streamId)
-                    : teamLabel(u.leaderTeamIds?.[0] ?? u.teamAdminTeamIds?.[0] ?? null);
+            {visible.length === 0 && q && !usersQ.isLoading ? (
+              <View style={[styles.empty, { backgroundColor: colors.muted }]}>
+                <Text style={{ color: colors.mutedForeground }}>
+                  No users match "{usersQuery.trim()}". Clear the search to see everyone.
+                </Text>
+              </View>
+            ) : null}
+            {visible.map(({ u, role, scope }) => {
               return (
                 <View key={u.id} style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
@@ -585,7 +648,8 @@ export default function AdminPanelScreen() {
               Tap a role chip to change someone's primary login role. Only admins see this.
             </Text>
           </>
-        ) : null}
+          );
+        })() : null}
 
         {tab === "members" ? (
           <>
