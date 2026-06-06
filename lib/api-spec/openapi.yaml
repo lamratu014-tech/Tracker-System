@@ -20,6 +20,7 @@ tags:
   - name: milestones
   - name: events
   - name: teamNotes
+  - name: weeklyUpdates
 
 paths:
   /healthz:
@@ -922,6 +923,55 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  # ─── Weekly updates ───────────────────────────────────────────────────
+  /weekly-updates:
+    get:
+      operationId: listWeeklyUpdates
+      tags: [weeklyUpdates]
+      summary: List weekly updates visible to the caller (scoped by role)
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/WeeklyUpdate" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      operationId: submitWeeklyUpdate
+      tags: [weeklyUpdates]
+      summary: Submit or edit the current week's update (stream overseers only)
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SubmitWeeklyUpdateBody" }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WeeklyUpdate" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /weekly-updates/status:
+    get:
+      operationId: getWeeklyUpdateStatus
+      tags: [weeklyUpdates]
+      summary: Current-week submission status for stream overseers in scope
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/WeeklyUpdateStatus" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
 # ────────────────────────────────────────────────────────────────────────
 components:
   securitySchemes:
@@ -1465,3 +1515,51 @@ components:
       required: [body]
       properties:
         body: { type: string, minLength: 1 }
+
+    WeeklyUpdate:
+      type: object
+      required:
+        [id, authorId, authorName, streamId, streamName, weekStart, body, createdAt, updatedAt]
+      properties:
+        id: { type: string }
+        authorId: { type: string }
+        authorName: { type: string, nullable: true }
+        streamId: { type: string }
+        streamName: { type: string, nullable: true }
+        weekStart:
+          type: string
+          format: date
+          description: Monday (YYYY-MM-DD) of the week this update covers.
+        body: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    SubmitWeeklyUpdateBody:
+      type: object
+      required: [body]
+      properties:
+        body: { type: string, minLength: 1 }
+
+    WeeklyUpdateOverseerStatus:
+      type: object
+      required: [userId, name, streamId, streamName, submitted, submittedAt, updateId]
+      properties:
+        userId: { type: string }
+        name: { type: string }
+        streamId: { type: string }
+        streamName: { type: string, nullable: true }
+        submitted: { type: boolean }
+        submittedAt: { type: string, format: date-time, nullable: true }
+        updateId: { type: string, nullable: true }
+
+    WeeklyUpdateStatus:
+      type: object
+      required: [weekStart, overseers]
+      properties:
+        weekStart:
+          type: string
+          format: date
+          description: Monday (YYYY-MM-DD) of the current week.
+        overseers:
+          type: array
+          items: { $ref: "#/components/schemas/WeeklyUpdateOverseerStatus" }

@@ -10,6 +10,7 @@ import tasksRouter from "./tasks";
 import milestonesRouter from "./milestones";
 import eventsRouter from "./events";
 import teamNotesRouter from "./teamNotes";
+import weeklyUpdatesRouter from "./weeklyUpdates";
 import activityRouter from "./activity";
 
 const router: IRouter = Router();
@@ -25,6 +26,7 @@ router.use(tasksRouter);
 router.use(milestonesRouter);
 router.use(eventsRouter);
 router.use(teamNotesRouter);
+router.use(weeklyUpdatesRouter);
 router.use(activityRouter);
 
 export default router;

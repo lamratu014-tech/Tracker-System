@@ -53,6 +53,7 @@ import type {
   SetMilestoneStatusBody,
   SetupBody,
   Stream,
+  SubmitWeeklyUpdateBody,
   Team,
   TeamNote,
   TeamWithStreamName,
@@ -67,6 +68,8 @@ import type {
   UpdateTeamNoteBody,
   UpdateUserRoleBody,
   User,
+  WeeklyUpdate,
+  WeeklyUpdateStatus,
 } from "./api.schemas";
 
 import { customFetch } from "../custom-fetch";
@@ -4645,3 +4648,241 @@ export const useDeleteTeamNote = <
 > => {
   return useMutation(getDeleteTeamNoteMutationOptions(options));
 };
+
+/**
+ * @summary List weekly updates visible to the caller (scoped by role)
+ */
+export const getListWeeklyUpdatesUrl = () => {
+  return `/api/weekly-updates`;
+};
+
+export const listWeeklyUpdates = async (
+  options?: RequestInit,
+): Promise<WeeklyUpdate[]> => {
+  return customFetch<WeeklyUpdate[]>(getListWeeklyUpdatesUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getListWeeklyUpdatesQueryKey = () => {
+  return [`/api/weekly-updates`] as const;
+};
+
+export const getListWeeklyUpdatesQueryOptions = <
+  TData = Awaited<ReturnType<typeof listWeeklyUpdates>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listWeeklyUpdates>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getListWeeklyUpdatesQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listWeeklyUpdates>>
+  > = ({ signal }) => listWeeklyUpdates({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listWeeklyUpdates>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListWeeklyUpdatesQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listWeeklyUpdates>>
+>;
+export type ListWeeklyUpdatesQueryError = ErrorType<ForbiddenResponse>;
+
+/**
+ * @summary List weekly updates visible to the caller (scoped by role)
+ */
+
+export function useListWeeklyUpdates<
+  TData = Awaited<ReturnType<typeof listWeeklyUpdates>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listWeeklyUpdates>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListWeeklyUpdatesQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Submit or edit the current week's update (stream overseers only)
+ */
+export const getSubmitWeeklyUpdateUrl = () => {
+  return `/api/weekly-updates`;
+};
+
+export const submitWeeklyUpdate = async (
+  submitWeeklyUpdateBody: SubmitWeeklyUpdateBody,
+  options?: RequestInit,
+): Promise<WeeklyUpdate> => {
+  return customFetch<WeeklyUpdate>(getSubmitWeeklyUpdateUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(submitWeeklyUpdateBody),
+  });
+};
+
+export const getSubmitWeeklyUpdateMutationOptions = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitWeeklyUpdate>>,
+    TError,
+    { data: BodyType<SubmitWeeklyUpdateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof submitWeeklyUpdate>>,
+  TError,
+  { data: BodyType<SubmitWeeklyUpdateBody> },
+  TContext
+> => {
+  const mutationKey = ["submitWeeklyUpdate"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof submitWeeklyUpdate>>,
+    { data: BodyType<SubmitWeeklyUpdateBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return submitWeeklyUpdate(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type SubmitWeeklyUpdateMutationResult = NonNullable<
+  Awaited<ReturnType<typeof submitWeeklyUpdate>>
+>;
+export type SubmitWeeklyUpdateMutationBody = BodyType<SubmitWeeklyUpdateBody>;
+export type SubmitWeeklyUpdateMutationError = ErrorType<
+  BadRequestResponse | ForbiddenResponse
+>;
+
+/**
+ * @summary Submit or edit the current week's update (stream overseers only)
+ */
+export const useSubmitWeeklyUpdate = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof submitWeeklyUpdate>>,
+    TError,
+    { data: BodyType<SubmitWeeklyUpdateBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof submitWeeklyUpdate>>,
+  TError,
+  { data: BodyType<SubmitWeeklyUpdateBody> },
+  TContext
+> => {
+  return useMutation(getSubmitWeeklyUpdateMutationOptions(options));
+};
+
+/**
+ * @summary Current-week submission status for stream overseers in scope
+ */
+export const getGetWeeklyUpdateStatusUrl = () => {
+  return `/api/weekly-updates/status`;
+};
+
+export const getWeeklyUpdateStatus = async (
+  options?: RequestInit,
+): Promise<WeeklyUpdateStatus> => {
+  return customFetch<WeeklyUpdateStatus>(getGetWeeklyUpdateStatusUrl(), {
+    ...options,
+    method: "GET",
+  });
+};
+
+export const getGetWeeklyUpdateStatusQueryKey = () => {
+  return [`/api/weekly-updates/status`] as const;
+};
+
+export const getGetWeeklyUpdateStatusQueryOptions = <
+  TData = Awaited<ReturnType<typeof getWeeklyUpdateStatus>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getWeeklyUpdateStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey = queryOptions?.queryKey ?? getGetWeeklyUpdateStatusQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof getWeeklyUpdateStatus>>
+  > = ({ signal }) => getWeeklyUpdateStatus({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof getWeeklyUpdateStatus>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type GetWeeklyUpdateStatusQueryResult = NonNullable<
+  Awaited<ReturnType<typeof getWeeklyUpdateStatus>>
+>;
+export type GetWeeklyUpdateStatusQueryError = ErrorType<ForbiddenResponse>;
+
+/**
+ * @summary Current-week submission status for stream overseers in scope
+ */
+
+export function useGetWeeklyUpdateStatus<
+  TData = Awaited<ReturnType<typeof getWeeklyUpdateStatus>>,
+  TError = ErrorType<ForbiddenResponse>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof getWeeklyUpdateStatus>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getGetWeeklyUpdateStatusQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}

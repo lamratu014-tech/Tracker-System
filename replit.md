@@ -106,6 +106,33 @@ point at the SPA's public URL so invite/reset emails render correct links.
 `lib/db/src/index.ts` auto-enables TLS for Render/Neon/Supabase/RDS
 connection strings; override with `PGSSL=disable|require` if needed.
 
+### Weekly updates (stream overseer reports)
+Confidential weekly status reporting, backed by the `weekly_updates` table
+(`id, authorId→users, streamId→streams, weekStart (date, Monday UTC), body,
+createdAt, updatedAt`; unique on `(authorId, weekStart)`). Week boundaries are
+computed **server-side** (`weekStartOf` in `routes/weeklyUpdates.ts`, Monday UTC),
+so updates can't be backdated; the mobile screen mirrors the same helper to
+compute the current week.
+
+- **POST /weekly-updates** (`submitWeeklyUpdate`) — stream overseers only, and
+  only if they have a `streamId`. Upserts the current week's row
+  (`onConflictDoUpdate` on the `(authorId, weekStart)` unique constraint), so a
+  second submit edits rather than duplicates.
+- **GET /weekly-updates** (`listWeeklyUpdates`) — role-scoped: admin = all,
+  `programme_overseer` = updates whose stream is in their programme,
+  `stream_overseer` = only their own. Everyone else → 403.
+- **GET /weekly-updates/status** (`getWeeklyUpdateStatus`) — current-week
+  submission status for active stream overseers in scope (inner join on streams,
+  so overseers with no `streamId` are excluded). Used to render the "not yet
+  submitted this week" list. SO sees only themselves; PO sees their programme;
+  admin sees all.
+
+Mobile screen is `app/weekly-updates.tsx` (registered in `_layout.tsx` Stack),
+reached from a Settings entry visible to admin / programme_overseer /
+stream_overseer. It's role-adaptive: overseers get a composer for the current
+week plus their own history; PO/admin get the "not yet submitted" card plus all
+in-scope updates grouped by week.
+
 ## User preferences
 - Real email login (no profile picker)
 - Stream overseers must have full access across all teams in their stream

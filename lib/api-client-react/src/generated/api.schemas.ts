@@ -430,6 +430,40 @@ export interface UpdateTeamNoteBody {
   body: string;
 }
 
+export interface WeeklyUpdate {
+  id: string;
+  authorId: string;
+  authorName: string | null;
+  streamId: string;
+  streamName: string | null;
+  /** Monday (YYYY-MM-DD) of the week this update covers. */
+  weekStart: string;
+  body: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SubmitWeeklyUpdateBody {
+  /** @minLength 1 */
+  body: string;
+}
+
+export interface WeeklyUpdateOverseerStatus {
+  userId: string;
+  name: string;
+  streamId: string;
+  streamName: string | null;
+  submitted: boolean;
+  submittedAt: string | null;
+  updateId: string | null;
+}
+
+export interface WeeklyUpdateStatus {
+  /** Monday (YYYY-MM-DD) of the current week. */
+  weekStart: string;
+  overseers: WeeklyUpdateOverseerStatus[];
+}
+
 /**
  * Bad request
  */

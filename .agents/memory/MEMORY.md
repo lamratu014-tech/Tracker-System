@@ -1,0 +1,1 @@
+- [Dev DB drift](dev-db-drift.md) — dev Postgres lags schema sources; `team_managers` may be missing (breaks all auth), `invite_tokens` rename blocks `db push`. Add own tables via DDL.

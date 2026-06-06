@@ -13,4 +13,5 @@ export * from "./tasks";
 export * from "./milestones";
 export * from "./events";
 export * from "./teamNotes";
+export * from "./weeklyUpdates";
 export * from "./activityLogs";

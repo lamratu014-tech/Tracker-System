@@ -980,3 +980,65 @@ export const UpdateTeamNoteResponse = zod.object({
 export const DeleteTeamNoteParams = zod.object({
   id: zod.coerce.string(),
 });
+
+/**
+ * @summary List weekly updates visible to the caller (scoped by role)
+ */
+export const ListWeeklyUpdatesResponseItem = zod.object({
+  id: zod.string(),
+  authorId: zod.string(),
+  authorName: zod.string().nullable(),
+  streamId: zod.string(),
+  streamName: zod.string().nullable(),
+  weekStart: zod.coerce
+    .date()
+    .describe("Monday (YYYY-MM-DD) of the week this update covers."),
+  body: zod.string(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListWeeklyUpdatesResponse = zod.array(
+  ListWeeklyUpdatesResponseItem,
+);
+
+/**
+ * @summary Submit or edit the current week's update (stream overseers only)
+ */
+
+export const SubmitWeeklyUpdateBody = zod.object({
+  body: zod.string().min(1),
+});
+
+export const SubmitWeeklyUpdateResponse = zod.object({
+  id: zod.string(),
+  authorId: zod.string(),
+  authorName: zod.string().nullable(),
+  streamId: zod.string(),
+  streamName: zod.string().nullable(),
+  weekStart: zod.coerce
+    .date()
+    .describe("Monday (YYYY-MM-DD) of the week this update covers."),
+  body: zod.string(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Current-week submission status for stream overseers in scope
+ */
+export const GetWeeklyUpdateStatusResponse = zod.object({
+  weekStart: zod.coerce
+    .date()
+    .describe("Monday (YYYY-MM-DD) of the current week."),
+  overseers: zod.array(
+    zod.object({
+      userId: zod.string(),
+      name: zod.string(),
+      streamId: zod.string(),
+      streamName: zod.string().nullable(),
+      submitted: zod.boolean(),
+      submittedAt: zod.coerce.date().nullable(),
+      updateId: zod.string().nullable(),
+    }),
+  ),
+});
