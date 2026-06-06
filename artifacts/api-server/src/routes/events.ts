@@ -112,6 +112,16 @@ router.post("/events", requireManager, async (req, res): Promise<void> => {
 
   const { invitedTeamIds = [], programmeId, ...eventData } = parsed.data;
 
+  // Normalise the recurrence rule: a non-repeating event never carries an
+  // "until" date, and an "until" that precedes the start is rejected.
+  const recurrenceFreq = eventData.recurrenceFreq ?? "none";
+  const recurrenceUntil =
+    recurrenceFreq === "none" ? null : (eventData.recurrenceUntil ?? null);
+  if (recurrenceUntil && new Date(recurrenceUntil) < new Date(eventData.startDate)) {
+    res.status(400).json({ error: "Recurrence end date can't be before the start date." });
+    return;
+  }
+
   // Determine intended scope. Three modes:
   //   1. team-linked    → invitedTeamIds[0] set, no programmeId
   //   2. programme-linked → programmeId set, no team
@@ -150,6 +160,8 @@ router.post("/events", requireManager, async (req, res): Promise<void> => {
     color: eventData.color,
     isAllDay: eventData.isAllDay,
     status: eventData.status,
+    recurrenceFreq,
+    recurrenceUntil: recurrenceUntil ? new Date(recurrenceUntil) : null,
     projectId: eventData.projectId,
     programmeId: programmeId ?? null,
     startDate: new Date(eventData.startDate),
@@ -240,6 +252,33 @@ router.patch("/events/:id", requireManager, async (req, res): Promise<void> => {
   if ("isAllDay" in eventData) patch.isAllDay = eventData.isAllDay;
   if ("status" in eventData) patch.status = eventData.status;
   if ("projectId" in eventData) patch.projectId = eventData.projectId ?? null;
+
+  // Recurrence: resolve the rule that will apply after this patch so we can
+  // keep "until" consistent with the frequency and validate it against the
+  // resulting start date. A "none" frequency always clears the until date.
+  if ("recurrenceFreq" in eventData || "recurrenceUntil" in eventData) {
+    const nextFreq =
+      "recurrenceFreq" in eventData
+        ? (eventData.recurrenceFreq ?? "none")
+        : existing.recurrenceFreq;
+    const rawUntil =
+      "recurrenceUntil" in eventData
+        ? (eventData.recurrenceUntil ?? null)
+        : existing.recurrenceUntil
+          ? existing.recurrenceUntil.toISOString()
+          : null;
+    const nextUntil = nextFreq === "none" ? null : rawUntil;
+    const nextStart =
+      "startDate" in eventData && eventData.startDate
+        ? new Date(eventData.startDate)
+        : existing.startDate;
+    if (nextUntil && new Date(nextUntil) < nextStart) {
+      res.status(400).json({ error: "Recurrence end date can't be before the start date." });
+      return;
+    }
+    patch.recurrenceFreq = nextFreq;
+    patch.recurrenceUntil = nextUntil ? new Date(nextUntil) : null;
+  }
   // Mirror the resulting scope: the patch is the source of truth, so when
   // invitedTeamIds clears the team link we also clear createdByTeamId, and
   // setting a programmeId implicitly clears any leftover team ownership.

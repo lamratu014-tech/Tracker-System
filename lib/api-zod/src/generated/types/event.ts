@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EventStatus } from "./eventStatus";
+import type { RecurrenceFreq } from "./recurrenceFreq";
 
 export interface Event {
   id: string;
@@ -18,6 +19,9 @@ export interface Event {
   color: string;
   isAllDay: boolean;
   status: EventStatus;
+  recurrenceFreq: RecurrenceFreq;
+  /** Inclusive last date the series may occur on. Null means no fixed end. */
+  recurrenceUntil?: Date | null;
   projectId?: string | null;
   programmeId?: string | null;
   createdByTeamId?: string | null;

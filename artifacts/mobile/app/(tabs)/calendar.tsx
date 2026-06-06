@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
+import { expandOccurrences } from "@/lib/recurrence";
 import { useMe } from "@/lib/permissions";
 import {
   type CalendarProgrammeFilter,
@@ -186,6 +187,20 @@ export default function CalendarScreen() {
     [events, filter, streams, teams],
   );
 
+  // Expand recurring events into concrete occurrences covering the visible grid
+  // plus the selected day (which may sit outside the current month). One-off
+  // events pass through unchanged. The calendar then treats every occurrence
+  // exactly like an individual event.
+  const occurrences = useMemo(() => {
+    const gridDays = cells.filter((c): c is Date => c !== null);
+    const candidates = [...gridDays.map(startOfDay), startOfDay(selected)];
+    const times = candidates.map((d) => d.getTime());
+    const windowStart = new Date(Math.min(...times));
+    const windowEnd = new Date(Math.max(...times));
+    windowEnd.setHours(23, 59, 59, 999);
+    return expandOccurrences(filteredEvents, windowStart, windowEnd);
+  }, [filteredEvents, cells, selected]);
+
   function toggleProgramme(id: string) {
     if (filter === "all") {
       persistFilter([id]);
@@ -202,7 +217,7 @@ export default function CalendarScreen() {
   // every day in view without forcing an unbounded per-event walk.
   const streamsByDay = useMemo(() => {
     const map = new Map<string, (string | null)[]>();
-    const eventSpans = filteredEvents.map((ev) => {
+    const eventSpans = occurrences.map((ev) => {
       const s = new Date(ev.startDate);
       const e = new Date(ev.endDate);
       if (isNaN(s.getTime()) || isNaN(e.getTime())) return null;
@@ -226,10 +241,10 @@ export default function CalendarScreen() {
     }
     return map;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filteredEvents, teams, cells]);
+  }, [occurrences, teams, cells]);
 
   const selectedEvents = useMemo(() => {
-    return filteredEvents
+    return occurrences
       .filter((ev) => {
         const s = new Date(ev.startDate);
         const e = new Date(ev.endDate);
@@ -241,7 +256,7 @@ export default function CalendarScreen() {
       })
       .slice()
       .sort((a, b) => +new Date(a.startDate) - +new Date(b.startDate));
-  }, [filteredEvents, selected]);
+  }, [occurrences, selected]);
 
   function nameFor(ev: {
     invitedTeamIds: string[];
@@ -461,7 +476,7 @@ export default function CalendarScreen() {
             const accent = sId ? colorForStream(sId) : NEUTRAL_STREAM_COLOR;
             return (
               <TouchableOpacity
-                key={ev.id}
+                key={ev.occurrenceKey}
                 style={[
                   styles.evCard,
                   {
@@ -471,7 +486,7 @@ export default function CalendarScreen() {
                     borderLeftWidth: 4,
                   },
                 ]}
-                onPress={() => router.push({ pathname: "/event/[id]", params: { id: ev.id } })}
+                onPress={() => router.push({ pathname: "/event/[id]", params: { id: ev.seriesId } })}
                 activeOpacity={0.8}
               >
                 <View style={[styles.timeBox, { backgroundColor: accent + "15" }]}>

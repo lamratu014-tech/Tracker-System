@@ -354,6 +354,20 @@ export const EventVisibility = {
   shared: "shared",
 } as const;
 
+/**
+ * How often the event repeats. "none" means a one-off event.
+ */
+export type RecurrenceFreq =
+  (typeof RecurrenceFreq)[keyof typeof RecurrenceFreq];
+
+export const RecurrenceFreq = {
+  none: "none",
+  daily: "daily",
+  weekly: "weekly",
+  monthly: "monthly",
+  yearly: "yearly",
+} as const;
+
 export interface Event {
   id: string;
   title: string;
@@ -365,6 +379,9 @@ export interface Event {
   color: string;
   isAllDay: boolean;
   status: EventStatus;
+  recurrenceFreq: RecurrenceFreq;
+  /** Inclusive last date the series may occur on. Null means no fixed end. */
+  recurrenceUntil?: string | null;
   projectId?: string | null;
   programmeId?: string | null;
   createdByTeamId?: string | null;
@@ -389,6 +406,8 @@ export interface CreateEventBody {
   color?: string;
   isAllDay?: boolean;
   status?: EventStatus;
+  recurrenceFreq?: RecurrenceFreq;
+  recurrenceUntil?: string | null;
   projectId?: string | null;
   programmeId?: string | null;
   invitedTeamIds?: string[];
@@ -405,6 +424,8 @@ export interface UpdateEventBody {
   color?: string;
   isAllDay?: boolean;
   status?: EventStatus;
+  recurrenceFreq?: RecurrenceFreq;
+  recurrenceUntil?: string | null;
   projectId?: string | null;
   programmeId?: string | null;
   invitedTeamIds?: string[];

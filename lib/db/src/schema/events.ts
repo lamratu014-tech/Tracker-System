@@ -20,6 +20,11 @@ export const eventsTable = pgTable("events", {
     .$type<"pending" | "approved" | "rejected">()
     .notNull()
     .default("pending"),
+  recurrenceFreq: text("recurrence_freq")
+    .$type<"none" | "daily" | "weekly" | "monthly" | "yearly">()
+    .notNull()
+    .default("none"),
+  recurrenceUntil: timestamp("recurrence_until", { withTimezone: true }),
   projectId: text("project_id").references(() => projectsTable.id, {
     onDelete: "set null",
   }),

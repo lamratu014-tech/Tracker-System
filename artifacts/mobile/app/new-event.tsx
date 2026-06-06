@@ -23,6 +23,15 @@ import { ErrorBanner } from "@/components/ErrorBanner";
 import { PickerSheet, type PickerSection } from "@/components/PickerSheet";
 import { useColors } from "@/hooks/useColors";
 import { useMe } from "@/lib/permissions";
+import type { RecurrenceFreq } from "@/lib/recurrence";
+
+const REPEAT_OPTIONS: { value: RecurrenceFreq; label: string }[] = [
+  { value: "none", label: "Does not repeat" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "yearly", label: "Yearly" },
+];
 
 const DATE_RE = /^\d{2}\/\d{2}\/\d{4}$/;
 const TIME_RE = /^\d{2}:\d{2}$/;
@@ -90,6 +99,9 @@ export default function NewEventScreen() {
   const [startTime, setStartTime] = useState<string>("10:00");
   const [endDate, setEndDate] = useState<string>(initialDate);
   const [endTime, setEndTime] = useState<string>("11:00");
+  const [recurrenceFreq, setRecurrenceFreq] = useState<RecurrenceFreq>("none");
+  const [untilEnabled, setUntilEnabled] = useState(false);
+  const [untilDate, setUntilDate] = useState<string>("");
 
   // Initial scope: leader → team; admin → org; everyone else picks "programme"
   // once data resolves (the role-based default effect below sets the right
@@ -289,6 +301,19 @@ export default function NewEventScreen() {
     : !durationValid ? "Events can span at most 7 days."
     : null;
 
+  // Recurrence end date: parsed as the end of that day so the "until" is
+  // inclusive. Only relevant when the event repeats and an end is enabled.
+  const showRecurrence = recurrenceFreq !== "none";
+  const untilDt = untilEnabled ? parseDateTime(untilDate, "23:59") : null;
+  const recurrenceError =
+    showRecurrence && untilEnabled
+      ? !untilDt
+        ? "Repeat-until date isn't valid (use DD/MM/YYYY)."
+        : startDt && untilDt.getTime() < startDt.getTime()
+          ? "Repeat-until date can't be before the start date."
+          : null
+      : null;
+
   const createEvent = useCreateEvent({
     mutation: {
       onSuccess: () => {
@@ -311,11 +336,13 @@ export default function NewEventScreen() {
     (scope === "programme" && !!programmeId && allowedProgrammes.some((p) => p.id === programmeId)) ||
     (scope === "team" && !!teamId && allowedTeams.some((t) => t.id === teamId));
 
-  const canSave = !!title.trim() && !dateError && linkValid && !createEvent.isPending;
+  const canSave =
+    !!title.trim() && !dateError && !recurrenceError && linkValid && !createEvent.isPending;
 
   function save() {
     if (!title.trim()) return Alert.alert("Title required", "Please enter an event title.");
     if (dateError) return Alert.alert("Invalid date or time", dateError);
+    if (recurrenceError) return Alert.alert("Invalid repeat", recurrenceError);
     if (!linkValid) {
       return Alert.alert(
         "Pick a link",
@@ -333,6 +360,9 @@ export default function NewEventScreen() {
         sharedDescription: desc.trim(),
         startDate: startDt.toISOString(),
         endDate: endDt.toISOString(),
+        recurrenceFreq,
+        recurrenceUntil:
+          showRecurrence && untilEnabled && untilDt ? untilDt.toISOString() : null,
         invitedTeamIds: scope === "team" && teamId ? [teamId] : [],
         programmeId: scope === "programme" && programmeId ? programmeId : null,
       },
@@ -446,6 +476,82 @@ export default function NewEventScreen() {
 
       {dateError ? (
         <Text style={[styles.errorText, { color: colors.destructive }]}>{dateError}</Text>
+      ) : null}
+
+      <Text style={[styles.label, { color: colors.mutedForeground }]}>Repeat</Text>
+      <View style={styles.chipWrap}>
+        {REPEAT_OPTIONS.map((opt) => {
+          const active = recurrenceFreq === opt.value;
+          return (
+            <TouchableOpacity
+              key={opt.value}
+              style={[
+                styles.chip,
+                {
+                  borderColor: colors.border,
+                  backgroundColor: active ? colors.primary : colors.muted,
+                },
+              ]}
+              onPress={() => {
+                setRecurrenceFreq(opt.value);
+                if (opt.value === "none") setUntilEnabled(false);
+              }}
+            >
+              <Text style={[styles.chipText, { color: active ? "#fff" : colors.foreground }]}>
+                {opt.label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+
+      {showRecurrence ? (
+        <>
+          <TouchableOpacity
+            style={styles.untilToggle}
+            onPress={() => setUntilEnabled((v) => !v)}
+            activeOpacity={0.7}
+          >
+            <Feather
+              name={untilEnabled ? "check-square" : "square"}
+              size={18}
+              color={untilEnabled ? colors.primary : colors.mutedForeground}
+            />
+            <Text style={[styles.untilToggleText, { color: colors.foreground }]}>
+              End on a date
+            </Text>
+          </TouchableOpacity>
+          {untilEnabled ? (
+            <>
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colors.muted,
+                    color: colors.foreground,
+                    borderColor: recurrenceError ? colors.destructive : colors.border,
+                  },
+                ]}
+                value={untilDate}
+                onChangeText={setUntilDate}
+                placeholder="DD/MM/YYYY"
+                placeholderTextColor={colors.mutedForeground}
+                autoCapitalize="none"
+                autoCorrect={false}
+                keyboardType="numbers-and-punctuation"
+              />
+              {recurrenceError ? (
+                <Text style={[styles.errorText, { color: colors.destructive }]}>
+                  {recurrenceError}
+                </Text>
+              ) : null}
+            </>
+          ) : (
+            <Text style={[styles.caption, { color: colors.mutedForeground }]}>
+              Repeats with no end date.
+            </Text>
+          )}
+        </>
       ) : null}
 
       <Text style={[styles.label, { color: colors.mutedForeground }]}>Link this event to</Text>
@@ -625,8 +731,11 @@ const styles = StyleSheet.create({
   input: { padding: 12, borderRadius: 10, borderWidth: 1, fontSize: 15, fontFamily: "Inter_400Regular" },
   multi: { minHeight: 80, textAlignVertical: "top" },
   scopeRow: { flexDirection: "row", gap: 6 },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
   chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, borderWidth: 1 },
   chipText: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  untilToggle: { flexDirection: "row", alignItems: "center", gap: 8, marginTop: 4 },
+  untilToggleText: { fontSize: 14, fontFamily: "Inter_500Medium" },
   caption: { fontSize: 12, fontFamily: "Inter_400Regular", marginTop: 2 },
   trigger: {
     flexDirection: "row",

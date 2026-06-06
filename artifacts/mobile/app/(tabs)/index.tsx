@@ -22,6 +22,7 @@ import { ErrorBanner } from "@/components/ErrorBanner";
 import { LoadingRow } from "@/components/LoadingRow";
 import { useColors } from "@/hooks/useColors";
 import { useMe } from "@/lib/permissions";
+import { expandOccurrences } from "@/lib/recurrence";
 import { isDueToday, isOverdue } from "@/models/types";
 
 interface Row {
@@ -74,7 +75,11 @@ export default function DashboardScreen() {
 
   const upcomingEvents = useMemo(() => {
     const now = Date.now();
-    return [...events]
+    // Expand recurring events across a forward window so repeating occurrences
+    // show up in the dashboard's next-3 list, not just their first instance.
+    const windowStart = new Date(now);
+    const windowEnd = new Date(now + 365 * 24 * 60 * 60 * 1000);
+    return expandOccurrences(events, windowStart, windowEnd)
       .filter((e) => new Date(e.startDate).getTime() >= now)
       .sort((a, b) => +new Date(a.startDate) - +new Date(b.startDate))
       .slice(0, 3);
@@ -197,14 +202,14 @@ export default function DashboardScreen() {
               const d = new Date(ev.startDate);
               return (
                 <Row
-                  key={ev.id}
+                  key={ev.occurrenceKey}
                   title={ev.title}
                   sub={`${d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" })} · ${
                     ev.isAllDay ? "All day" : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
                   }`}
                   badge="Event"
                   badgeColor={colors.primary}
-                  onPress={() => router.push({ pathname: "/event/[id]", params: { id: ev.id } })}
+                  onPress={() => router.push({ pathname: "/event/[id]", params: { id: ev.seriesId } })}
                 />
               );
             })

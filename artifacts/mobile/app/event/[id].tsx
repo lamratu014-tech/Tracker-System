@@ -33,7 +33,41 @@ import {
   canManageTeam,
   useMe,
 } from "@/lib/permissions";
+import { recurrenceLabel, type RecurrenceFreq } from "@/lib/recurrence";
 import { colorForStream } from "@/lib/streamColors";
+
+const REPEAT_OPTIONS: { value: RecurrenceFreq; label: string }[] = [
+  { value: "none", label: "Does not repeat" },
+  { value: "daily", label: "Daily" },
+  { value: "weekly", label: "Weekly" },
+  { value: "monthly", label: "Monthly" },
+  { value: "yearly", label: "Yearly" },
+];
+
+const DATE_RE = /^\d{2}\/\d{2}\/\d{4}$/;
+
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+function toDdmmyyyy(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  return `${pad2(d.getDate())}/${pad2(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
+function parseUntil(date: string): Date | null {
+  if (!DATE_RE.test(date)) return null;
+  const [dStr, moStr, yStr] = date.split("/");
+  const y = Number(yStr);
+  const mo = Number(moStr);
+  const d = Number(dStr);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
+  const out = new Date(y, mo - 1, d, 23, 59, 59, 999);
+  if (out.getFullYear() !== y || out.getMonth() !== mo - 1 || out.getDate() !== d) return null;
+  return out;
+}
 
 function sameDay(a: Date, b: Date): boolean {
   return (
@@ -80,6 +114,9 @@ export default function EventDetailScreen() {
   const [draftTitle, setDraftTitle] = React.useState("");
   const [draftDesc, setDraftDesc] = React.useState("");
   const [draftLocation, setDraftLocation] = React.useState("");
+  const [draftFreq, setDraftFreq] = React.useState<RecurrenceFreq>("none");
+  const [draftUntilEnabled, setDraftUntilEnabled] = React.useState(false);
+  const [draftUntil, setDraftUntil] = React.useState("");
 
   if (eventQ.isLoading) {
     return (
@@ -141,6 +178,10 @@ export default function EventDetailScreen() {
     setDraftTitle(event.title);
     setDraftDesc(event.sharedDescription ?? "");
     setDraftLocation(event.location ?? "");
+    const freq = (event.recurrenceFreq ?? "none") as RecurrenceFreq;
+    setDraftFreq(freq);
+    setDraftUntilEnabled(freq !== "none" && !!event.recurrenceUntil);
+    setDraftUntil(toDdmmyyyy(event.recurrenceUntil));
     setEditing(true);
   }
 
@@ -151,6 +192,22 @@ export default function EventDetailScreen() {
       Alert.alert("Title required", "Please enter a title for the event.");
       return;
     }
+    // Resolve the recurrence rule: "none" clears any until date; otherwise an
+    // enabled until is parsed (inclusive end of day) and validated against the
+    // event's start.
+    let recurrenceUntil: string | null = null;
+    if (draftFreq !== "none" && draftUntilEnabled) {
+      const until = parseUntil(draftUntil);
+      if (!until) {
+        Alert.alert("Invalid repeat", "Repeat-until date isn't valid (use DD/MM/YYYY).");
+        return;
+      }
+      if (until.getTime() < new Date(event.startDate).getTime()) {
+        Alert.alert("Invalid repeat", "Repeat-until date can't be before the start date.");
+        return;
+      }
+      recurrenceUntil = until.toISOString();
+    }
     updateEvent.mutate(
       {
         id: event.id,
@@ -158,6 +215,8 @@ export default function EventDetailScreen() {
           title,
           sharedDescription: draftDesc.trim() || undefined,
           location: draftLocation.trim() || undefined,
+          recurrenceFreq: draftFreq,
+          recurrenceUntil,
         },
       },
       { onSuccess: () => setEditing(false) },
@@ -243,6 +302,14 @@ export default function EventDetailScreen() {
           <Feather name="link" size={14} color={accent} />
           <Text style={[styles.lineText, { color: colors.foreground }]}>{linkedLabel}</Text>
         </View>
+        {recurrenceLabel(event.recurrenceFreq, event.recurrenceUntil) ? (
+          <View style={styles.line}>
+            <Feather name="repeat" size={14} color={accent} />
+            <Text style={[styles.lineText, { color: colors.foreground }]}>
+              {recurrenceLabel(event.recurrenceFreq, event.recurrenceUntil)}
+            </Text>
+          </View>
+        ) : null}
         {event.location ? (
           <View style={styles.line}>
             <Feather name="map-pin" size={14} color={colors.primary} />
@@ -290,6 +357,62 @@ export default function EventDetailScreen() {
               multiline
               style={[styles.input, styles.inputMulti, { color: colors.foreground, borderColor: colors.border }]}
             />
+
+            <Text style={[styles.heading, { color: colors.mutedForeground }]}>Repeat</Text>
+            <View style={styles.chipWrap}>
+              {REPEAT_OPTIONS.map((opt) => {
+                const active = draftFreq === opt.value;
+                return (
+                  <TouchableOpacity
+                    key={opt.value}
+                    style={[
+                      styles.chip,
+                      {
+                        borderColor: colors.border,
+                        backgroundColor: active ? colors.primary : colors.muted,
+                      },
+                    ]}
+                    onPress={() => {
+                      setDraftFreq(opt.value);
+                      if (opt.value === "none") setDraftUntilEnabled(false);
+                    }}
+                  >
+                    <Text style={[styles.chipText, { color: active ? "#fff" : colors.foreground }]}>
+                      {opt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {draftFreq !== "none" ? (
+              <>
+                <TouchableOpacity
+                  style={styles.untilToggle}
+                  onPress={() => setDraftUntilEnabled((v) => !v)}
+                  activeOpacity={0.7}
+                >
+                  <Feather
+                    name={draftUntilEnabled ? "check-square" : "square"}
+                    size={18}
+                    color={draftUntilEnabled ? colors.primary : colors.mutedForeground}
+                  />
+                  <Text style={[styles.lineText, { color: colors.foreground }]}>End on a date</Text>
+                </TouchableOpacity>
+                {draftUntilEnabled ? (
+                  <TextInput
+                    value={draftUntil}
+                    onChangeText={setDraftUntil}
+                    placeholder="DD/MM/YYYY"
+                    placeholderTextColor={colors.mutedForeground}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="numbers-and-punctuation"
+                    style={[styles.input, { color: colors.foreground, borderColor: colors.border }]}
+                  />
+                ) : null}
+              </>
+            ) : null}
+
             <View style={{ flexDirection: "row", gap: 8 }}>
               <TouchableOpacity
                 style={[styles.deleteBtn, { backgroundColor: colors.muted, flex: 1 }]}
@@ -349,4 +472,8 @@ const styles = StyleSheet.create({
   deleteText: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   input: { borderWidth: 1, borderRadius: 8, padding: 10, fontSize: 14, fontFamily: "Inter_400Regular" },
   inputMulti: { minHeight: 80, textAlignVertical: "top" },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  chip: { paddingHorizontal: 12, paddingVertical: 8, borderRadius: 16, borderWidth: 1 },
+  chipText: { fontSize: 13, fontFamily: "Inter_500Medium" },
+  untilToggle: { flexDirection: "row", alignItems: "center", gap: 8 },
 });

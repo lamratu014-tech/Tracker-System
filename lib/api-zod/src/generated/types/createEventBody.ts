@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { EventStatus } from "./eventStatus";
+import type { RecurrenceFreq } from "./recurrenceFreq";
 
 export interface CreateEventBody {
   /** @minLength 1 */
@@ -18,6 +19,8 @@ export interface CreateEventBody {
   color?: string;
   isAllDay?: boolean;
   status?: EventStatus;
+  recurrenceFreq?: RecurrenceFreq;
+  recurrenceUntil?: Date | null;
   projectId?: string | null;
   programmeId?: string | null;
   invitedTeamIds?: string[];

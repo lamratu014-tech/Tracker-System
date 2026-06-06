@@ -1411,6 +1411,11 @@ components:
       type: string
       enum: [full, shared]
 
+    RecurrenceFreq:
+      type: string
+      enum: [none, daily, weekly, monthly, yearly]
+      description: How often the event repeats. "none" means a one-off event.
+
     Event:
       type: object
       required:
@@ -1423,6 +1428,7 @@ components:
         - color
         - isAllDay
         - status
+        - recurrenceFreq
         - invitedTeamIds
         - createdAt
         - updatedAt
@@ -1437,6 +1443,12 @@ components:
         color: { type: string }
         isAllDay: { type: boolean }
         status: { $ref: "#/components/schemas/EventStatus" }
+        recurrenceFreq: { $ref: "#/components/schemas/RecurrenceFreq" }
+        recurrenceUntil:
+          type: string
+          format: date-time
+          nullable: true
+          description: Inclusive last date the series may occur on. Null means no fixed end.
         projectId: { type: string, nullable: true }
         programmeId: { type: string, nullable: true }
         createdByTeamId: { type: string, nullable: true }
@@ -1468,6 +1480,8 @@ components:
         color: { type: string }
         isAllDay: { type: boolean }
         status: { $ref: "#/components/schemas/EventStatus" }
+        recurrenceFreq: { $ref: "#/components/schemas/RecurrenceFreq" }
+        recurrenceUntil: { type: string, format: date-time, nullable: true }
         projectId: { type: string, nullable: true }
         programmeId: { type: string, nullable: true }
         invitedTeamIds:
@@ -1486,6 +1500,8 @@ components:
         color: { type: string }
         isAllDay: { type: boolean }
         status: { $ref: "#/components/schemas/EventStatus" }
+        recurrenceFreq: { $ref: "#/components/schemas/RecurrenceFreq" }
+        recurrenceUntil: { type: string, format: date-time, nullable: true }
         projectId: { type: string, nullable: true }
         programmeId: { type: string, nullable: true }
         invitedTeamIds:

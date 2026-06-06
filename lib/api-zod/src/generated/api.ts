@@ -833,6 +833,15 @@ export const ListEventsResponseItem = zod
     color: zod.string(),
     isAllDay: zod.boolean(),
     status: zod.enum(["pending", "approved", "rejected"]),
+    recurrenceFreq: zod
+      .enum(["none", "daily", "weekly", "monthly", "yearly"])
+      .describe('How often the event repeats. \"none\" means a one-off event.'),
+    recurrenceUntil: zod.coerce
+      .date()
+      .nullish()
+      .describe(
+        "Inclusive last date the series may occur on. Null means no fixed end.",
+      ),
     projectId: zod.string().nullish(),
     programmeId: zod.string().nullish(),
     createdByTeamId: zod.string().nullish(),
@@ -858,6 +867,11 @@ export const CreateEventBody = zod.object({
   color: zod.string().optional(),
   isAllDay: zod.boolean().optional(),
   status: zod.enum(["pending", "approved", "rejected"]).optional(),
+  recurrenceFreq: zod
+    .enum(["none", "daily", "weekly", "monthly", "yearly"])
+    .optional()
+    .describe('How often the event repeats. \"none\" means a one-off event.'),
+  recurrenceUntil: zod.coerce.date().nullish(),
   projectId: zod.string().nullish(),
   programmeId: zod.string().nullish(),
   invitedTeamIds: zod.array(zod.string()).optional(),
@@ -879,6 +893,15 @@ export const GetEventResponse = zod
     color: zod.string(),
     isAllDay: zod.boolean(),
     status: zod.enum(["pending", "approved", "rejected"]),
+    recurrenceFreq: zod
+      .enum(["none", "daily", "weekly", "monthly", "yearly"])
+      .describe('How often the event repeats. \"none\" means a one-off event.'),
+    recurrenceUntil: zod.coerce
+      .date()
+      .nullish()
+      .describe(
+        "Inclusive last date the series may occur on. Null means no fixed end.",
+      ),
     projectId: zod.string().nullish(),
     programmeId: zod.string().nullish(),
     createdByTeamId: zod.string().nullish(),
@@ -907,6 +930,11 @@ export const UpdateEventBody = zod.object({
   color: zod.string().optional(),
   isAllDay: zod.boolean().optional(),
   status: zod.enum(["pending", "approved", "rejected"]).optional(),
+  recurrenceFreq: zod
+    .enum(["none", "daily", "weekly", "monthly", "yearly"])
+    .optional()
+    .describe('How often the event repeats. \"none\" means a one-off event.'),
+  recurrenceUntil: zod.coerce.date().nullish(),
   projectId: zod.string().nullish(),
   programmeId: zod.string().nullish(),
   invitedTeamIds: zod.array(zod.string()).optional(),
@@ -923,6 +951,15 @@ export const UpdateEventResponse = zod.object({
   color: zod.string(),
   isAllDay: zod.boolean(),
   status: zod.enum(["pending", "approved", "rejected"]),
+  recurrenceFreq: zod
+    .enum(["none", "daily", "weekly", "monthly", "yearly"])
+    .describe('How often the event repeats. \"none\" means a one-off event.'),
+  recurrenceUntil: zod.coerce
+    .date()
+    .nullish()
+    .describe(
+      "Inclusive last date the series may occur on. Null means no fixed end.",
+    ),
   projectId: zod.string().nullish(),
   programmeId: zod.string().nullish(),
   createdByTeamId: zod.string().nullish(),

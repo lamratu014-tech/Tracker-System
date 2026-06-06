@@ -39,6 +39,28 @@ Each Team has its own Notes timeline (TeamNote rows)
 Events are separate, optionally linked to a stream OR team via invitedTeamIds
 ```
 
+### Recurring events
+Events store a recurrence **rule**, not pre-expanded rows: `recurrenceFreq`
+(`none` default | `daily` | `weekly` | `monthly` | `yearly`) plus an optional
+`recurrenceUntil` (timestamptz, inclusive-through-end-of-that-day; null = no end).
+The **client** expands occurrences for the viewed window via the shared helper
+`artifacts/mobile/lib/recurrence.ts` (`expandOccurrences(events, windowStart,
+windowEnd)` → occurrences with shifted `startDate`/`endDate`, a stable
+`occurrenceKey` = `${id}#${n}`, and `seriesId` = the original event id for
+detail navigation; plus `recurrenceLabel(freq, until)` for the "Repeats weekly
+until …" label). Calendar grid/day-list/day-dots, and the dashboard upcoming
+list, all render occurrences (key by `occurrenceKey`, navigate by `seriesId`).
+Editing the series (freq/until) on the detail screen updates all future
+occurrences; deleting removes the whole series. Per-occurrence exceptions are
+out of scope. Impossible calendar dates are **skipped, not rolled**: a
+monthly series on the 31st simply has no occurrence in 30-day months or
+February (no drift into the next month), and a yearly Feb-29 series only
+lands in leap years. Day-of-month is otherwise preserved. Server
+(`routes/events.ts`) persists + validates the rule:
+`freq=none` always clears `until`, and `until < startDate` → 400. **Approach
+choice:** client-side expansion (not server pre-expansion) for arbitrary-month
+navigation, wire efficiency, and trivial detail-by-id nav.
+
 ### Key generated hooks used across screens
 - Streams: `useListStreams`, `useGetStream`, `useListStreamTeams`, `useCreateStream`, `useUpdateStream`, `useDeleteStream`
 - Teams: `useListTeams`, `useGetTeam`, `useCreateTeam`, `useUpdateTeam`, `useDeleteTeam`, `useAddTeamManager`, `useRemoveTeamManager`, `useListTeamMembers`, `useCreateTeamMember`, `useDeleteMember`, `useListTeamNotes` + note CRUD

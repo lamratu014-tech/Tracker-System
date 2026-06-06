@@ -41,6 +41,7 @@ export * from "./programme";
 export * from "./project";
 export * from "./projectStatus";
 export * from "./projectWithTeamName";
+export * from "./recurrenceFreq";
 export * from "./resetPasswordBody";
 export * from "./setMilestoneStatusBody";
 export * from "./setupBody";
