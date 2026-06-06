@@ -66,7 +66,7 @@ export default function LoginScreen() {
           <View style={[styles.brand, { backgroundColor: colors.primary }]}>
             <Feather name="briefcase" size={28} color="#fff" />
           </View>
-          <Text style={[styles.title, { color: colors.foreground }]}>Ops & Planning</Text>
+          <Text style={[styles.title, { color: colors.foreground }]}>Updates</Text>
           <Text style={[styles.sub, { color: colors.mutedForeground }]}>Sign in to your account</Text>
 
           <View style={{ height: 24 }} />

@@ -114,7 +114,7 @@ export default function SettingsScreen() {
         <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
       </TouchableOpacity>
 
-      <Text style={[styles.footnote, { color: colors.mutedForeground }]}>Ops & Planning</Text>
+      <Text style={[styles.footnote, { color: colors.mutedForeground }]}>Updates</Text>
     </ScrollView>
   );
 }

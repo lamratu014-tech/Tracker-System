@@ -24,15 +24,15 @@ export async function sendPasswordResetEmail(opts: {
   }
 
   await client.emails.send({
-    from: "Ops & Planning <no-reply@resend.dev>",
+    from: "Updates <no-reply@resend.dev>",
     to: opts.toEmail,
-    subject: "Reset your Ops & Planning password",
+    subject: "Reset your Updates password",
     html: `
       <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
         <h2 style="margin-bottom:8px">Reset your password</h2>
         <p style="color:#555">
           Hi <strong>${opts.toName}</strong>, we received a request to reset your
-          <strong>Ops &amp; Planning</strong> password.
+          <strong>Updates</strong> password.
         </p>
         <p style="color:#555">
           Click the button below to choose a new password. This link expires in
@@ -74,15 +74,15 @@ export async function sendInviteEmail(opts: {
     opts.role.charAt(0).toUpperCase() + opts.role.slice(1);
 
   await client.emails.send({
-    from: "Ops & Planning <no-reply@resend.dev>",
+    from: "Updates <no-reply@resend.dev>",
     to: opts.toEmail,
-    subject: `${opts.invitedByName} invited you to Ops & Planning`,
+    subject: `${opts.invitedByName} invited you to Updates`,
     html: `
       <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px">
         <h2 style="margin-bottom:8px">You've been invited</h2>
         <p style="color:#555">
           <strong>${opts.invitedByName}</strong> has invited you to join 
-          <strong>Ops &amp; Planning</strong> as a <strong>${roleLabel}</strong>.
+          <strong>Updates</strong> as a <strong>${roleLabel}</strong>.
         </p>
         <p style="color:#555">
           Click the button below to create your account. This link expires in 72&nbsp;hours.
