@@ -858,6 +858,70 @@ paths:
         "204": { description: Deleted }
         "404": { $ref: "#/components/responses/NotFound" }
 
+  # ─── Calendar subscriptions ───────────────────────────────────────────
+  /calendar-subscriptions:
+    get:
+      operationId: listCalendarSubscriptions
+      tags: [calendarSubscriptions]
+      summary: List calendar subscriptions visible to the caller
+      security: [{ bearerAuth: [] }]
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/CalendarSubscription" }
+    post:
+      operationId: createCalendarSubscription
+      tags: [calendarSubscriptions]
+      summary: Subscribe to an external iCalendar feed
+      security: [{ bearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateCalendarSubscriptionBody" }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CalendarSubscription" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /calendar-subscriptions/{id}/refresh:
+    post:
+      operationId: refreshCalendarSubscription
+      tags: [calendarSubscriptions]
+      summary: Re-sync a subscription from its feed now
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/CalendarSubscription" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /calendar-subscriptions/{id}:
+    delete:
+      operationId: deleteCalendarSubscription
+      tags: [calendarSubscriptions]
+      summary: Remove a subscription and all of its imported events
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - { in: path, name: id, required: true, schema: { type: string } }
+      responses:
+        "204": { description: Deleted }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
   # ─── Team Notes ───────────────────────────────────────────────────────
   /teams/{id}/notes:
     get:
@@ -1430,11 +1494,21 @@ components:
         - status
         - recurrenceFreq
         - invitedTeamIds
+        - subscriptionId
+        - externalUid
         - createdAt
         - updatedAt
       properties:
         id: { type: string }
         title: { type: string }
+        subscriptionId:
+          type: string
+          nullable: true
+          description: Non-null for events imported from a calendar subscription (read-only).
+        externalUid:
+          type: string
+          nullable: true
+          description: The iCal UID of the source event, used to reconcile re-syncs.
         internalDescription: { type: string, nullable: true }
         sharedDescription: { type: string }
         startDate: { type: string, format: date-time }
@@ -1507,6 +1581,56 @@ components:
         invitedTeamIds:
           type: array
           items: { type: string }
+
+    CalendarSyncStatus:
+      type: string
+      enum: [pending, ok, error]
+
+    CalendarSubscription:
+      type: object
+      required:
+        - id
+        - name
+        - feedUrl
+        - color
+        - programmeId
+        - teamId
+        - lastSyncedAt
+        - lastSyncStatus
+        - lastSyncError
+        - createdAt
+        - updatedAt
+      properties:
+        id: { type: string }
+        name: { type: string }
+        feedUrl: { type: string }
+        color: { type: string }
+        programmeId: { type: string, nullable: true }
+        teamId: { type: string, nullable: true }
+        lastSyncedAt: { type: string, format: date-time, nullable: true }
+        lastSyncStatus: { $ref: "#/components/schemas/CalendarSyncStatus" }
+        lastSyncError: { type: string, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+
+    CreateCalendarSubscriptionBody:
+      type: object
+      required: [name, feedUrl]
+      properties:
+        name: { type: string, minLength: 1 }
+        feedUrl:
+          type: string
+          minLength: 1
+          description: Public iCalendar feed URL (https:// or webcal://).
+        color: { type: string }
+        programmeId:
+          type: string
+          nullable: true
+          description: Programme scope. Mutually exclusive with teamId.
+        teamId:
+          type: string
+          nullable: true
+          description: Team scope. Mutually exclusive with programmeId.
 
     TeamNote:
       type: object

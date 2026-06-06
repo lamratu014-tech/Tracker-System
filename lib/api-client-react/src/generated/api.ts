@@ -22,7 +22,9 @@ import type {
   AuthSession,
   AuthStatus,
   BadRequestResponse,
+  CalendarSubscription,
   ConflictResponse,
+  CreateCalendarSubscriptionBody,
   CreateEventBody,
   CreateInviteBody,
   CreateInviteResponse,
@@ -4323,6 +4325,349 @@ export const useDeleteEvent = <
   TContext
 > => {
   return useMutation(getDeleteEventMutationOptions(options));
+};
+
+/**
+ * @summary List calendar subscriptions visible to the caller
+ */
+export const getListCalendarSubscriptionsUrl = () => {
+  return `/api/calendar-subscriptions`;
+};
+
+export const listCalendarSubscriptions = async (
+  options?: RequestInit,
+): Promise<CalendarSubscription[]> => {
+  return customFetch<CalendarSubscription[]>(
+    getListCalendarSubscriptionsUrl(),
+    {
+      ...options,
+      method: "GET",
+    },
+  );
+};
+
+export const getListCalendarSubscriptionsQueryKey = () => {
+  return [`/api/calendar-subscriptions`] as const;
+};
+
+export const getListCalendarSubscriptionsQueryOptions = <
+  TData = Awaited<ReturnType<typeof listCalendarSubscriptions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCalendarSubscriptions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}) => {
+  const { query: queryOptions, request: requestOptions } = options ?? {};
+
+  const queryKey =
+    queryOptions?.queryKey ?? getListCalendarSubscriptionsQueryKey();
+
+  const queryFn: QueryFunction<
+    Awaited<ReturnType<typeof listCalendarSubscriptions>>
+  > = ({ signal }) => listCalendarSubscriptions({ signal, ...requestOptions });
+
+  return { queryKey, queryFn, ...queryOptions } as UseQueryOptions<
+    Awaited<ReturnType<typeof listCalendarSubscriptions>>,
+    TError,
+    TData
+  > & { queryKey: QueryKey };
+};
+
+export type ListCalendarSubscriptionsQueryResult = NonNullable<
+  Awaited<ReturnType<typeof listCalendarSubscriptions>>
+>;
+export type ListCalendarSubscriptionsQueryError = ErrorType<unknown>;
+
+/**
+ * @summary List calendar subscriptions visible to the caller
+ */
+
+export function useListCalendarSubscriptions<
+  TData = Awaited<ReturnType<typeof listCalendarSubscriptions>>,
+  TError = ErrorType<unknown>,
+>(options?: {
+  query?: UseQueryOptions<
+    Awaited<ReturnType<typeof listCalendarSubscriptions>>,
+    TError,
+    TData
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+  const queryOptions = getListCalendarSubscriptionsQueryOptions(options);
+
+  const query = useQuery(queryOptions) as UseQueryResult<TData, TError> & {
+    queryKey: QueryKey;
+  };
+
+  return { ...query, queryKey: queryOptions.queryKey };
+}
+
+/**
+ * @summary Subscribe to an external iCalendar feed
+ */
+export const getCreateCalendarSubscriptionUrl = () => {
+  return `/api/calendar-subscriptions`;
+};
+
+export const createCalendarSubscription = async (
+  createCalendarSubscriptionBody: CreateCalendarSubscriptionBody,
+  options?: RequestInit,
+): Promise<CalendarSubscription> => {
+  return customFetch<CalendarSubscription>(getCreateCalendarSubscriptionUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...options?.headers },
+    body: JSON.stringify(createCalendarSubscriptionBody),
+  });
+};
+
+export const getCreateCalendarSubscriptionMutationOptions = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCalendarSubscription>>,
+    TError,
+    { data: BodyType<CreateCalendarSubscriptionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof createCalendarSubscription>>,
+  TError,
+  { data: BodyType<CreateCalendarSubscriptionBody> },
+  TContext
+> => {
+  const mutationKey = ["createCalendarSubscription"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof createCalendarSubscription>>,
+    { data: BodyType<CreateCalendarSubscriptionBody> }
+  > = (props) => {
+    const { data } = props ?? {};
+
+    return createCalendarSubscription(data, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type CreateCalendarSubscriptionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof createCalendarSubscription>>
+>;
+export type CreateCalendarSubscriptionMutationBody =
+  BodyType<CreateCalendarSubscriptionBody>;
+export type CreateCalendarSubscriptionMutationError = ErrorType<
+  BadRequestResponse | ForbiddenResponse
+>;
+
+/**
+ * @summary Subscribe to an external iCalendar feed
+ */
+export const useCreateCalendarSubscription = <
+  TError = ErrorType<BadRequestResponse | ForbiddenResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof createCalendarSubscription>>,
+    TError,
+    { data: BodyType<CreateCalendarSubscriptionBody> },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof createCalendarSubscription>>,
+  TError,
+  { data: BodyType<CreateCalendarSubscriptionBody> },
+  TContext
+> => {
+  return useMutation(getCreateCalendarSubscriptionMutationOptions(options));
+};
+
+/**
+ * @summary Re-sync a subscription from its feed now
+ */
+export const getRefreshCalendarSubscriptionUrl = (id: string) => {
+  return `/api/calendar-subscriptions/${id}/refresh`;
+};
+
+export const refreshCalendarSubscription = async (
+  id: string,
+  options?: RequestInit,
+): Promise<CalendarSubscription> => {
+  return customFetch<CalendarSubscription>(
+    getRefreshCalendarSubscriptionUrl(id),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
+};
+
+export const getRefreshCalendarSubscriptionMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refreshCalendarSubscription>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof refreshCalendarSubscription>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["refreshCalendarSubscription"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof refreshCalendarSubscription>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return refreshCalendarSubscription(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type RefreshCalendarSubscriptionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof refreshCalendarSubscription>>
+>;
+
+export type RefreshCalendarSubscriptionMutationError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+/**
+ * @summary Re-sync a subscription from its feed now
+ */
+export const useRefreshCalendarSubscription = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof refreshCalendarSubscription>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof refreshCalendarSubscription>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getRefreshCalendarSubscriptionMutationOptions(options));
+};
+
+/**
+ * @summary Remove a subscription and all of its imported events
+ */
+export const getDeleteCalendarSubscriptionUrl = (id: string) => {
+  return `/api/calendar-subscriptions/${id}`;
+};
+
+export const deleteCalendarSubscription = async (
+  id: string,
+  options?: RequestInit,
+): Promise<void> => {
+  return customFetch<void>(getDeleteCalendarSubscriptionUrl(id), {
+    ...options,
+    method: "DELETE",
+  });
+};
+
+export const getDeleteCalendarSubscriptionMutationOptions = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCalendarSubscription>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationOptions<
+  Awaited<ReturnType<typeof deleteCalendarSubscription>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  const mutationKey = ["deleteCalendarSubscription"];
+  const { mutation: mutationOptions, request: requestOptions } = options
+    ? options.mutation &&
+      "mutationKey" in options.mutation &&
+      options.mutation.mutationKey
+      ? options
+      : { ...options, mutation: { ...options.mutation, mutationKey } }
+    : { mutation: { mutationKey }, request: undefined };
+
+  const mutationFn: MutationFunction<
+    Awaited<ReturnType<typeof deleteCalendarSubscription>>,
+    { id: string }
+  > = (props) => {
+    const { id } = props ?? {};
+
+    return deleteCalendarSubscription(id, requestOptions);
+  };
+
+  return { mutationFn, ...mutationOptions };
+};
+
+export type DeleteCalendarSubscriptionMutationResult = NonNullable<
+  Awaited<ReturnType<typeof deleteCalendarSubscription>>
+>;
+
+export type DeleteCalendarSubscriptionMutationError = ErrorType<
+  ForbiddenResponse | NotFoundResponse
+>;
+
+/**
+ * @summary Remove a subscription and all of its imported events
+ */
+export const useDeleteCalendarSubscription = <
+  TError = ErrorType<ForbiddenResponse | NotFoundResponse>,
+  TContext = unknown,
+>(options?: {
+  mutation?: UseMutationOptions<
+    Awaited<ReturnType<typeof deleteCalendarSubscription>>,
+    TError,
+    { id: string },
+    TContext
+  >;
+  request?: SecondParameter<typeof customFetch>;
+}): UseMutationResult<
+  Awaited<ReturnType<typeof deleteCalendarSubscription>>,
+  TError,
+  { id: string },
+  TContext
+> => {
+  return useMutation(getDeleteCalendarSubscriptionMutationOptions(options));
 };
 
 export const getListTeamNotesUrl = (id: string) => {

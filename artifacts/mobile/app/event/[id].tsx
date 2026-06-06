@@ -6,6 +6,7 @@ import {
   getListEventsQueryKey,
   useDeleteEvent,
   useGetEvent,
+  useListCalendarSubscriptions,
   useListProgrammes,
   useListStreams,
   useListTeams,
@@ -93,10 +94,12 @@ export default function EventDetailScreen() {
   const usersQ = useListUsers();
   const programmesQ = useListProgrammes();
   const streamsQ = useListStreams();
+  const subscriptionsQ = useListCalendarSubscriptions();
   const teams = teamsQ.data ?? [];
   const users = usersQ.data ?? [];
   const programmes = programmesQ.data ?? [];
   const streams = streamsQ.data ?? [];
+  const subscriptions = subscriptionsQ.data ?? [];
 
   const deleteEvent = useDeleteEvent({
     mutation: { onSuccess: () => qc.invalidateQueries({ queryKey: getListEventsQueryKey() }) },
@@ -140,7 +143,16 @@ export default function EventDetailScreen() {
   const teamId = event.invitedTeamIds[0] ?? event.createdByTeamId ?? null;
   const linkedTeam = teamId ? teams.find((t) => t.id === teamId) : null;
   const linkedStreamId = linkedTeam?.streamId ?? null;
-  const accent = colorForStream(linkedStreamId);
+
+  // Imported events come from an external calendar subscription. They are
+  // read-only (no edit/delete) and accented with the subscription's colour.
+  const isImported = !!event.subscriptionId;
+  const subscription = event.subscriptionId
+    ? subscriptions.find((s) => s.id === event.subscriptionId)
+    : null;
+  const accent = isImported
+    ? event.color ?? colorForStream(linkedStreamId)
+    : colorForStream(linkedStreamId);
 
   const isAdmin = canManageEverything(me);
   const isCreator = !!event.createdByUserId && me?.id === event.createdByUserId;
@@ -169,8 +181,11 @@ export default function EventDetailScreen() {
     }
     return false;
   })();
+  // Imported events are never editable/deletable individually — manage them
+  // through the calendar subscription (refresh/remove) instead.
   const canDelete =
-    isAdmin || isCreator || overseerOfStream || overseerOrLeaderOfTeam || overseerOfProgramme;
+    !isImported &&
+    (isAdmin || isCreator || overseerOfStream || overseerOrLeaderOfTeam || overseerOfProgramme);
   const canEdit = canDelete;
 
   function startEditing() {
@@ -278,6 +293,15 @@ export default function EventDetailScreen() {
         <View style={[styles.streamSwatch, { backgroundColor: accent }]} />
         <Text style={[styles.title, { color: colors.foreground, flex: 1 }]}>{event.title}</Text>
       </View>
+
+      {isImported ? (
+        <View style={[styles.importedBadge, { backgroundColor: accent + "1A", borderColor: accent }]}>
+          <Feather name="download-cloud" size={13} color={accent} />
+          <Text style={[styles.importedText, { color: accent }]}>
+            {subscription ? `Imported from ${subscription.name}` : "Imported event · read-only"}
+          </Text>
+        </View>
+      ) : null}
 
       <View
         style={[
@@ -461,6 +485,12 @@ export default function EventDetailScreen() {
 const styles = StyleSheet.create({
   container: { padding: 20, gap: 12 },
   titleRow: { flexDirection: "row", alignItems: "center", gap: 10 },
+  importedBadge: {
+    flexDirection: "row", alignItems: "center", gap: 6,
+    alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: 8, borderWidth: 1,
+  },
+  importedText: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
   streamSwatch: { width: 6, height: 28, borderRadius: 3 },
   title: { fontSize: 24, fontFamily: "Inter_700Bold" },
   card: { padding: 14, borderRadius: 10, borderWidth: 1, gap: 8 },

@@ -116,6 +116,15 @@ export default function CalendarScreen() {
 
   const cells = useMemo(() => buildMonthGrid(viewYear, viewMonth), [viewYear, viewMonth]);
 
+  // Any login role can manage calendar subscriptions for scopes they control
+  // (the server enforces per-scope authorisation); members aren't a login role.
+  const isManager =
+    me?.role === "admin" ||
+    me?.role === "programme_overseer" ||
+    me?.role === "stream_overseer" ||
+    me?.role === "leader" ||
+    me?.role === "team_admin";
+
   // Programme filter — "all" or an array of selected programme ids.
   // Hydrated once from persisted prefs; subsequent changes save back.
   const [filter, setFilter] = useState<CalendarProgrammeFilter>("all");
@@ -150,6 +159,20 @@ export default function CalendarScreen() {
     if (!teamId) return null;
     const t = teams.find((x) => x.id === teamId);
     return t?.streamId ?? null;
+  }
+
+  // Accent colour for an event. Imported events (from an external calendar
+  // subscription) are tinted with their subscription colour; everything else
+  // follows its stream colour.
+  function colorOf(ev: {
+    invitedTeamIds: string[];
+    createdByTeamId?: string | null;
+    subscriptionId?: string | null;
+    color?: string | null;
+  }): string {
+    if (ev.subscriptionId) return ev.color ?? NEUTRAL_STREAM_COLOR;
+    const sId = streamIdFor(ev);
+    return sId ? colorForStream(sId) : NEUTRAL_STREAM_COLOR;
   }
 
   // Programme ID for an event. Priority:
@@ -215,8 +238,8 @@ export default function CalendarScreen() {
   // covering each visible day. We iterate the visible cells (≤ 42) and check
   // each event's [start..end] interval so very long events still render on
   // every day in view without forcing an unbounded per-event walk.
-  const streamsByDay = useMemo(() => {
-    const map = new Map<string, (string | null)[]>();
+  const colorsByDay = useMemo(() => {
+    const map = new Map<string, string[]>();
     const eventSpans = occurrences.map((ev) => {
       const s = new Date(ev.startDate);
       const e = new Date(ev.endDate);
@@ -224,17 +247,17 @@ export default function CalendarScreen() {
       return {
         sStart: startOfDay(s).getTime(),
         sEnd: startOfDay(e).getTime(),
-        sId: streamIdFor(ev),
+        color: colorOf(ev),
       };
     });
     for (const cell of cells) {
       if (!cell) continue;
       const cellTs = startOfDay(cell).getTime();
-      const list: (string | null)[] = [];
+      const list: string[] = [];
       for (const span of eventSpans) {
         if (!span) continue;
         if (cellTs >= span.sStart && cellTs <= span.sEnd) {
-          if (!list.includes(span.sId)) list.push(span.sId);
+          if (!list.includes(span.color)) list.push(span.color);
         }
       }
       if (list.length > 0) map.set(dayKey(cell), list);
@@ -306,13 +329,24 @@ export default function CalendarScreen() {
                 : `${filteredEvents.length} event${filteredEvents.length !== 1 ? "s" : ""} (of ${events.length})`}
             </Text>
           </View>
-          <TouchableOpacity
-            style={[styles.headerBtn, { backgroundColor: colors.primary }]}
-            onPress={() => router.push("/new-event")}
-          >
-            <Feather name="plus" size={14} color="#fff" />
-            <Text style={styles.headerBtnText}>Event</Text>
-          </TouchableOpacity>
+          <View style={styles.headerActions}>
+            {isManager ? (
+              <TouchableOpacity
+                style={[styles.headerIconBtn, { backgroundColor: colors.muted, borderColor: colors.border }]}
+                onPress={() => router.push("/calendar-subscriptions")}
+                activeOpacity={0.8}
+              >
+                <Feather name="rss" size={16} color={colors.primary} />
+              </TouchableOpacity>
+            ) : null}
+            <TouchableOpacity
+              style={[styles.headerBtn, { backgroundColor: colors.primary }]}
+              onPress={() => router.push("/new-event")}
+            >
+              <Feather name="plus" size={14} color="#fff" />
+              <Text style={styles.headerBtnText}>Event</Text>
+            </TouchableOpacity>
+          </View>
         </View>
 
         {eventsQ.isError ? (
@@ -398,7 +432,7 @@ export default function CalendarScreen() {
         <View style={styles.grid}>
           {cells.map((day, i) => {
             if (!day) return <View key={i} style={styles.cell} />;
-            const list = streamsByDay.get(dayKey(day)) ?? [];
+            const list = colorsByDay.get(dayKey(day)) ?? [];
             const isToday = sameDay(day, today);
             const isSelected = sameDay(day, selected);
             const visible = list.slice(0, MAX_DOTS);
@@ -425,15 +459,13 @@ export default function CalendarScreen() {
                 </Text>
                 {visible.length > 0 ? (
                   <View style={styles.dotRow}>
-                    {visible.map((sId, di) => (
+                    {visible.map((color, di) => (
                       <View
-                        key={`${sId ?? "none"}-${di}`}
+                        key={`${color}-${di}`}
                         style={[
                           styles.dot,
                           {
-                            backgroundColor: isSelected
-                              ? "#fff"
-                              : colorForStream(sId),
+                            backgroundColor: isSelected ? "#fff" : color,
                           },
                         ]}
                       />
@@ -472,8 +504,8 @@ export default function CalendarScreen() {
           </View>
         ) : (
           selectedEvents.map((ev) => {
-            const sId = streamIdFor(ev);
-            const accent = sId ? colorForStream(sId) : NEUTRAL_STREAM_COLOR;
+            const accent = colorOf(ev);
+            const imported = !!ev.subscriptionId;
             return (
               <TouchableOpacity
                 key={ev.occurrenceKey}
@@ -495,9 +527,14 @@ export default function CalendarScreen() {
                   </Text>
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.evTitle, { color: colors.foreground }]} numberOfLines={1}>
-                    {ev.title}
-                  </Text>
+                  <View style={styles.evTitleRow}>
+                    <Text style={[styles.evTitle, { color: colors.foreground, flexShrink: 1 }]} numberOfLines={1}>
+                      {ev.title}
+                    </Text>
+                    {imported ? (
+                      <Feather name="download-cloud" size={12} color={accent} />
+                    ) : null}
+                  </View>
                   <Text style={[styles.evMeta, { color: colors.mutedForeground }]} numberOfLines={1}>
                     {nameFor(ev)} · {rangeLabel(ev.startDate, ev.endDate, ev.isAllDay)}
                   </Text>
@@ -520,6 +557,11 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 24, fontFamily: "Inter_700Bold" },
   sub: { fontSize: 13, fontFamily: "Inter_400Regular", marginTop: 2 },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: 8 },
+  headerIconBtn: {
+    width: 36, height: 36, borderRadius: 8, borderWidth: 1,
+    alignItems: "center", justifyContent: "center",
+  },
   headerBtn: {
     flexDirection: "row", alignItems: "center", gap: 4,
     paddingHorizontal: 10, paddingVertical: 8, borderRadius: 8,
@@ -565,6 +607,7 @@ const styles = StyleSheet.create({
   },
   timeBox: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 6, minWidth: 48, alignItems: "center" },
   timeText: { fontSize: 12, fontFamily: "Inter_700Bold" },
+  evTitleRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   evTitle: { fontSize: 14, fontFamily: "Inter_600SemiBold" },
   evMeta: { fontSize: 11, fontFamily: "Inter_400Regular", marginTop: 2 },
 });

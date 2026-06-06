@@ -11,6 +11,10 @@ import type { RecurrenceFreq } from "./recurrenceFreq";
 export interface Event {
   id: string;
   title: string;
+  /** Non-null for events imported from a calendar subscription (read-only). */
+  subscriptionId: string | null;
+  /** The iCal UID of the source event, used to reconcile re-syncs. */
+  externalUid: string | null;
   internalDescription?: string | null;
   sharedDescription: string;
   startDate: Date;

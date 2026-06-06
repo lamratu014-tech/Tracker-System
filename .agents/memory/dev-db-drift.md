@@ -16,6 +16,19 @@ in `requireAuth` queries it, so all authenticated routes 500 and the mobile
 dashboard (which gates on `useMe()`) renders blank. If a UI change "isn't
 showing up" after a merge, suspect broken auth from missing tables, not the UI.
 
+- `team_managers` table can be **entirely missing** from the dev DB even though
+  `teamManagers.ts` defines it. Auth breaks for *every* request when it's gone —
+  `loadManagedTeams` in `artifacts/api-server/src/lib/auth.ts` queries it inside
+  `requireAuth`, so all authenticated routes 500 with `relation "team_managers"
+  does not exist` until the table exists.
+- `invite_tokens` has legacy single-team `team_id text` in the DB while
+  `invites.ts` defines multi-team `team_ids jsonb`. This is another (unmerged)
+  task's migration.
+- `events` can be missing the recurrence columns (`recurrence_freq text NOT NULL
+  DEFAULT 'none'`, `recurrence_until timestamptz`) even though `events.ts`
+  defines them. Any query that selects all event columns (Drizzle `select()`)
+  500s with `column "recurrence_freq" does not exist` until they're added.
+
 **Why `db push` doesn't just fix it:** `pnpm --filter @workspace/db run push`
 stalls on an interactive prompt for the `invite_tokens` `team_id → team_ids`
 rename, so it can't complete non-interactively.

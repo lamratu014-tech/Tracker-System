@@ -3,6 +3,7 @@ import { teamsTable } from "./teams";
 import { projectsTable } from "./projects";
 import { programmesTable } from "./programmes";
 import { usersTable } from "./users";
+import { calendarSubscriptionsTable } from "./calendarSubscriptions";
 
 export const eventsTable = pgTable("events", {
   id: text("id")
@@ -37,6 +38,14 @@ export const eventsTable = pgTable("events", {
   createdByUserId: text("created_by_user_id").references(() => usersTable.id, {
     onDelete: "set null",
   }),
+  // Imported events carry a non-null subscriptionId. Deleting the
+  // subscription removes its imported events (cascade). externalUid is the
+  // iCal UID used to reconcile across re-syncs.
+  subscriptionId: text("subscription_id").references(
+    () => calendarSubscriptionsTable.id,
+    { onDelete: "cascade" },
+  ),
+  externalUid: text("external_uid"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

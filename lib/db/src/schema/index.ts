@@ -11,6 +11,7 @@ export * from "./projects";
 export * from "./projectTeams";
 export * from "./tasks";
 export * from "./milestones";
+export * from "./calendarSubscriptions";
 export * from "./events";
 export * from "./teamNotes";
 export * from "./weeklyUpdates";

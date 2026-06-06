@@ -371,6 +371,10 @@ export const RecurrenceFreq = {
 export interface Event {
   id: string;
   title: string;
+  /** Non-null for events imported from a calendar subscription (read-only). */
+  subscriptionId: string | null;
+  /** The iCal UID of the source event, used to reconcile re-syncs. */
+  externalUid: string | null;
   internalDescription?: string | null;
   sharedDescription: string;
   startDate: string;
@@ -429,6 +433,44 @@ export interface UpdateEventBody {
   projectId?: string | null;
   programmeId?: string | null;
   invitedTeamIds?: string[];
+}
+
+export type CalendarSyncStatus =
+  (typeof CalendarSyncStatus)[keyof typeof CalendarSyncStatus];
+
+export const CalendarSyncStatus = {
+  pending: "pending",
+  ok: "ok",
+  error: "error",
+} as const;
+
+export interface CalendarSubscription {
+  id: string;
+  name: string;
+  feedUrl: string;
+  color: string;
+  programmeId: string | null;
+  teamId: string | null;
+  lastSyncedAt: string | null;
+  lastSyncStatus: CalendarSyncStatus;
+  lastSyncError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateCalendarSubscriptionBody {
+  /** @minLength 1 */
+  name: string;
+  /**
+   * Public iCalendar feed URL (https:// or webcal://).
+   * @minLength 1
+   */
+  feedUrl: string;
+  color?: string;
+  /** Programme scope. Mutually exclusive with teamId. */
+  programmeId?: string | null;
+  /** Team scope. Mutually exclusive with programmeId. */
+  teamId?: string | null;
 }
 
 export interface TeamNote {

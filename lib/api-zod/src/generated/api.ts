@@ -825,6 +825,18 @@ export const ListEventsResponseItem = zod
   .object({
     id: zod.string(),
     title: zod.string(),
+    subscriptionId: zod
+      .string()
+      .nullable()
+      .describe(
+        "Non-null for events imported from a calendar subscription (read-only).",
+      ),
+    externalUid: zod
+      .string()
+      .nullable()
+      .describe(
+        "The iCal UID of the source event, used to reconcile re-syncs.",
+      ),
     internalDescription: zod.string().nullish(),
     sharedDescription: zod.string(),
     startDate: zod.coerce.date(),
@@ -885,6 +897,18 @@ export const GetEventResponse = zod
   .object({
     id: zod.string(),
     title: zod.string(),
+    subscriptionId: zod
+      .string()
+      .nullable()
+      .describe(
+        "Non-null for events imported from a calendar subscription (read-only).",
+      ),
+    externalUid: zod
+      .string()
+      .nullable()
+      .describe(
+        "The iCal UID of the source event, used to reconcile re-syncs.",
+      ),
     internalDescription: zod.string().nullish(),
     sharedDescription: zod.string(),
     startDate: zod.coerce.date(),
@@ -943,6 +967,16 @@ export const UpdateEventBody = zod.object({
 export const UpdateEventResponse = zod.object({
   id: zod.string(),
   title: zod.string(),
+  subscriptionId: zod
+    .string()
+    .nullable()
+    .describe(
+      "Non-null for events imported from a calendar subscription (read-only).",
+    ),
+  externalUid: zod
+    .string()
+    .nullable()
+    .describe("The iCal UID of the source event, used to reconcile re-syncs."),
   internalDescription: zod.string().nullish(),
   sharedDescription: zod.string(),
   startDate: zod.coerce.date(),
@@ -970,6 +1004,75 @@ export const UpdateEventResponse = zod.object({
 });
 
 export const DeleteEventParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+/**
+ * @summary List calendar subscriptions visible to the caller
+ */
+export const ListCalendarSubscriptionsResponseItem = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  feedUrl: zod.string(),
+  color: zod.string(),
+  programmeId: zod.string().nullable(),
+  teamId: zod.string().nullable(),
+  lastSyncedAt: zod.coerce.date().nullable(),
+  lastSyncStatus: zod.enum(["pending", "ok", "error"]),
+  lastSyncError: zod.string().nullable(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+export const ListCalendarSubscriptionsResponse = zod.array(
+  ListCalendarSubscriptionsResponseItem,
+);
+
+/**
+ * @summary Subscribe to an external iCalendar feed
+ */
+
+export const CreateCalendarSubscriptionBody = zod.object({
+  name: zod.string().min(1),
+  feedUrl: zod
+    .string()
+    .min(1)
+    .describe("Public iCalendar feed URL (https:\/\/ or webcal:\/\/)."),
+  color: zod.string().optional(),
+  programmeId: zod
+    .string()
+    .nullish()
+    .describe("Programme scope. Mutually exclusive with teamId."),
+  teamId: zod
+    .string()
+    .nullish()
+    .describe("Team scope. Mutually exclusive with programmeId."),
+});
+
+/**
+ * @summary Re-sync a subscription from its feed now
+ */
+export const RefreshCalendarSubscriptionParams = zod.object({
+  id: zod.coerce.string(),
+});
+
+export const RefreshCalendarSubscriptionResponse = zod.object({
+  id: zod.string(),
+  name: zod.string(),
+  feedUrl: zod.string(),
+  color: zod.string(),
+  programmeId: zod.string().nullable(),
+  teamId: zod.string().nullable(),
+  lastSyncedAt: zod.coerce.date().nullable(),
+  lastSyncStatus: zod.enum(["pending", "ok", "error"]),
+  lastSyncError: zod.string().nullable(),
+  createdAt: zod.coerce.date(),
+  updatedAt: zod.coerce.date(),
+});
+
+/**
+ * @summary Remove a subscription and all of its imported events
+ */
+export const DeleteCalendarSubscriptionParams = zod.object({
   id: zod.coerce.string(),
 });
 
