@@ -1027,6 +1027,8 @@ export const ListWeeklyUpdatesResponseItem = zod.object({
   authorName: zod.string().nullable(),
   streamId: zod.string(),
   streamName: zod.string().nullable(),
+  programmeId: zod.string().nullable(),
+  programmeName: zod.string().nullable(),
   weekStart: zod.coerce
     .date()
     .describe("Monday (YYYY-MM-DD) of the week this update covers."),
@@ -1052,6 +1054,8 @@ export const SubmitWeeklyUpdateResponse = zod.object({
   authorName: zod.string().nullable(),
   streamId: zod.string(),
   streamName: zod.string().nullable(),
+  programmeId: zod.string().nullable(),
+  programmeName: zod.string().nullable(),
   weekStart: zod.coerce
     .date()
     .describe("Monday (YYYY-MM-DD) of the week this update covers."),

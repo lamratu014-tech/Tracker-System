@@ -457,6 +457,8 @@ export interface WeeklyUpdate {
   authorName: string | null;
   streamId: string;
   streamName: string | null;
+  programmeId: string | null;
+  programmeName: string | null;
   /** Monday (YYYY-MM-DD) of the week this update covers. */
   weekStart: string;
   body: string;

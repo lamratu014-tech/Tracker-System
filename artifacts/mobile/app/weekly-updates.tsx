@@ -127,21 +127,42 @@ export default function WeeklyUpdatesScreen() {
       .sort((a, b) => (a.weekStart < b.weekStart ? 1 : -1));
   }, [updates, me, isOverseer, currentWeek]);
 
-  // Reader view (admin / PO): updates grouped by week, newest first.
+  // Reader view (admin / PO): updates grouped by programme, then by week
+  // (newest first), then by author. Programmes are alphabetical so it's easy
+  // to find the section you're after.
   const grouped = useMemo(() => {
-    const byWeek = new Map<string, WeeklyUpdate[]>();
+    const byProg = new Map<
+      string,
+      { programmeName: string; updates: WeeklyUpdate[] }
+    >();
     for (const u of updates) {
-      if (!byWeek.has(u.weekStart)) byWeek.set(u.weekStart, []);
-      byWeek.get(u.weekStart)!.push(u);
+      const key = u.programmeId ?? "__none__";
+      if (!byProg.has(key)) {
+        byProg.set(key, {
+          programmeName: u.programmeName ?? "No programme",
+          updates: [],
+        });
+      }
+      byProg.get(key)!.updates.push(u);
     }
-    return [...byWeek.entries()]
-      .sort((a, b) => (a[0] < b[0] ? 1 : -1))
-      .map(([weekStart, items]) => ({
-        weekStart,
-        items: items.sort((a, b) =>
-          (a.authorName ?? "").localeCompare(b.authorName ?? ""),
-        ),
-      }));
+    return [...byProg.values()]
+      .sort((a, b) => a.programmeName.localeCompare(b.programmeName))
+      .map((prog) => {
+        const byWeek = new Map<string, WeeklyUpdate[]>();
+        for (const u of prog.updates) {
+          if (!byWeek.has(u.weekStart)) byWeek.set(u.weekStart, []);
+          byWeek.get(u.weekStart)!.push(u);
+        }
+        const weeks = [...byWeek.entries()]
+          .sort((a, b) => (a[0] < b[0] ? 1 : -1))
+          .map(([weekStart, items]) => ({
+            weekStart,
+            items: items.sort((a, b) =>
+              (a.authorName ?? "").localeCompare(b.authorName ?? ""),
+            ),
+          }));
+        return { programmeName: prog.programmeName, weeks };
+      });
   }, [updates]);
 
   const notSubmitted = useMemo(
@@ -368,42 +389,54 @@ export default function WeeklyUpdatesScreen() {
               No updates have been submitted yet.
             </Text>
           ) : (
-            grouped.map((g) => (
-              <View key={g.weekStart} style={{ marginTop: 8 }}>
-                <Text style={[styles.h2, { color: colors.foreground }]}>
-                  {formatWeek(g.weekStart)}
-                </Text>
-                {g.items.map((u) => (
-                  <View
-                    key={u.id}
-                    style={[
-                      styles.histCard,
-                      {
-                        backgroundColor: colors.card,
-                        borderColor: colors.border,
-                      },
-                    ]}
-                  >
-                    <View style={styles.authorRow}>
-                      <Text
-                        style={[styles.author, { color: colors.foreground }]}
-                      >
-                        {u.authorName ?? "Unknown"}
-                      </Text>
-                      <Text
-                        style={[styles.streamTag, { color: colors.mutedForeground }]}
-                      >
-                        {u.streamName ?? ""}
-                      </Text>
-                    </View>
-                    <Text style={[styles.body, { color: colors.foreground }]}>
-                      {u.body}
-                    </Text>
+            grouped.map((prog) => (
+              <View key={prog.programmeName} style={{ marginTop: 8 }}>
+                <View style={styles.progHeader}>
+                  <Feather name="grid" size={14} color={colors.primary} />
+                  <Text style={[styles.progTitle, { color: colors.primary }]}>
+                    {prog.programmeName}
+                  </Text>
+                </View>
+                {prog.weeks.map((g) => (
+                  <View key={g.weekStart} style={{ marginTop: 4 }}>
                     <Text
-                      style={[styles.metaRight, { color: colors.mutedForeground }]}
+                      style={[styles.weekHeading, { color: colors.mutedForeground }]}
                     >
-                      Updated {formatTimestamp(u.updatedAt)}
+                      {formatWeek(g.weekStart)}
                     </Text>
+                    {g.items.map((u) => (
+                      <View
+                        key={u.id}
+                        style={[
+                          styles.histCard,
+                          {
+                            backgroundColor: colors.card,
+                            borderColor: colors.border,
+                          },
+                        ]}
+                      >
+                        <Text
+                          style={[styles.author, { color: colors.foreground }]}
+                        >
+                          {u.authorName ?? "Unknown"}
+                        </Text>
+                        <Text
+                          style={[styles.roleLabel, { color: colors.mutedForeground }]}
+                        >
+                          {u.streamName
+                            ? `${u.streamName} Stream Overseer`
+                            : "Stream Overseer"}
+                        </Text>
+                        <Text style={[styles.body, { color: colors.foreground }]}>
+                          {u.body}
+                        </Text>
+                        <Text
+                          style={[styles.metaRight, { color: colors.mutedForeground }]}
+                        >
+                          Updated {formatTimestamp(u.updatedAt)}
+                        </Text>
+                      </View>
+                    ))}
                   </View>
                 ))}
               </View>
@@ -440,11 +473,13 @@ const styles = StyleSheet.create({
   editText: { fontSize: 13, fontFamily: "Inter_600SemiBold" },
   emptyCard: { fontSize: 14, fontFamily: "Inter_400Regular" },
   empty: { fontSize: 14, fontFamily: "Inter_400Regular", marginTop: 12, textAlign: "center" },
-  histCard: { padding: 14, borderRadius: 10, borderWidth: 1, gap: 8, marginBottom: 8 },
+  histCard: { padding: 14, borderRadius: 10, borderWidth: 1, gap: 4, marginBottom: 8 },
   histWeek: { fontSize: 12, fontFamily: "Inter_600SemiBold" },
-  authorRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 },
+  progHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 16, marginBottom: 4 },
+  progTitle: { fontSize: 15, fontFamily: "Inter_700Bold" },
+  weekHeading: { fontSize: 12, fontFamily: "Inter_600SemiBold", marginTop: 8, marginBottom: 4 },
   author: { fontSize: 15, fontFamily: "Inter_600SemiBold" },
-  streamTag: { fontSize: 12, fontFamily: "Inter_400Regular" },
+  roleLabel: { fontSize: 12, fontFamily: "Inter_500Medium" },
   missingRow: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 5 },
   missingName: { fontSize: 14, fontFamily: "Inter_500Medium" },
   missingStream: { fontSize: 12, fontFamily: "Inter_400Regular", marginLeft: "auto" },

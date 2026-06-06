@@ -1,5 +1,11 @@
 import { Router } from "express";
-import { db, weeklyUpdatesTable, streamsTable, usersTable } from "@workspace/db";
+import {
+  db,
+  weeklyUpdatesTable,
+  streamsTable,
+  usersTable,
+  programmesTable,
+} from "@workspace/db";
 import { and, desc, eq } from "drizzle-orm";
 import { SubmitWeeklyUpdateBody } from "@workspace/api-zod";
 import { requireAuth } from "../middlewares/requireAuth";
@@ -54,10 +60,13 @@ router.get("/weekly-updates", requireAuth, async (req, res): Promise<void> => {
       updatedAt: weeklyUpdatesTable.updatedAt,
       authorName: usersTable.name,
       streamName: streamsTable.name,
+      programmeId: programmesTable.id,
+      programmeName: programmesTable.name,
     })
     .from(weeklyUpdatesTable)
     .leftJoin(usersTable, eq(usersTable.id, weeklyUpdatesTable.authorId))
-    .leftJoin(streamsTable, eq(streamsTable.id, weeklyUpdatesTable.streamId));
+    .leftJoin(streamsTable, eq(streamsTable.id, weeklyUpdatesTable.streamId))
+    .leftJoin(programmesTable, eq(programmesTable.id, streamsTable.programmeId));
 
   let rows;
   if (user.role === "admin") {
@@ -187,8 +196,13 @@ router.post("/weekly-updates", requireAuth, async (req, res): Promise<void> => {
     .returning();
 
   const [stream] = await db
-    .select({ name: streamsTable.name })
+    .select({
+      name: streamsTable.name,
+      programmeId: programmesTable.id,
+      programmeName: programmesTable.name,
+    })
     .from(streamsTable)
+    .leftJoin(programmesTable, eq(programmesTable.id, streamsTable.programmeId))
     .where(eq(streamsTable.id, row.streamId))
     .limit(1);
 
@@ -204,6 +218,8 @@ router.post("/weekly-updates", requireAuth, async (req, res): Promise<void> => {
     ...row,
     authorName: user.name,
     streamName: stream?.name ?? null,
+    programmeId: stream?.programmeId ?? null,
+    programmeName: stream?.programmeName ?? null,
   });
 });
 

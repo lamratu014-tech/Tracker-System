@@ -1,1 +1,2 @@
 - [Dev DB drift](dev-db-drift.md) — dev Postgres lags schema sources; `team_managers` may be missing (breaks all auth), `invite_tokens` rename blocks `db push`. Add own tables via DDL.
+- [Task merges revert in-flight edits](task-merge-reverts-inflight-edits.md) — a task merge can silently overwrite your concurrent edits to shared files (openapi, generated client, routes); re-verify after any merge notification.

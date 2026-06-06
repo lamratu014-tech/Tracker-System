@@ -1535,13 +1535,15 @@ components:
     WeeklyUpdate:
       type: object
       required:
-        [id, authorId, authorName, streamId, streamName, weekStart, body, createdAt, updatedAt]
+        [id, authorId, authorName, streamId, streamName, programmeId, programmeName, weekStart, body, createdAt, updatedAt]
       properties:
         id: { type: string }
         authorId: { type: string }
         authorName: { type: string, nullable: true }
         streamId: { type: string }
         streamName: { type: string, nullable: true }
+        programmeId: { type: string, nullable: true }
+        programmeName: { type: string, nullable: true }
         weekStart:
           type: string
           format: date

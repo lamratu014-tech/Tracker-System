@@ -153,7 +153,11 @@ Mobile screen is `app/weekly-updates.tsx` (registered in `_layout.tsx` Stack),
 reached from a Dashboard tab entry visible to admin / programme_overseer /
 stream_overseer. It's role-adaptive: overseers get a composer for the current
 week plus their own history; PO/admin get the "not yet submitted" card plus all
-in-scope updates grouped by week.
+in-scope updates grouped **by programme** (alphabetical), then by week (newest
+first), then by author. Each author row shows a role label derived from their
+stream: `"<streamName> Stream Overseer"`. The `WeeklyUpdate` resource carries
+`programmeId`/`programmeName` (nullable; from a left join streams→programmes in
+`routes/weeklyUpdates.ts`) so the client can build the programme sections.
 
 ## User preferences
 - Real email login (no profile picker)
