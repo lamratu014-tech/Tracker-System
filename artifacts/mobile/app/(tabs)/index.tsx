@@ -131,6 +131,24 @@ export default function DashboardScreen() {
           />
         </View>
 
+        {me.role === "admin" ||
+        me.role === "programme_overseer" ||
+        me.role === "stream_overseer" ? (
+          <TouchableOpacity
+            style={[styles.weeklyBtn, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => router.push("/weekly-updates")}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.tileIcon, { backgroundColor: colors.primary + "22" }]}>
+              <Feather name="file-text" size={14} color={colors.primary} />
+            </View>
+            <Text style={[styles.weeklyBtnText, { color: colors.foreground }]}>
+              {me.role === "stream_overseer" ? "My Weekly Updates" : "Weekly Updates"}
+            </Text>
+            <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
+        ) : null}
+
         {projectsQ.isLoading || milestonesLoading ? <LoadingRow /> : null}
 
         {overdueItems.length > 0 ? (
@@ -285,6 +303,11 @@ const styles = StyleSheet.create({
   tileIcon: { width: 24, height: 24, borderRadius: 6, alignItems: "center", justifyContent: "center" },
   tileVal: { fontSize: 22, fontFamily: "Inter_700Bold" },
   tileLabel: { fontSize: 11, fontFamily: "Inter_500Medium" },
+  weeklyBtn: {
+    flexDirection: "row", alignItems: "center", gap: 10,
+    padding: 12, borderWidth: 1, borderRadius: 10, marginTop: 12,
+  },
+  weeklyBtnText: { flex: 1, fontSize: 14, fontFamily: "Inter_600SemiBold" },
   sectionTitle: {
     fontSize: 14, fontFamily: "Inter_600SemiBold", marginBottom: 8,
     textTransform: "uppercase", letterSpacing: 0.5, opacity: 0.85,

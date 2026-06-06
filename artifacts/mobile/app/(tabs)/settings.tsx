@@ -105,21 +105,6 @@ export default function SettingsScreen() {
         </TouchableOpacity>
       ) : null}
 
-      {me.role === "admin" ||
-      me.role === "programme_overseer" ||
-      me.role === "stream_overseer" ? (
-        <TouchableOpacity
-          style={[styles.btn, { backgroundColor: colors.card, borderColor: colors.border }]}
-          onPress={() => router.push("/weekly-updates")}
-        >
-          <Feather name="file-text" size={16} color={colors.primary} />
-          <Text style={[styles.btnText, { color: colors.foreground }]}>
-            {me.role === "stream_overseer" ? "My Weekly Updates" : "Weekly Updates"}
-          </Text>
-          <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
-        </TouchableOpacity>
-      ) : null}
-
       <TouchableOpacity
         style={[styles.btn, { backgroundColor: colors.card, borderColor: colors.border }]}
         onPress={handleLogout}

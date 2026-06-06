@@ -128,7 +128,7 @@ compute the current week.
   admin sees all.
 
 Mobile screen is `app/weekly-updates.tsx` (registered in `_layout.tsx` Stack),
-reached from a Settings entry visible to admin / programme_overseer /
+reached from a Dashboard tab entry visible to admin / programme_overseer /
 stream_overseer. It's role-adaptive: overseers get a composer for the current
 week plus their own history; PO/admin get the "not yet submitted" card plus all
 in-scope updates grouped by week.
